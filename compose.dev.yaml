@@ -1,0 +1,45 @@
+# Local development / verification stack. Builds images from source and
+# publishes the app on http://localhost:8085 (8080 is TSDProxy's admin port on
+# the home server). Production deployment lives in the home-server repo
+# (stacks/recipes/compose.yaml) and pulls from GHCR.
+#
+# Distinct project name: the production stack directory is also named
+# "recipes", and identical project names would share volumes/networks.
+name: recipes-dev
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8085:8080"
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://recipes:recipes@postgres:5432/recipes
+      DATA_DIR: /data
+    volumes:
+      - recipe_images:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: recipes
+      POSTGRES_DB: recipes
+      POSTGRES_PASSWORD: recipes
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recipes -d recipes"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_data:
+  recipe_images:
