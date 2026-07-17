@@ -75,6 +75,54 @@ async def test_grocery_aggregates_across_recipes(client):
     assert len(by_name["flour"]["uses"]) == 3
 
 
+async def test_grocery_merges_descriptive_ingredient_variants(client):
+    casserole = await make_recipe(
+        client,
+        "Hashbrown Breakfast Casserole",
+        [
+            {"name": "eggs", "quantity": 8, "unit": None},
+            {"name": "finely diced onion", "quantity": 0.25, "unit": "cups"},
+            {"name": "green bell pepper (diced)", "quantity": 0.5, "unit": None},
+        ],
+    )
+    bread = await make_recipe(
+        client,
+        "Banana Bread",
+        [
+            {"name": "large eggs, at room temperature", "quantity": 4, "unit": None},
+            {"name": "onion", "quantity": 1, "unit": None},
+        ],
+    )
+    await plan(client, "2026-07-20", "breakfast", casserole["id"])
+    await plan(client, "2026-07-21", "breakfast", bread["id"])
+
+    data = await grocery(client)
+    by_name = {i["name"]: i for i in data["items"]}
+    # "eggs" + "large eggs, at room temperature" -> one line, 12 total.
+    assert by_name["eggs"]["amounts"] == ["12"]
+    assert {u["recipe_title"] for u in by_name["eggs"]["uses"]} == {
+        "Hashbrown Breakfast Casserole",
+        "Banana Bread",
+    }
+    # "finely diced onion" + "onion" -> one line with both amounts.
+    assert sorted(by_name["onion"]["amounts"]) == ["0.25 cups", "1"]
+    assert by_name["green bell pepper"]["amounts"] == ["0.5"]
+    assert len(data["items"]) == 3
+
+
+async def test_pantry_matches_descriptive_ingredient_names(client):
+    recipe = await make_recipe(
+        client,
+        "Casserole",
+        [{"name": "Kosher salt (or to taste)", "quantity": 0.5, "unit": "tsp"}],
+    )
+    await plan(client, "2026-07-20", "dinner", recipe["id"])
+    await client.post("/api/pantry", json={"name": "kosher salt", "in_stock": True})
+
+    data = await grocery(client)
+    assert data["items"] == []
+
+
 async def test_grocery_respects_date_range(client):
     recipe = await make_recipe(
         client, "Soup", [{"name": "Carrots", "quantity": 3, "unit": None}]

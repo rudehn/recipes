@@ -159,7 +159,9 @@ def parse_ingredient_line(line: str) -> IngredientIn:
     name = " ".join(tokens[index:]).strip()
     if name.lower().startswith("of "):
         name = name[3:]
-    name = name.strip(" ,")
+    # Sites like Budget Bytes annotate prices: "lo mein noodles ($1.30)".
+    name = re.sub(r"\(\s*\$[^)]*\)", "", name)
+    name = re.sub(r"\s+", " ", name).strip(" ,")
     if not name:
         # Line was only a quantity/unit ("1 pinch"): treat the unit as the name.
         name, unit = (unit or text), None

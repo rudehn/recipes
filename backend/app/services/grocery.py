@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import GroceryCheck, Ingredient, MealPlanEntry, PantryItem, Recipe
 from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse
+from .canonical import best_display, canonical_key
 
 UNIT_ALIASES = {
     "tablespoon": "tbsp", "tablespoons": "tbsp", "tbsps": "tbsp", "tbs": "tbsp",
@@ -50,8 +51,9 @@ def normalize_unit(unit: str | None) -> str | None:
     return UNIT_ALIASES.get(u, u)
 
 
-def item_key(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", normalize_name(name)).strip("-")
+# Merge key for grocery items and pantry matching; also the identity that
+# checked-off state is stored under. See services.canonical for the rules.
+item_key = canonical_key
 
 
 def format_quantity(q: float) -> str:
@@ -91,13 +93,13 @@ async def build_grocery_list(
     ).unique().scalars().all()
 
     pantry_items = (await session.execute(select(PantryItem))).scalars().all()
-    pantry_by_name = {normalize_name(p.name): p for p in pantry_items}
+    pantry_by_key = {canonical_key(p.name): p for p in pantry_items}
 
     checks = (await session.execute(select(GroceryCheck))).scalars().all()
     checked_keys = {c.key for c in checks if c.checked}
 
     # key -> aggregation state
-    display_names: dict[str, str] = {}
+    name_variants: dict[str, list[str]] = defaultdict(list)
     quantities: dict[str, dict[str | None, float]] = defaultdict(lambda: defaultdict(float))
     no_quantity_uses: dict[str, int] = defaultdict(int)
     uses: dict[str, list[GroceryRecipeUse]] = defaultdict(list)
@@ -107,7 +109,7 @@ async def build_grocery_list(
             key = item_key(ing.name)
             if not key:
                 continue
-            display_names.setdefault(key, ing.name.strip())
+            name_variants[key].append(ing.name.strip())
             unit = normalize_unit(ing.unit)
             if ing.quantity is not None:
                 quantities[key][unit] += ing.quantity
@@ -123,8 +125,9 @@ async def build_grocery_list(
             )
 
     items: list[GroceryItem] = []
-    for key, name in display_names.items():
-        pantry = pantry_by_name.get(normalize_name(name))
+    for key, variants in name_variants.items():
+        name = best_display(variants)
+        pantry = pantry_by_key.get(key)
         if pantry is not None and pantry.in_stock:
             # Already stocked; nothing to buy.
             continue
