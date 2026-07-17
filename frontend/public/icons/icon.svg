@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d06134"/>
+      <stop offset="1" stop-color="#a84523"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- soft shadow under the egg -->
+  <ellipse cx="262" cy="300" rx="168" ry="150" fill="#7c3016" opacity="0.35"/>
+  <!-- egg white: overlapping circles form an organic blob -->
+  <g fill="#fffdf9">
+    <circle cx="216" cy="222" r="98"/>
+    <circle cx="308" cy="244" r="92"/>
+    <circle cx="248" cy="316" r="98"/>
+    <circle cx="326" cy="322" r="72"/>
+    <circle cx="182" cy="300" r="70"/>
+  </g>
+  <!-- yolk -->
+  <circle cx="264" cy="268" r="64" fill="#f2a63c"/>
+  <circle cx="264" cy="268" r="64" fill="none" stroke="#e08f27" stroke-width="4" opacity="0.6"/>
+  <circle cx="243" cy="247" r="16" fill="#ffe9c4" opacity="0.9"/>
+</svg>
