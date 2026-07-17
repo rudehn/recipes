@@ -56,6 +56,17 @@ export default function PlannerPage() {
     reload();
   }
 
+  async function copyLastWeek() {
+    const created = await api.copyWeek(
+      toISODate(addDays(weekStart, -7)),
+      toISODate(weekStart),
+    );
+    if (created.length === 0) {
+      window.alert("Nothing new to copy from last week.");
+    }
+    reload();
+  }
+
   return (
     <>
       <div className="page-head">
@@ -79,6 +90,9 @@ export default function PlannerPage() {
             aria-label="Next week"
           >
             Next →
+          </button>
+          <button className="btn small" onClick={copyLastWeek}>
+            ⧉ Copy last week
           </button>
           <Link
             to={`/groceries?start=${toISODate(weekStart)}&end=${toISODate(weekEnd)}`}

@@ -5,7 +5,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import IMAGES_DIR
 from .db import Base, engine
-from .routes import grocery, meal_plan, pantry, recipes
+from .routes import grocery, import_recipe, meal_plan, pantry, recipes
 
 
 @asynccontextmanager
@@ -24,6 +24,7 @@ api.include_router(recipes.router)
 api.include_router(meal_plan.router)
 api.include_router(pantry.router)
 api.include_router(grocery.router)
+api.include_router(import_recipe.router)
 
 
 @api.get("/health")

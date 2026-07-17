@@ -297,6 +297,63 @@ input:focus, select:focus, textarea:focus {
   color: var(--accent-dark);
 }
 
+.chip.green {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+/* ---------- Tag filter & URL import ---------- */
+
+.tag-filter {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: -6px 0 22px;
+}
+
+.tag-pill {
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.tag-pill:hover { background: var(--surface-2); }
+
+.tag-pill.active {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+.import-box {
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 26px;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-box .import-row {
+  display: flex;
+  gap: 10px;
+}
+
+.import-box .import-row input { flex: 1; }
+
+.import-box .hint {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* ---------- Recipe detail ---------- */
 
 .detail-hero {

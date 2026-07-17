@@ -1,6 +1,16 @@
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -33,6 +43,30 @@ class Recipe(Base):
         order_by="Ingredient.position",
         lazy="selectin",
     )
+    tag_rows: Mapped[list["RecipeTag"]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="RecipeTag.name",
+        lazy="selectin",
+    )
+
+    @property
+    def tags(self) -> list[str]:
+        return [t.name for t in self.tag_rows]
+
+    @property
+    def ingredient_names(self) -> list[str]:
+        return [i.name for i in self.ingredients]
+
+
+class RecipeTag(Base):
+    __tablename__ = "recipe_tags"
+    __table_args__ = (UniqueConstraint("recipe_id", "name"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(50), index=True)
 
 
 class Ingredient(Base):

@@ -8,7 +8,11 @@ export function formatQuantity(q: number | null, unit: string | null): string {
   return unit ? `${num} ${unit}` : num;
 }
 
-export function TimeChips({ recipe }: { recipe: RecipeSummary }) {
+export function TimeChips({
+  recipe,
+}: {
+  recipe: Pick<RecipeSummary, "prep_minutes" | "cook_minutes" | "servings">;
+}) {
   const total = (recipe.prep_minutes ?? 0) + (recipe.cook_minutes ?? 0);
   return (
     <div className="chips">
@@ -22,7 +26,7 @@ export function RecipePhoto({
   recipe,
   className = "photo",
 }: {
-  recipe: RecipeSummary;
+  recipe: Pick<RecipeSummary, "image_filename" | "title">;
   className?: string;
 }) {
   const url = imageUrl(recipe.image_filename);

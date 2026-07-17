@@ -5,7 +5,9 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 ## Features
 
 * Recipes with a photo, structured ingredients (quantity / unit / name), and step-by-step instructions.
-* Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day.
+* Import a recipe from a URL: paste a link and the schema.org data most cooking sites embed fills in the form, photo included.
+* Tags with one-tap filtering, and search that also matches ingredients ("what can I make with basil?").
+* Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.
 * Pantry staples: items you always keep in stock.

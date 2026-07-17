@@ -15,9 +15,11 @@ export interface RecipeSummary {
   prep_minutes: number | null;
   cook_minutes: number | null;
   servings: number | null;
+  tags: string[];
+  ingredient_names: string[];
 }
 
-export interface Recipe extends RecipeSummary {
+export interface Recipe extends Omit<RecipeSummary, "ingredient_names"> {
   instructions: string;
   ingredients: Ingredient[];
 }
@@ -30,6 +32,19 @@ export interface RecipeInput {
   cook_minutes: number | null;
   servings: number | null;
   ingredients: Omit<Ingredient, "id">[];
+  tags: string[];
+}
+
+export interface RecipeDraft {
+  title: string;
+  description: string;
+  instructions: string;
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  servings: number | null;
+  ingredients: Omit<Ingredient, "id">[];
+  image_url: string | null;
+  source_url: string;
 }
 
 export interface MealPlanEntry {
@@ -108,6 +123,16 @@ export const api = {
   },
   deleteImage: (id: number) =>
     request<Recipe>(`/api/recipes/${id}/image`, { method: "DELETE" }),
+  imageFromUrl: (id: number, url: string) =>
+    request<Recipe>(`/api/recipes/${id}/image-from-url`, {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
+  importRecipe: (url: string) =>
+    request<RecipeDraft>("/api/import/recipe", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    }),
 
   listMealPlan: (start: string, end: string) =>
     request<MealPlanEntry[]>(`/api/meal-plan?start=${start}&end=${end}`),
@@ -118,6 +143,11 @@ export const api = {
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),
+  copyWeek: (from_start: string, to_start: string) =>
+    request<MealPlanEntry[]>("/api/meal-plan/copy-week", {
+      method: "POST",
+      body: JSON.stringify({ from_start, to_start }),
+    }),
 
   listPantry: () => request<PantryItem[]>("/api/pantry"),
   addPantryItem: (name: string, in_stock: boolean) =>

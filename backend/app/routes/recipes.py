@@ -1,13 +1,14 @@
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
-from ..models import Ingredient, Recipe
-from ..schemas import RecipeIn, RecipeOut, RecipeSummary
+from ..models import Ingredient, Recipe, RecipeTag
+from ..schemas import ImageFromUrl, RecipeIn, RecipeOut, RecipeSummary
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -38,6 +39,7 @@ async def create_recipe(data: RecipeIn, session: AsyncSession = Depends(get_sess
             Ingredient(name=i.name, quantity=i.quantity, unit=i.unit, position=pos)
             for pos, i in enumerate(data.ingredients)
         ],
+        tag_rows=[RecipeTag(name=t) for t in data.normalized_tags()],
     )
     session.add(recipe)
     await session.commit()
@@ -65,6 +67,7 @@ async def update_recipe(
         Ingredient(name=i.name, quantity=i.quantity, unit=i.unit, position=pos)
         for pos, i in enumerate(data.ingredients)
     ]
+    recipe.tag_rows = [RecipeTag(name=t) for t in data.normalized_tags()]
     await session.commit()
     await session.refresh(recipe)
     return recipe
@@ -116,6 +119,37 @@ async def delete_image(recipe_id: int, session: AsyncSession = Depends(get_sessi
     recipe = await _get_recipe(session, recipe_id)
     _delete_image_file(recipe.image_filename)
     recipe.image_filename = None
+    await session.commit()
+    await session.refresh(recipe)
+    return recipe
+
+
+@router.post("/{recipe_id}/image-from-url", response_model=RecipeOut)
+async def image_from_url(
+    recipe_id: int, data: ImageFromUrl, session: AsyncSession = Depends(get_session)
+):
+    """Downloads a photo (used by the URL importer) and attaches it."""
+    recipe = await _get_recipe(session, recipe_id)
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
+            resp = await client.get(str(data.url))
+            resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Could not fetch image: {exc}")
+
+    content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+    ext = ALLOWED_IMAGE_TYPES.get(content_type)
+    if ext is None:
+        raise HTTPException(status_code=415, detail="Image must be JPEG, PNG, or WebP")
+    if len(resp.content) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=413, detail="Image larger than 10 MB")
+
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}{ext}"
+    (IMAGES_DIR / filename).write_bytes(resp.content)
+
+    _delete_image_file(recipe.image_filename)
+    recipe.image_filename = filename
     await session.commit()
     await session.refresh(recipe)
     return recipe

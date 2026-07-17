@@ -7,20 +7,31 @@ import { RecipePhoto, TimeChips } from "../components/RecipeBits";
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<RecipeSummary[] | null>(null);
   const [query, setQuery] = useState("");
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   useEffect(() => {
     api.listRecipes().then(setRecipes).catch(() => setRecipes([]));
   }, []);
 
+  const allTags = useMemo(
+    () => [...new Set((recipes ?? []).flatMap((r) => r.tags))].sort(),
+    [recipes],
+  );
+
   const filtered = useMemo(() => {
     if (!recipes) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter(
-      (r) =>
-        r.title.toLowerCase().includes(q) || r.description.toLowerCase().includes(q),
-    );
-  }, [recipes, query]);
+    return recipes.filter((r) => {
+      if (activeTag && !r.tags.includes(activeTag)) return false;
+      if (!q) return true;
+      return (
+        r.title.toLowerCase().includes(q) ||
+        r.description.toLowerCase().includes(q) ||
+        r.tags.some((t) => t.includes(q)) ||
+        r.ingredient_names.some((n) => n.toLowerCase().includes(q))
+      );
+    });
+  }, [recipes, query, activeTag]);
 
   return (
     <>
@@ -31,7 +42,7 @@ export default function RecipesPage() {
         <div className="toolbar">
           <input
             className="searchbar"
-            placeholder="Search recipes…"
+            placeholder="Search recipes or ingredients…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
@@ -40,6 +51,26 @@ export default function RecipesPage() {
           </Link>
         </div>
       </div>
+
+      {allTags.length > 0 && (
+        <div className="tag-filter">
+          <button
+            className={`tag-pill${activeTag === null ? " active" : ""}`}
+            onClick={() => setActiveTag(null)}
+          >
+            All
+          </button>
+          {allTags.map((tag) => (
+            <button
+              key={tag}
+              className={`tag-pill${activeTag === tag ? " active" : ""}`}
+              onClick={() => setActiveTag(activeTag === tag ? null : tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      )}
 
       {recipes && recipes.length === 0 && (
         <div className="empty-state">
@@ -71,7 +102,11 @@ export default function RecipesPage() {
         <div className="empty-state">
           <div className="glyph">🔍</div>
           <h2>No matches</h2>
-          <p>No recipes match “{query}”.</p>
+          <p>
+            No recipes match
+            {query ? ` “${query}”` : ""}
+            {activeTag ? ` with tag “${activeTag}”` : ""}.
+          </p>
         </div>
       )}
     </>

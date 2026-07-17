@@ -74,6 +74,11 @@ export default function RecipeDetailPage() {
             {recipe.servings != null && (
               <span className="chip">Serves {recipe.servings}</span>
             )}
+            {recipe.tags.map((tag) => (
+              <span key={tag} className="chip green">
+                {tag}
+              </span>
+            ))}
           </div>
         </div>
       </div>

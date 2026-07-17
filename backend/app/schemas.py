@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
@@ -26,6 +26,15 @@ class RecipeIn(BaseModel):
     cook_minutes: int | None = Field(default=None, ge=0)
     servings: int | None = Field(default=None, ge=1)
     ingredients: list[IngredientIn] = []
+    tags: list[str] = []
+
+    def normalized_tags(self) -> list[str]:
+        seen: dict[str, None] = {}
+        for tag in self.tags:
+            cleaned = tag.strip().lower()[:50]
+            if cleaned:
+                seen.setdefault(cleaned, None)
+        return list(seen)
 
 
 class RecipeOut(BaseModel):
@@ -42,6 +51,7 @@ class RecipeOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     ingredients: list[IngredientOut]
+    tags: list[str]
 
 
 class RecipeSummary(BaseModel):
@@ -54,6 +64,9 @@ class RecipeSummary(BaseModel):
     prep_minutes: int | None
     cook_minutes: int | None
     servings: int | None
+    tags: list[str] = []
+    # Lets the client search recipes by what's in them.
+    ingredient_names: list[str] = []
 
 
 class MealPlanEntryIn(BaseModel):
@@ -118,3 +131,31 @@ class GroceryList(BaseModel):
 class GroceryToggle(BaseModel):
     key: str
     checked: bool
+
+
+class ImportRequest(BaseModel):
+    url: HttpUrl
+
+
+class RecipeDraft(BaseModel):
+    """Parsed but unsaved recipe returned by the URL importer; the client
+    prefills the form with it so the user can review before saving."""
+
+    title: str
+    description: str = ""
+    instructions: str = ""
+    prep_minutes: int | None = None
+    cook_minutes: int | None = None
+    servings: int | None = None
+    ingredients: list[IngredientIn] = []
+    image_url: str | None = None
+    source_url: str
+
+
+class ImageFromUrl(BaseModel):
+    url: HttpUrl
+
+
+class CopyWeekRequest(BaseModel):
+    from_start: date
+    to_start: date

@@ -23,11 +23,17 @@ export default function RecipeFormPage() {
   const [cook, setCook] = useState("");
   const [servings, setServings] = useState("");
   const [rows, setRows] = useState<IngredientDraft[]>([{ ...EMPTY_ROW }]);
+  const [tags, setTags] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImage, setExistingImage] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  // Photo URL captured by the importer; downloaded server-side on save.
+  const [importedImageUrl, setImportedImageUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -40,6 +46,7 @@ export default function RecipeFormPage() {
         setPrep(r.prep_minutes?.toString() ?? "");
         setCook(r.cook_minutes?.toString() ?? "");
         setServings(r.servings?.toString() ?? "");
+        setTags(r.tags.join(", "));
         setExistingImage(r.image_filename);
         setRows(
           r.ingredients.length > 0
@@ -60,6 +67,37 @@ export default function RecipeFormPage() {
 
   function removeRow(index: number) {
     setRows((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== index) : rows));
+  }
+
+  async function handleImport() {
+    if (!importUrl.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const draft = await api.importRecipe(importUrl.trim());
+      setTitle(draft.title);
+      setDescription(draft.description);
+      setInstructions(draft.instructions);
+      setPrep(draft.prep_minutes?.toString() ?? "");
+      setCook(draft.cook_minutes?.toString() ?? "");
+      setServings(draft.servings?.toString() ?? "");
+      setRows(
+        draft.ingredients.length > 0
+          ? draft.ingredients.map((i) => ({
+              quantity: i.quantity?.toString() ?? "",
+              unit: i.unit ?? "",
+              name: i.name,
+            }))
+          : [{ ...EMPTY_ROW }],
+      );
+      setImportedImageUrl(draft.image_url);
+      setImageFile(null);
+      setRemoveImage(false);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Import failed.");
+    } finally {
+      setImporting(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -86,6 +124,7 @@ export default function RecipeFormPage() {
       cook_minutes: cook.trim() === "" ? null : Number(cook),
       servings: servings.trim() === "" ? null : Number(servings),
       ingredients,
+      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
     };
     if (!payload.title) {
       setError("Give your recipe a title.");
@@ -99,6 +138,9 @@ export default function RecipeFormPage() {
         : await api.createRecipe(payload);
       if (imageFile) {
         await api.uploadImage(recipe.id, imageFile);
+      } else if (importedImageUrl && !removeImage) {
+        // Best effort: a recipe without its photo is still worth saving.
+        await api.imageFromUrl(recipe.id, importedImageUrl).catch(() => undefined);
       } else if (removeImage && existingImage) {
         await api.deleteImage(recipe.id);
       }
@@ -112,7 +154,7 @@ export default function RecipeFormPage() {
   const previewUrl = imageFile
     ? URL.createObjectURL(imageFile)
     : !removeImage
-      ? imageUrl(existingImage)
+      ? (importedImageUrl ?? imageUrl(existingImage))
       : null;
 
   return (
@@ -120,6 +162,38 @@ export default function RecipeFormPage() {
       <div className="page-head">
         <h1>{isEdit ? "Edit recipe" : "New recipe"}</h1>
       </div>
+
+      {!isEdit && (
+        <div className="import-box">
+          <div className="import-row">
+            <input
+              type="url"
+              placeholder="Paste a recipe URL to import, e.g. https://www.budgetbytes.com/…"
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleImport();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn primary"
+              onClick={handleImport}
+              disabled={importing || !importUrl.trim()}
+            >
+              {importing ? "Importing…" : "Import"}
+            </button>
+          </div>
+          <span className="hint">
+            Reads the recipe data most cooking sites embed and fills in the form
+            below for you to review.
+          </span>
+          {importError && <div className="error-banner">{importError}</div>}
+        </div>
+      )}
 
       <form className="form" onSubmit={handleSubmit}>
         {error && <div className="error-banner">{error}</div>}
@@ -158,13 +232,14 @@ export default function RecipeFormPage() {
                   setRemoveImage(false);
                 }}
               />
-              {(imageFile || (existingImage && !removeImage)) && (
+              {(imageFile || importedImageUrl || (existingImage && !removeImage)) && (
                 <button
                   type="button"
                   className="btn small danger"
                   style={{ alignSelf: "flex-start" }}
                   onClick={() => {
                     setImageFile(null);
+                    setImportedImageUrl(null);
                     setRemoveImage(true);
                   }}
                 >
@@ -250,6 +325,17 @@ export default function RecipeFormPage() {
           >
             + Add ingredient
           </button>
+        </div>
+
+        <div className="field">
+          <label htmlFor="tags">Tags</label>
+          <span className="hint">Comma separated, e.g. quick, vegetarian, weeknight.</span>
+          <input
+            id="tags"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="quick, vegetarian"
+          />
         </div>
 
         <div className="field">
