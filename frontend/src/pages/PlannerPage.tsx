@@ -56,6 +56,18 @@ export default function PlannerPage() {
     reload();
   }
 
+  async function changeServings(entry: MealPlanEntry, delta: number) {
+    const base = entry.servings ?? entry.recipe.servings;
+    if (base == null) return;
+    const next = Math.max(1, base + delta);
+    // Back to the recipe default? Store null so future recipe edits flow through.
+    await api.updateMealPlanServings(
+      entry.id,
+      next === entry.recipe.servings ? null : next,
+    );
+    reload();
+  }
+
   async function copyLastWeek() {
     const created = await api.copyWeek(
       toISODate(addDays(weekStart, -7)),
@@ -120,6 +132,7 @@ export default function PlannerPage() {
             byCell={byCell}
             onAdd={(date) => setPicker({ date, meal })}
             onRemove={removeEntry}
+            onChangeServings={changeServings}
           />
         ))}
       </div>
@@ -141,12 +154,14 @@ function MealRow({
   byCell,
   onAdd,
   onRemove,
+  onChangeServings,
 }: {
   meal: Meal;
   days: Date[];
   byCell: Map<string, MealPlanEntry[]>;
   onAdd: (date: string) => void;
   onRemove: (id: number) => void;
+  onChangeServings: (entry: MealPlanEntry, delta: number) => void;
 }) {
   return (
     <>
@@ -156,18 +171,45 @@ function MealRow({
         const cellEntries = byCell.get(`${iso}|${meal}`) ?? [];
         return (
           <div key={iso} className={`plan-cell${isToday(d) ? " today" : ""}`}>
-            {cellEntries.map((e) => (
-              <div key={e.id} className="plan-entry">
-                <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
-                <button
-                  className="remove"
-                  aria-label={`Remove ${e.recipe.title}`}
-                  onClick={() => onRemove(e.id)}
-                >
-                  ✕
-                </button>
-              </div>
-            ))}
+            {cellEntries.map((e) => {
+              const servings = e.servings ?? e.recipe.servings;
+              return (
+                <div key={e.id} className="plan-entry">
+                  <div className="plan-entry-main">
+                    <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
+                    <button
+                      className="remove"
+                      aria-label={`Remove ${e.recipe.title}`}
+                      onClick={() => onRemove(e.id)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {servings != null && (
+                    <div className="serv">
+                      <button
+                        aria-label="Fewer servings"
+                        onClick={() => onChangeServings(e, -1)}
+                      >
+                        −
+                      </button>
+                      <span
+                        className={e.servings != null ? "overridden" : ""}
+                        title={`${servings} serving${servings === 1 ? "" : "s"}`}
+                      >
+                        ×{servings}
+                      </span>
+                      <button
+                        aria-label="More servings"
+                        onClick={() => onChangeServings(e, 1)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
             <button className="plan-add" onClick={() => onAdd(iso)}>
               + Add
             </button>

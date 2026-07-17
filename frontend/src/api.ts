@@ -51,6 +51,8 @@ export interface MealPlanEntry {
   id: number;
   plan_date: string;
   meal: Meal;
+  // Planned servings; null means the recipe's own serving count.
+  servings: number | null;
   recipe: RecipeSummary;
 }
 
@@ -140,6 +142,11 @@ export const api = {
     request<MealPlanEntry>("/api/meal-plan", {
       method: "POST",
       body: JSON.stringify({ plan_date, meal, recipe_id }),
+    }),
+  updateMealPlanServings: (id: number, servings: number | null) =>
+    request<MealPlanEntry>(`/api/meal-plan/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ servings }),
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),

@@ -57,9 +57,18 @@ item_key = canonical_key
 
 
 def format_quantity(q: float) -> str:
+    q = round(q, 2)
     if q == int(q):
         return str(int(q))
     return f"{q:g}"
+
+
+def scale_factor(entry: MealPlanEntry) -> float:
+    """How much to scale this entry's ingredient quantities: planned servings
+    over the recipe's own serving count. 1.0 when either side is unset."""
+    if entry.servings and entry.recipe.servings:
+        return entry.servings / entry.recipe.servings
+    return 1.0
 
 
 # Units whose display form pluralizes with a plain "s" ("2 cans", "3 cups").
@@ -105,21 +114,23 @@ async def build_grocery_list(
     uses: dict[str, list[GroceryRecipeUse]] = defaultdict(list)
 
     for entry in entries:
+        factor = scale_factor(entry)
         for ing in entry.recipe.ingredients:
             key = item_key(ing.name)
             if not key:
                 continue
             name_variants[key].append(ing.name.strip())
             unit = normalize_unit(ing.unit)
-            if ing.quantity is not None:
-                quantities[key][unit] += ing.quantity
+            scaled = ing.quantity * factor if ing.quantity is not None else None
+            if scaled is not None:
+                quantities[key][unit] += scaled
             else:
                 no_quantity_uses[key] += 1
             uses[key].append(
                 GroceryRecipeUse(
                     recipe_id=entry.recipe.id,
                     recipe_title=entry.recipe.title,
-                    quantity=ing.quantity,
+                    quantity=round(scaled, 2) if scaled is not None else None,
                     unit=unit,
                 )
             )

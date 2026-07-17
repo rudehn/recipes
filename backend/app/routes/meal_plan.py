@@ -6,7 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import MealPlanEntry, Recipe
-from ..schemas import CopyWeekRequest, MealPlanEntryIn, MealPlanEntryOut
+from ..schemas import (
+    CopyWeekRequest,
+    MealPlanEntryIn,
+    MealPlanEntryOut,
+    MealPlanEntryUpdate,
+)
 
 router = APIRouter(prefix="/meal-plan", tags=["meal-plan"])
 
@@ -32,9 +37,27 @@ async def create_entry(
     if await session.get(Recipe, data.recipe_id) is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
     entry = MealPlanEntry(
-        plan_date=data.plan_date, meal=data.meal, recipe_id=data.recipe_id
+        plan_date=data.plan_date,
+        meal=data.meal,
+        recipe_id=data.recipe_id,
+        servings=data.servings,
     )
     session.add(entry)
+    await session.commit()
+    await session.refresh(entry)
+    return entry
+
+
+@router.patch("/{entry_id}", response_model=MealPlanEntryOut)
+async def update_entry(
+    entry_id: int,
+    data: MealPlanEntryUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    entry = await session.get(MealPlanEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Meal plan entry not found")
+    entry.servings = data.servings
     await session.commit()
     await session.refresh(entry)
     return entry
@@ -81,7 +104,10 @@ async def copy_week(
             continue
         taken.add(target)
         copy = MealPlanEntry(
-            plan_date=target[0], meal=entry.meal, recipe_id=entry.recipe_id
+            plan_date=target[0],
+            meal=entry.meal,
+            recipe_id=entry.recipe_id,
+            servings=entry.servings,
         )
         session.add(copy)
         created.append(copy)

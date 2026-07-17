@@ -4,7 +4,7 @@ import { api, imageUrl, type RecipeSummary } from "../api";
 
 export function formatQuantity(q: number | null, unit: string | null): string {
   if (q === null) return "";
-  const num = Number.isInteger(q) ? String(q) : String(q);
+  const num = String(parseFloat(q.toFixed(2)));
   return unit ? `${num} ${unit}` : num;
 }
 

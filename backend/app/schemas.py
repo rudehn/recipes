@@ -73,6 +73,12 @@ class MealPlanEntryIn(BaseModel):
     plan_date: date
     meal: Meal
     recipe_id: int
+    servings: int | None = Field(default=None, ge=1)
+
+
+class MealPlanEntryUpdate(BaseModel):
+    # None resets to the recipe's own serving count.
+    servings: int | None = Field(default=None, ge=1)
 
 
 class MealPlanEntryOut(BaseModel):
@@ -81,6 +87,7 @@ class MealPlanEntryOut(BaseModel):
     id: int
     plan_date: date
     meal: Meal
+    servings: int | None
     recipe: RecipeSummary
 
 

@@ -94,6 +94,9 @@ class MealPlanEntry(Base):
     recipe_id: Mapped[int] = mapped_column(
         ForeignKey("recipes.id", ondelete="CASCADE"), index=True
     )
+    # Servings to cook; null means the recipe's own serving count. Grocery
+    # quantities scale by servings / recipe.servings.
+    servings: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     recipe: Mapped[Recipe] = relationship(lazy="selectin")

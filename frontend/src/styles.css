@@ -392,6 +392,37 @@ input:focus, select:focus, textarea:focus {
   margin-bottom: 12px;
 }
 
+.panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.servings-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface-2);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+.servings-stepper button {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--accent-dark);
+  font-size: 1rem;
+}
+
+.servings-stepper button:hover { background: var(--accent-soft); }
+
 .ingredient-list {
   list-style: none;
   margin: 0;
@@ -582,8 +613,8 @@ input:focus, select:focus, textarea:focus {
 
 .plan-entry {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
   background: var(--green-soft);
   color: #3c5233;
   border-radius: 7px;
@@ -593,7 +624,40 @@ input:focus, select:focus, textarea:focus {
   line-height: 1.25;
 }
 
+.plan-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .plan-entry a { flex: 1; }
+
+.serv {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6c8260;
+}
+
+.serv .overridden { color: var(--accent-dark); }
+
+.serv button {
+  width: 16px;
+  height: 16px;
+  line-height: 1;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: #6c8260;
+  font-size: 0.85rem;
+}
+
+.serv button:hover {
+  background: rgba(60, 82, 51, 0.12);
+  color: #3c5233;
+}
 .plan-entry a:hover { text-decoration: underline; }
 
 .plan-entry .remove {

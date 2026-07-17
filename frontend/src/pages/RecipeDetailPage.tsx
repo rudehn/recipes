@@ -9,6 +9,8 @@ export default function RecipeDetailPage() {
   const navigate = useNavigate();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Cook-time scaling of the displayed ingredient amounts.
+  const [scaledServings, setScaledServings] = useState<number | null>(null);
 
   useEffect(() => {
     api
@@ -85,14 +87,49 @@ export default function RecipeDetailPage() {
 
       <div className="detail-cols">
         <div className="panel">
-          <h2>Ingredients</h2>
+          <div className="panel-head">
+            <h2>Ingredients</h2>
+            {recipe.servings != null && (
+              <div className="servings-stepper">
+                <button
+                  aria-label="Fewer servings"
+                  onClick={() =>
+                    setScaledServings(
+                      Math.max(1, (scaledServings ?? recipe.servings!) - 1),
+                    )
+                  }
+                >
+                  −
+                </button>
+                <span>
+                  {scaledServings ?? recipe.servings} serving
+                  {(scaledServings ?? recipe.servings) === 1 ? "" : "s"}
+                </span>
+                <button
+                  aria-label="More servings"
+                  onClick={() =>
+                    setScaledServings((scaledServings ?? recipe.servings!) + 1)
+                  }
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </div>
           <ul className="ingredient-list">
-            {recipe.ingredients.map((ing) => (
-              <li key={ing.id}>
-                <span className="qty">{formatQuantity(ing.quantity, ing.unit)}</span>
-                <span>{ing.name}</span>
-              </li>
-            ))}
+            {recipe.ingredients.map((ing) => {
+              const factor =
+                scaledServings != null && recipe.servings
+                  ? scaledServings / recipe.servings
+                  : 1;
+              const quantity = ing.quantity != null ? ing.quantity * factor : null;
+              return (
+                <li key={ing.id}>
+                  <span className="qty">{formatQuantity(quantity, ing.unit)}</span>
+                  <span>{ing.name}</span>
+                </li>
+              );
+            })}
             {recipe.ingredients.length === 0 && (
               <li style={{ color: "var(--muted)" }}>No ingredients listed.</li>
             )}
