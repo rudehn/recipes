@@ -49,6 +49,11 @@ def test_singular_s_exceptions():
     assert canonical_key("asparagus") == "asparagus"
 
 
+def test_clean_display_strips_leading_optional():
+    assert clean_display("optional: pecans or walnuts") == "pecans or walnuts"
+    assert canonical_key("optional: pecans or walnuts") == canonical_key("pecans or walnuts")
+
+
 def test_clean_display_strips_annotations():
     assert (
         clean_display("evaporated milk (1 can, or 1 1/3 cups milk)")

@@ -56,6 +56,7 @@ def clean_display(name: str) -> str:
     s = _PRICE_RE.sub("", name)
     s = _PAREN_RE.sub("", s)
     s = s.split(",")[0]
+    s = re.sub(r"^\s*optional[:,]?\s+", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip(" .,;")
     return s or name.strip()
 
