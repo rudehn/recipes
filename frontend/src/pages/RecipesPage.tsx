@@ -46,6 +46,9 @@ export default function RecipesPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          <Link to="/recipes/search" className="btn">
+            🔍 Find online
+          </Link>
           <Link to="/recipes/new" className="btn primary">
             + New recipe
           </Link>
@@ -76,9 +79,12 @@ export default function RecipesPage() {
         <div className="empty-state">
           <div className="glyph">🍳</div>
           <h2>Your recipe box is empty</h2>
-          <p>Add your first recipe and start planning meals.</p>
-          <p>
-            <Link to="/recipes/new" className="btn primary">
+          <p>Search for a dish to fill one in for you, or write your own.</p>
+          <p className="toolbar" style={{ justifyContent: "center" }}>
+            <Link to="/recipes/search" className="btn primary">
+              🔍 Find a recipe online
+            </Link>
+            <Link to="/recipes/new" className="btn">
               + New recipe
             </Link>
           </p>

@@ -109,6 +109,15 @@ export function imageUrl(filename: string | null): string | null {
   return filename ? `/api/images/${filename}` : null;
 }
 
+/** Site a search result came from, for labelling the comparison tabs. */
+export function sourceLabel(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 export const api = {
   listRecipes: () => request<RecipeSummary[]>("/api/recipes"),
   getRecipe: (id: number) => request<Recipe>(`/api/recipes/${id}`),
@@ -134,6 +143,11 @@ export const api = {
     request<RecipeDraft>("/api/import/recipe", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+  searchRecipes: (query: string) =>
+    request<RecipeDraft[]>("/api/import/search", {
+      method: "POST",
+      body: JSON.stringify({ query }),
     }),
 
   listMealPlan: (start: string, end: string) =>

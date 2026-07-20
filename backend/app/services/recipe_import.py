@@ -69,15 +69,30 @@ def _parse_iso_minutes(value: object) -> int | None:
 
 
 def _parse_servings(value: object) -> int | None:
-    if isinstance(value, list):
-        value = value[0] if value else None
-    if isinstance(value, (int, float)):
-        return int(value) or None
-    if isinstance(value, str):
-        match = re.search(r"\d+", value)
-        if match:
-            return int(match.group())
-    return None
+    """Servings from a recipeYield, which is rarely a plain number.
+
+    Sites commonly publish a list whose first entry is a useless unit count:
+    ``["1", "1 loaf (12 slices)"]`` means twelve servings, not one. We take the
+    largest number on offer, since the informative figure is the bigger one and
+    understating servings inflates quantities once the planner scales a recipe.
+    """
+    candidates = value if isinstance(value, list) else [value]
+    best: int | None = None
+    for candidate in candidates:
+        if isinstance(candidate, bool):
+            continue
+        if isinstance(candidate, (int, float)):
+            found = [int(candidate)]
+        elif isinstance(candidate, str):
+            # Drop pan dimensions ("9x13 inch") so they cannot pose as a yield.
+            cleaned = re.sub(r"\d+\s*[x×]\s*\d+", " ", candidate)
+            found = [int(n) for n in re.findall(r"\d+", cleaned)]
+        else:
+            continue
+        for number in found:
+            if number > 0 and (best is None or number > best):
+                best = number
+    return best
 
 
 def _parse_image(value: object) -> str | None:
@@ -111,6 +126,14 @@ def _parse_instructions(value: object) -> str:
                 walk(item)
 
     walk(value)
+    # Some sites (Half Baked Harvest) publish every step as one long run of
+    # prose. Split it into sentences so the numbered list is usable. Only for a
+    # lone oversized step: where a site marked up real steps, we trust them.
+    if len(steps) == 1 and len(steps[0]) > 200:
+        sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-Z0-9])", steps[0])]
+        sentences = [s for s in sentences if s]
+        if len(sentences) > 1:
+            steps = sentences
     return "\n".join(steps)
 
 

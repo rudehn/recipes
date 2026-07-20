@@ -144,9 +144,14 @@ class ImportRequest(BaseModel):
     url: HttpUrl
 
 
+class RecipeSearchRequest(BaseModel):
+    query: str = Field(min_length=2, max_length=100)
+
+
 class RecipeDraft(BaseModel):
-    """Parsed but unsaved recipe returned by the URL importer; the client
-    prefills the form with it so the user can review before saving."""
+    """Parsed but unsaved recipe returned by the URL importer and the recipe
+    search; the client prefills the form with it so the user can review before
+    saving."""
 
     title: str
     description: str = ""

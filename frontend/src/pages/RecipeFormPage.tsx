@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { api, imageUrl, type RecipeInput } from "../api";
+import { api, imageUrl, sourceLabel, type RecipeDraft, type RecipeInput } from "../api";
 
 interface IngredientDraft {
   quantity: string;
@@ -15,6 +15,9 @@ export default function RecipeFormPage() {
   const { id } = useParams();
   const isEdit = id !== undefined;
   const navigate = useNavigate();
+  const location = useLocation();
+  // Set when arriving from the recipe search having picked a result.
+  const pickedDraft = (location.state as { draft?: RecipeDraft } | null)?.draft;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -61,6 +64,31 @@ export default function RecipeFormPage() {
       .catch((e) => setError(e.message));
   }, [id, isEdit]);
 
+  const applyDraft = useCallback((draft: RecipeDraft) => {
+    setTitle(draft.title);
+    setDescription(draft.description);
+    setInstructions(draft.instructions);
+    setPrep(draft.prep_minutes?.toString() ?? "");
+    setCook(draft.cook_minutes?.toString() ?? "");
+    setServings(draft.servings?.toString() ?? "");
+    setRows(
+      draft.ingredients.length > 0
+        ? draft.ingredients.map((i) => ({
+            quantity: i.quantity?.toString() ?? "",
+            unit: i.unit ?? "",
+            name: i.name,
+          }))
+        : [{ ...EMPTY_ROW }],
+    );
+    setImportedImageUrl(draft.image_url);
+    setImageFile(null);
+    setRemoveImage(false);
+  }, []);
+
+  useEffect(() => {
+    if (pickedDraft) applyDraft(pickedDraft);
+  }, [pickedDraft, applyDraft]);
+
   function updateRow(index: number, patch: Partial<IngredientDraft>) {
     setRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -74,25 +102,7 @@ export default function RecipeFormPage() {
     setImporting(true);
     setImportError(null);
     try {
-      const draft = await api.importRecipe(importUrl.trim());
-      setTitle(draft.title);
-      setDescription(draft.description);
-      setInstructions(draft.instructions);
-      setPrep(draft.prep_minutes?.toString() ?? "");
-      setCook(draft.cook_minutes?.toString() ?? "");
-      setServings(draft.servings?.toString() ?? "");
-      setRows(
-        draft.ingredients.length > 0
-          ? draft.ingredients.map((i) => ({
-              quantity: i.quantity?.toString() ?? "",
-              unit: i.unit ?? "",
-              name: i.name,
-            }))
-          : [{ ...EMPTY_ROW }],
-      );
-      setImportedImageUrl(draft.image_url);
-      setImageFile(null);
-      setRemoveImage(false);
+      applyDraft(await api.importRecipe(importUrl.trim()));
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Import failed.");
     } finally {
@@ -163,7 +173,19 @@ export default function RecipeFormPage() {
         <h1>{isEdit ? "Edit recipe" : "New recipe"}</h1>
       </div>
 
-      {!isEdit && (
+      {!isEdit && pickedDraft && (
+        <div className="import-box">
+          <span className="hint">
+            Prefilled from{" "}
+            <a href={pickedDraft.source_url} target="_blank" rel="noreferrer noopener">
+              {sourceLabel(pickedDraft.source_url)}
+            </a>
+            . Edit anything you like, then save it to your recipe box.
+          </span>
+        </div>
+      )}
+
+      {!isEdit && !pickedDraft && (
         <div className="import-box">
           <div className="import-row">
             <input

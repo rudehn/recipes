@@ -5,6 +5,9 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 ## Features
 
 * Recipes with a photo, structured ingredients (quantity / unit / name), and step-by-step instructions.
+* Search for a dish and get a dozen real recipes for it, pulled from a curated set of cooking sites and shown side by side as tabs.
+  Compare ingredient count, steps, total time, and servings, then pick the one you like and edit it before saving.
+  Nothing is written to your recipe box until you save.
 * Import a recipe from a URL: paste a link and the schema.org data most cooking sites embed fills in the form, photo included.
 * Tags with one-tap filtering, and search that also matches ingredients ("what can I make with basil?").
 * Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
@@ -23,6 +26,11 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 | database | Postgres 16 (SQLite fallback for bare local dev) | `postgres:16-alpine` |
 
 Uploaded photos are stored on a volume at `DATA_DIR` (`/data` in the container) and served at `/api/images/<file>`.
+
+Recipe search needs no API key or account.
+Instead of a search engine, it queries the public WordPress search API (`/wp-json/wp/v2/search`) of each site on the allowlist in `backend/app/services/recipe_search.py`, then runs the results through the same parser the URL importer uses.
+That keeps us on documented, publicly exposed endpoints of sites that have been vetted by hand rather than crawling the open web.
+To add a site, confirm it publishes schema.org/Recipe JSON-LD - one that does not can be searched but never parsed, so it would only ever contribute failures.
 
 ## Local development
 

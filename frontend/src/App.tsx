@@ -5,6 +5,7 @@ import PantryPage from "./pages/PantryPage";
 import PlannerPage from "./pages/PlannerPage";
 import RecipeDetailPage from "./pages/RecipeDetailPage";
 import RecipeFormPage from "./pages/RecipeFormPage";
+import RecipeSearchPage from "./pages/RecipeSearchPage";
 import RecipesPage from "./pages/RecipesPage";
 
 export default function App() {
@@ -28,6 +29,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/recipes" replace />} />
           <Route path="/recipes" element={<RecipesPage />} />
+          <Route path="/recipes/search" element={<RecipeSearchPage />} />
           <Route path="/recipes/new" element={<RecipeFormPage />} />
           <Route path="/recipes/:id" element={<RecipeDetailPage />} />
           <Route path="/recipes/:id/edit" element={<RecipeFormPage />} />

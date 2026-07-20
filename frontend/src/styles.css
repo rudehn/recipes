@@ -920,8 +920,158 @@ input:focus, select:focus, textarea:focus {
   flex-wrap: wrap;
 }
 
+/* ---------- Recipe search: comparing candidate recipes ---------- */
+
+.inline-link {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+.result-tabs-header {
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.result-tabs-header .count {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* Fades mark tabs scrolled out of view, so a long result set does not just
+   look like it was clipped. Each side appears only when there is more there. */
+.result-tabs-wrap {
+  position: relative;
+}
+
+.result-tabs-wrap::before,
+.result-tabs-wrap::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 10px;
+  width: 40px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 1;
+}
+
+.result-tabs-wrap::before {
+  left: 0;
+  background: linear-gradient(to right, var(--bg), transparent);
+}
+
+.result-tabs-wrap::after {
+  right: 0;
+  background: linear-gradient(to left, var(--bg), transparent);
+}
+
+.result-tabs-wrap.fade-left::before,
+.result-tabs-wrap.fade-right::after {
+  opacity: 1;
+}
+
+/* Horizontal strip: on a phone this scrolls rather than wrapping into a wall
+   of tabs that pushes the recipe itself off screen. */
+.result-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+  scroll-behavior: smooth;
+}
+
+.result-tab {
+  flex: 0 0 auto;
+  max-width: 210px;
+  text-align: left;
+  padding: 9px 13px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.result-tab:hover { background: var(--surface-2); }
+
+.result-tab .site {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.result-tab .name {
+  font-size: 0.9rem;
+  line-height: 1.3;
+  /* Long titles truncate so every tab stays the same height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-tab.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.result-tab.active .site { color: var(--accent-dark); }
+
+.preview-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  margin-bottom: 22px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+
+.preview-banner a {
+  color: var(--accent-dark);
+  text-decoration: underline;
+}
+
+.compare-row {
+  display: flex;
+  gap: 26px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.compare-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.compare-stat .value {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  line-height: 1.15;
+}
+
+.compare-stat .label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
 @media (max-width: 720px) {
   .detail-hero, .detail-cols { grid-template-columns: 1fr; }
+  .compare-row { gap: 18px; }
+  .preview-banner .spacer { display: none; }
   .topbar-inner { padding: 12px 16px; gap: 14px; }
   .page { padding: 22px 16px 60px; }
   .nav a { padding: 6px 10px; font-size: 0.92rem; }
