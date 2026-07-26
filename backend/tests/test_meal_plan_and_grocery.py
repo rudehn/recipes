@@ -71,7 +71,7 @@ async def test_grocery_aggregates_across_recipes(client):
     by_name = {i["name"].lower(): i for i in data["items"]}
     # "cups" and "cup" merge; tbsp stays a separate amount on the same line.
     assert sorted(by_name["flour"]["amounts"]) == ["2 tbsp", "3 cups"]
-    assert by_name["milk"]["amounts"] == ["1.5 cups"]
+    assert by_name["milk"]["amounts"] == ["1½ cups"]
     assert len(by_name["flour"]["uses"]) == 3
 
 
@@ -105,8 +105,8 @@ async def test_grocery_merges_descriptive_ingredient_variants(client):
         "Banana Bread",
     }
     # "finely diced onion" + "onion" -> one line with both amounts.
-    assert sorted(by_name["onion"]["amounts"]) == ["0.25 cups", "1"]
-    assert by_name["green bell pepper"]["amounts"] == ["0.5"]
+    assert sorted(by_name["onion"]["amounts"]) == ["1", "¼ cup"]
+    assert by_name["green bell pepper"]["amounts"] == ["½"]
     assert len(data["items"]) == 3
 
 

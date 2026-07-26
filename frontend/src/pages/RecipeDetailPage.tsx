@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { api, type Recipe } from "../api";
-import { RecipePhoto, formatQuantity } from "../components/RecipeBits";
+import { RecipePhoto } from "../components/RecipeBits";
+import { formatQuantity } from "../quantity";
 
 export default function RecipeDetailPage() {
   const { id } = useParams();

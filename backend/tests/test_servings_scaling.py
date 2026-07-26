@@ -48,23 +48,23 @@ async def test_grocery_unscaled_without_override(client):
     curry = await make_recipe(client, "Curry", 4, CURRY_INGREDIENTS)
     await plan(client, "2026-07-20", "dinner", curry["id"])
     items = await grocery_items(client)
-    assert items["chicken"]["amounts"] == ["1.5 lb"]
+    assert items["chicken"]["amounts"] == ["1½ lb"]
 
 
 async def test_override_ignored_when_recipe_has_no_servings(client):
     curry = await make_recipe(client, "Curry", None, CURRY_INGREDIENTS)
     await plan(client, "2026-07-20", "dinner", curry["id"], servings=8)
     items = await grocery_items(client)
-    assert items["chicken"]["amounts"] == ["1.5 lb"]
+    assert items["chicken"]["amounts"] == ["1½ lb"]
 
 
 async def test_fractional_scaling_rounds_cleanly(client):
     curry = await make_recipe(client, "Curry", 3, CURRY_INGREDIENTS)
     await plan(client, "2026-07-20", "dinner", curry["id"], servings=4)
     items = await grocery_items(client)
-    # 1.5 * 4/3 = 2; 2 * 4/3 = 2.67 (rounded to 2 decimals)
+    # 1.5 * 4/3 = 2; 2 * 4/3 = 2.667, shown as the fraction a cook can measure.
     assert items["chicken"]["amounts"] == ["2 lb"]
-    assert items["rice"]["amounts"] == ["2.67 cups"]
+    assert items["rice"]["amounts"] == ["2⅔ cups"]
 
 
 async def test_patch_entry_servings(client):

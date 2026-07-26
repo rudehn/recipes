@@ -3,6 +3,8 @@
 Ingredients are merged across recipes by normalized name. Quantities are
 summed per normalized unit, so "2 cups flour" + "1 cup flour" becomes
 "3 cups", while mixed units are listed side by side ("1 cup + 2 tbsp").
+Totals are rendered as cooking fractions rather than decimals by
+services.quantity, so a scaled half-batch reads "1½ cups", not "1.5 cups".
 Pantry items that are in stock are dropped from the list; out-of-stock
 pantry items are added so a single list covers the whole shopping trip.
 """
@@ -17,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..models import GroceryCheck, Ingredient, MealPlanEntry, PantryItem, Recipe
 from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse
 from .canonical import best_display, canonical_key
+from .quantity import format_quantity
 
 UNIT_ALIASES = {
     "tablespoon": "tbsp", "tablespoons": "tbsp", "tbsps": "tbsp", "tbs": "tbsp",
@@ -56,13 +59,6 @@ def normalize_unit(unit: str | None) -> str | None:
 item_key = canonical_key
 
 
-def format_quantity(q: float) -> str:
-    q = round(q, 2)
-    if q == int(q):
-        return str(int(q))
-    return f"{q:g}"
-
-
 def scale_factor(entry: MealPlanEntry) -> float:
     """How much to scale this entry's ingredient quantities: planned servings
     over the recipe's own serving count. 1.0 when either side is unset."""
@@ -82,7 +78,10 @@ def _format_amounts(per_unit: dict[str | None, float], unitless_uses: int) -> li
         if unit is None:
             amounts.append(format_quantity(total))
         else:
-            display_unit = f"{unit}s" if unit in PLURALIZABLE_UNITS and total != 1 else unit
+            # Amounts of one or less stay singular the way recipes write them:
+            # "¼ cup", "1 cup", but "3 cups".
+            plural = unit in PLURALIZABLE_UNITS and total > 1
+            display_unit = f"{unit}s" if plural else unit
             amounts.append(f"{format_quantity(total)} {display_unit}")
     if not amounts and unitless_uses:
         amounts.append("as needed")

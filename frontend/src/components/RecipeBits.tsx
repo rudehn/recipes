@@ -2,12 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
 
-export function formatQuantity(q: number | null, unit: string | null): string {
-  if (q === null) return "";
-  const num = String(parseFloat(q.toFixed(2)));
-  return unit ? `${num} ${unit}` : num;
-}
-
 export function TimeChips({
   recipe,
 }: {

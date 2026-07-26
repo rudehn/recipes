@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
-import { api, imageUrl, sourceLabel, type RecipeDraft, type RecipeInput } from "../api";
+import {
+  api,
+  imageUrl,
+  sourceLabel,
+  type Ingredient,
+  type RecipeDraft,
+  type RecipeInput,
+} from "../api";
+import { formatAmount, parseQuantity } from "../quantity";
 
 interface IngredientDraft {
   quantity: string;
@@ -10,6 +18,17 @@ interface IngredientDraft {
 }
 
 const EMPTY_ROW: IngredientDraft = { quantity: "", unit: "", name: "" };
+
+/** Ingredients as editable text, quantities shown as the fractions the rest of
+ *  the app displays so editing a recipe doesn't turn "¾" into "0.75". */
+function toRows(ingredients: Omit<Ingredient, "id">[]): IngredientDraft[] {
+  if (ingredients.length === 0) return [{ ...EMPTY_ROW }];
+  return ingredients.map((i) => ({
+    quantity: i.quantity != null ? formatAmount(i.quantity) : "",
+    unit: i.unit ?? "",
+    name: i.name,
+  }));
+}
 
 export default function RecipeFormPage() {
   const { id } = useParams();
@@ -51,15 +70,7 @@ export default function RecipeFormPage() {
         setServings(r.servings?.toString() ?? "");
         setTags(r.tags.join(", "));
         setExistingImage(r.image_filename);
-        setRows(
-          r.ingredients.length > 0
-            ? r.ingredients.map((i) => ({
-                quantity: i.quantity?.toString() ?? "",
-                unit: i.unit ?? "",
-                name: i.name,
-              }))
-            : [{ ...EMPTY_ROW }],
-        );
+        setRows(toRows(r.ingredients));
       })
       .catch((e) => setError(e.message));
   }, [id, isEdit]);
@@ -71,15 +82,7 @@ export default function RecipeFormPage() {
     setPrep(draft.prep_minutes?.toString() ?? "");
     setCook(draft.cook_minutes?.toString() ?? "");
     setServings(draft.servings?.toString() ?? "");
-    setRows(
-      draft.ingredients.length > 0
-        ? draft.ingredients.map((i) => ({
-            quantity: i.quantity?.toString() ?? "",
-            unit: i.unit ?? "",
-            name: i.name,
-          }))
-        : [{ ...EMPTY_ROW }],
-    );
+    setRows(toRows(draft.ingredients));
     setImportedImageUrl(draft.image_url);
     setImageFile(null);
     setRemoveImage(false);
@@ -118,11 +121,11 @@ export default function RecipeFormPage() {
       .filter((r) => r.name.trim())
       .map((r) => ({
         name: r.name.trim(),
-        quantity: r.quantity.trim() === "" ? null : Number(r.quantity),
+        quantity: parseQuantity(r.quantity),
         unit: r.unit.trim() === "" ? null : r.unit.trim(),
       }));
     if (ingredients.some((i) => i.quantity !== null && !Number.isFinite(i.quantity))) {
-      setError("Ingredient quantities must be numbers.");
+      setError("Ingredient quantities must be numbers or fractions like 1 1/2.");
       return;
     }
 
@@ -307,13 +310,15 @@ export default function RecipeFormPage() {
 
         <div className="field">
           <label>Ingredients</label>
-          <span className="hint">Quantity and unit are optional; leave them blank for “to taste”.</span>
+          <span className="hint">
+            Quantity and unit are optional; leave them blank for “to taste”. Fractions
+            like “1 1/2” and “3/4” work.
+          </span>
           {rows.map((row, i) => (
             <div className="ingredient-row" key={i}>
               <input
                 aria-label="Quantity"
                 placeholder="Qty"
-                inputMode="decimal"
                 value={row.quantity}
                 onChange={(e) => updateRow(i, { quantity: e.target.value })}
               />

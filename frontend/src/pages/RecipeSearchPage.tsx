@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, sourceLabel, type RecipeDraft } from "../api";
-import { formatQuantity } from "../components/RecipeBits";
+import { formatQuantity } from "../quantity";
 
 function totalMinutes(draft: RecipeDraft): number | null {
   const total = (draft.prep_minutes ?? 0) + (draft.cook_minutes ?? 0);
