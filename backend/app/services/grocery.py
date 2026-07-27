@@ -34,6 +34,7 @@ UNIT_ALIASES = {
     "cloves": "clove",
     "cans": "can",
     "packages": "package", "pkg": "package",
+    "packets": "packet",
     "bunches": "bunch",
     "pieces": "piece", "pcs": "piece",
     "slices": "slice",
@@ -69,7 +70,9 @@ def scale_factor(entry: MealPlanEntry) -> float:
 
 # Units whose display form pluralizes with a plain "s" ("2 cans", "3 cups").
 # Abbreviations (tbsp, g, lb, oz) stay as-is.
-PLURALIZABLE_UNITS = {"cup", "can", "clove", "package", "bunch", "piece", "slice", "pinch"}
+PLURALIZABLE_UNITS = {
+    "cup", "can", "clove", "package", "packet", "bunch", "piece", "slice", "pinch",
+}
 
 
 def _format_amounts(per_unit: dict[str | None, float], unitless_uses: int) -> list[str]:

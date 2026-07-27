@@ -81,10 +81,38 @@ def test_parse_recipe_html_without_recipe_raises():
         ("1 pinch", IngredientIn(name="pinch", quantity=1, unit=None)),
         ("350g self-raising flour", IngredientIn(name="self-raising flour", quantity=350, unit="g")),
         ("250ml whole milk", IngredientIn(name="whole milk", quantity=250, unit="ml")),
+        # A modifier between the amount and the unit must not hide the unit.
+        (
+            "2 heaping teaspoons  minced garlic (3 to 4 cloves)",
+            IngredientIn(name="minced garlic (3 to 4 cloves)", quantity=2, unit="teaspoons"),
+        ),
+        # ...but only when a unit really follows it.
+        ("2 large eggs", IngredientIn(name="large eggs", quantity=2, unit=None)),
+        # Container size before the unit is dropped; trailing notes are kept.
+        (
+            "3 (3-ounce) packets ramen noodles (seasoning discarded)",
+            IngredientIn(name="ramen noodles (seasoning discarded)", quantity=3, unit="packets"),
+        ),
+        (
+            "2 (15 oz) cans black beans",
+            IngredientIn(name="black beans", quantity=2, unit="cans"),
+        ),
+        # An unclosed parenthesis leaves the text alone rather than eating it.
+        ("1 (14 ounce package cream cheese", IngredientIn(name="(14 ounce package cream cheese", quantity=1, unit=None)),
     ],
 )
 def test_parse_ingredient_line(line, expected):
     assert parse_ingredient_line(line) == expected
+
+
+def test_description_falls_back_to_meta_tag():
+    """Southern Bite publishes an empty JSON-LD description but a real meta one."""
+    html = SAMPLE_HTML.replace(
+        '"description": "Moist and easy.",', '"description": "",'
+    ).replace(
+        "<head>", '<head><meta name="description" content="Blurb from the page." />'
+    )
+    assert parse_recipe_html(html, "https://x.test").description == "Blurb from the page."
 
 
 async def test_import_endpoint_rejects_pages_without_recipe(client, monkeypatch):

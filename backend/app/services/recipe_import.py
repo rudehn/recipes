@@ -24,8 +24,16 @@ KNOWN_UNITS = (
     set(UNIT_ALIASES) | set(UNIT_ALIASES.values())
     | {"pinch", "dash", "stick", "sticks", "head", "heads", "sprig", "sprigs",
        "stalk", "stalks", "jar", "jars", "bottle", "bottles", "quart", "quarts",
-       "pint", "pints", "gallon", "gallons"}
+       "pint", "pints", "gallon", "gallons", "packet", "packets"}
 )
+
+# Adjectives recipes slip between the amount and the unit ("2 heaping
+# teaspoons minced garlic"). Only ever skipped when a real unit follows them,
+# so "3 ripe bananas" still keeps "ripe" as part of the ingredient name.
+UNIT_MODIFIERS = {
+    "heaping", "heaped", "scant", "level", "rounded", "generous", "packed",
+    "firmly", "lightly", "loosely", "large", "small", "big", "full",
+}
 
 
 class RecipeNotFound(Exception):
@@ -106,6 +114,17 @@ def _parse_image(value: object) -> str | None:
     return None
 
 
+def _meta_description(soup: BeautifulSoup) -> str:
+    """The page's own blurb, for sites that publish an empty JSON-LD
+    description (Southern Bite) but still fill in their meta tags."""
+    for attrs in ({"name": "description"}, {"property": "og:description"}):
+        tag = soup.find("meta", attrs=attrs)
+        content = tag.get("content") if tag else None
+        if isinstance(content, str) and content.strip():
+            return _strip_html(content)
+    return ""
+
+
 def _parse_instructions(value: object) -> str:
     steps: list[str] = []
 
@@ -148,6 +167,23 @@ def _token_to_number(token: str) -> float | None:
     return None
 
 
+def _skip_package_size(tokens: list[str], index: int) -> int:
+    """Index past a package size in parentheses right after the amount.
+
+    "3 (3-ounce) packets ramen noodles" and "2 (15 oz) cans black beans" state
+    the container size before the unit. It is noise on a shopping list - what
+    you buy is three packets - and left in place it hides the real unit, so we
+    drop it. Only a parenthetical that opens immediately after the number
+    counts; trailing notes like "(optional)" are part of the name.
+    """
+    if index >= len(tokens) or not tokens[index].startswith("("):
+        return index
+    for end in range(index, len(tokens)):
+        if tokens[end].endswith(")"):
+            return end + 1
+    return index  # Unclosed: leave the text alone.
+
+
 def parse_ingredient_line(line: str) -> IngredientIn:
     """Best-effort split of "1 ½ cups flour" into quantity/unit/name."""
     text = _strip_html(line)
@@ -173,11 +209,20 @@ def parse_ingredient_line(line: str) -> IngredientIn:
             break
 
     unit: str | None = None
-    if quantity is not None and index < len(tokens):
-        candidate = tokens[index].lower().rstrip(".,")
-        if candidate in KNOWN_UNITS:
-            unit = candidate
-            index += 1
+    if quantity is not None:
+        index = _skip_package_size(tokens, index)
+        # Step over any modifiers, but only commit to that if a unit follows.
+        after_modifiers = index
+        while (
+            after_modifiers < len(tokens)
+            and tokens[after_modifiers].lower().rstrip(".,") in UNIT_MODIFIERS
+        ):
+            after_modifiers += 1
+        if after_modifiers < len(tokens):
+            candidate = tokens[after_modifiers].lower().rstrip(".,")
+            if candidate in KNOWN_UNITS:
+                unit = candidate
+                index = after_modifiers + 1
 
     name = " ".join(tokens[index:]).strip()
     if name.lower().startswith("of "):
@@ -214,7 +259,11 @@ def parse_recipe_html(html: str, source_url: str) -> RecipeDraft:
     if not isinstance(title, str) or not title.strip():
         raise RecipeNotFound("Recipe data on that page has no title")
 
-    description = recipe.get("description")
+    raw_description = recipe.get("description")
+    description = _strip_html(raw_description) if isinstance(raw_description, str) else ""
+    if not description:
+        description = _meta_description(soup)
+
     ingredients_raw = recipe.get("recipeIngredient") or recipe.get("ingredients") or []
     if isinstance(ingredients_raw, str):
         ingredients_raw = [ingredients_raw]
@@ -228,7 +277,7 @@ def parse_recipe_html(html: str, source_url: str) -> RecipeDraft:
 
     return RecipeDraft(
         title=_strip_html(title)[:200],
-        description=_strip_html(description) if isinstance(description, str) else "",
+        description=description,
         instructions=_parse_instructions(recipe.get("recipeInstructions")),
         prep_minutes=prep,
         cook_minutes=cook,
