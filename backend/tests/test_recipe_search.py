@@ -2,7 +2,14 @@ import httpx
 import pytest
 
 from app.services.recipe_import import _parse_instructions, _parse_servings
-from app.services.recipe_search import ALLOWLIST, search_recipes, site_label
+from app.services.recipe_search import (
+    ALLOWLIST,
+    RESULTS_PER_SITE,
+    _search_allrecipes,
+    _search_wordpress,
+    search_recipes,
+    site_label,
+)
 from tests.test_import import SAMPLE_HTML
 
 
@@ -10,9 +17,21 @@ def _recipe_html(title: str) -> str:
     return SAMPLE_HTML.replace("Classic <b>Banana</b> Bread", title)
 
 
+def _allrecipes_search_html(urls: list[str]) -> str:
+    """An AllRecipes results page: recipe cards among the site chrome that
+    surrounds them, so the extractor has to be selective."""
+    cards = "".join(f'<a class="mntl-card" href="{u}">A recipe</a>' for u in urls)
+    return f"""<html><body>
+      <a href="https://www.allrecipes.com/">Home</a>
+      <a href="https://www.allrecipes.com/recipes/17562/dinner/">Dinner ideas</a>
+      <a href="https://www.allrecipes.com/article/how-to-braise/">How to braise</a>
+      {cards}
+    </body></html>"""
+
+
 class FakeNet:
-    """Stands in for the whole internet: search APIs keyed by host, plus the
-    recipe pages they point at."""
+    """Stands in for the whole internet: site search keyed by host, plus the
+    recipe pages the results point at."""
 
     def __init__(self, results: dict[str, list[str]], pages: dict[str, str]):
         self.results = results
@@ -27,6 +46,13 @@ class FakeNet:
                 return httpx.Response(500, text="boom", request=request)
             body = [{"url": u, "title": u} for u in self.results[host]]
             return httpx.Response(200, json=body, request=request)
+        # AllRecipes has no search API; it is scraped from its results page.
+        if url == "https://www.allrecipes.com/search":
+            host = httpx.URL(url).host
+            if host not in self.results:
+                return httpx.Response(500, text="boom", request=request)
+            html = _allrecipes_search_html(self.results[host])
+            return httpx.Response(200, text=html, request=request)
         self.fetched.append(url)
         if url not in self.pages:
             return httpx.Response(404, text="gone", request=request)
@@ -119,6 +145,70 @@ def test_site_label_names_allowlisted_sites():
 def test_every_allowlisted_site_has_a_distinct_label_and_https_base():
     assert len({s.label for s in ALLOWLIST}) == len(ALLOWLIST)
     assert all(s.base.startswith("https://") and not s.base.endswith("/") for s in ALLOWLIST)
+
+
+def test_allrecipes_is_allowlisted_with_its_own_search_strategy():
+    """AllRecipes is not WordPress, so the default strategy would find nothing
+    for it - and would do so silently, since search failures are swallowed."""
+    site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
+    assert site.base == "https://www.allrecipes.com"
+    assert site.search is _search_allrecipes
+    assert all(
+        s.search is _search_wordpress for s in ALLOWLIST if s.label != "AllRecipes"
+    )
+
+
+async def test_allrecipes_search_keeps_only_recipe_links(fake_net):
+    """Recipe pages live at /recipe/<id>/; category and article links on the
+    same results page are not recipes and must not be offered as drafts."""
+    found = [
+        "https://www.allrecipes.com/recipe/223042/chicken-parmesan/",
+        "https://www.allrecipes.com/recipe/62696/chicken-parmesan-casserole/",
+    ]
+    fake_net({"www.allrecipes.com": found}, {})
+
+    async with httpx.AsyncClient() as client:
+        site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
+        urls = await _search_allrecipes(client, site, "chicken parmesan")
+
+    assert urls == found
+
+
+async def test_allrecipes_search_caps_results_and_deduplicates(fake_net):
+    dupe = "https://www.allrecipes.com/recipe/1/a/"
+    fake_net(
+        {
+            "www.allrecipes.com": [
+                dupe,
+                dupe,
+                "https://www.allrecipes.com/recipe/2/b/",
+                "https://www.allrecipes.com/recipe/3/c/",
+            ]
+        },
+        {},
+    )
+    async with httpx.AsyncClient() as client:
+        site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
+        urls = await _search_allrecipes(client, site, "anything")
+
+    assert urls == [dupe, "https://www.allrecipes.com/recipe/2/b/"]
+    assert len(urls) == RESULTS_PER_SITE
+
+
+async def test_search_includes_allrecipes_drafts(fake_net):
+    """The whole point: an AllRecipes result reaches the comparison list
+    alongside the WordPress sites."""
+    wp = "https://www.budgetbytes.com/x/"
+    ar = "https://www.allrecipes.com/recipe/223042/chicken-parmesan/"
+    fake_net(
+        {"www.budgetbytes.com": [wp], "www.allrecipes.com": [ar]},
+        {wp: _recipe_html("Budget Parm"), ar: _recipe_html("AllRecipes Parm")},
+    )
+    drafts = await search_recipes("chicken parmesan")
+
+    assert {d.title for d in drafts} == {"Budget Parm", "AllRecipes Parm"}
+    by_url = {d.source_url: d for d in drafts}
+    assert site_label(by_url[ar].source_url) == "AllRecipes"
 
 
 @pytest.mark.parametrize(
