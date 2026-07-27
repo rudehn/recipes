@@ -52,6 +52,29 @@ async def get_recipe(recipe_id: int, session: AsyncSession = Depends(get_session
     return await _get_recipe(session, recipe_id)
 
 
+def _sync_tags(recipe: Recipe, wanted: list[str]) -> None:
+    """Reconcile a recipe's tag rows against the names it should now carry.
+
+    Assigning a fresh list of RecipeTag objects looks equivalent but is not:
+    each one is transient, so the ORM inserts every tag and orphan-deletes the
+    old rows. It flushes those inserts before the deletes, and recipe_tags is
+    unique on (recipe_id, name) - so a tag the user kept collides with its own
+    row that has not been deleted yet, and the save fails.
+
+    Touching only the difference sidesteps that ordering entirely: a kept tag
+    emits no SQL at all, and inserts and deletes can never involve the same
+    name, since a name is either wanted or it is not.
+    """
+    keep = set(wanted)
+    for row in list(recipe.tag_rows):
+        if row.name not in keep:
+            recipe.tag_rows.remove(row)
+    existing = {row.name for row in recipe.tag_rows}
+    for name in wanted:
+        if name not in existing:
+            recipe.tag_rows.append(RecipeTag(name=name))
+
+
 @router.put("/{recipe_id}", response_model=RecipeOut)
 async def update_recipe(
     recipe_id: int, data: RecipeIn, session: AsyncSession = Depends(get_session)
@@ -67,7 +90,7 @@ async def update_recipe(
         Ingredient(name=i.name, quantity=i.quantity, unit=i.unit, position=pos)
         for pos, i in enumerate(data.ingredients)
     ]
-    recipe.tag_rows = [RecipeTag(name=t) for t in data.normalized_tags()]
+    _sync_tags(recipe, data.normalized_tags())
     await session.commit()
     await session.refresh(recipe)
     return recipe
