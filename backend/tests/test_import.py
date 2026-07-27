@@ -144,3 +144,27 @@ async def test_import_endpoint_parses_recipe(client, monkeypatch):
     # Non-http(s) URLs are rejected by validation.
     resp = await client.post("/api/import/recipe", json={"url": "file:///etc/passwd"})
     assert resp.status_code == 422
+
+
+async def test_import_sends_browser_navigation_headers(client, monkeypatch):
+    """Sites like AllRecipes answer 403 with a JS challenge unless the request
+    carries the headers a browser sends on a top-level navigation. A
+    User-Agent alone does not clear it, so pin the whole set."""
+    import httpx
+
+    seen: dict[str, str] = {}
+
+    async def fake_get(self, url):
+        seen.update(self.headers)
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    resp = await client.post(
+        "/api/import/recipe", json={"url": "https://example.com/banana-bread"}
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert "Chrome/" in seen["user-agent"]
+    assert seen["upgrade-insecure-requests"] == "1"
+    assert seen["sec-fetch-mode"] == "navigate"
+    assert seen["sec-fetch-dest"] == "document"

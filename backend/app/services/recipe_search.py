@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from ..schemas import RecipeDraft
+from .fetch import BROWSER_HEADERS
 from .recipe_import import RecipeNotFound, parse_recipe_html
 
 
@@ -44,14 +45,6 @@ MAX_RESULTS = 12
 SEARCH_TIMEOUT = 8.0
 FETCH_TIMEOUT = 15.0
 MAX_CONCURRENT_FETCHES = 8
-
-FETCH_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/json",
-}
 
 
 def site_label(url: str) -> str:
@@ -104,7 +97,7 @@ async def search_recipes(query: str, limit: int = MAX_RESULTS) -> list[RecipeDra
 
     Results are unsaved: the caller previews them and picks one."""
     async with httpx.AsyncClient(
-        follow_redirects=True, headers=FETCH_HEADERS, timeout=FETCH_TIMEOUT
+        follow_redirects=True, headers=BROWSER_HEADERS, timeout=FETCH_TIMEOUT
     ) as client:
         per_site = await asyncio.gather(
             *(_search_site(client, site, query) for site in ALLOWLIST)
