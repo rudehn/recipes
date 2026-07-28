@@ -20,6 +20,7 @@ re-ranked here against the query, and ones that only brushed against it are
 dropped. See ``relevance``."""
 
 import asyncio
+import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
@@ -50,6 +51,8 @@ class Candidate:
     url: str
     title: str = ""
 
+
+log = logging.getLogger(__name__)
 
 SearchFn = Callable[[httpx.AsyncClient, "Site", str], Awaitable[list[Candidate]]]
 
@@ -176,10 +179,17 @@ async def _search_site(
     client: httpx.AsyncClient, site: Site, query: str
 ) -> list[Candidate]:
     """Hits from one site's search. Never raises: a site being down or having
-    changed its search should cost us that site, not the whole search."""
+    changed its search should cost us that site, not the whole search.
+
+    Swallowing the failure is right, staying quiet about it is not. A site can
+    drop off the allowlist for good - blocked, moved, or no longer answering
+    the endpoint we know - and the results simply get thinner, which looks
+    exactly like a query with fewer matches. This log line is the only place
+    that difference is visible."""
     try:
         return await site.search(client, site, query)
-    except (httpx.HTTPError, ValueError):
+    except (httpx.HTTPError, ValueError) as exc:
+        log.warning("%s search failed for %r: %s", site.label, query, exc)
         return []
 
 

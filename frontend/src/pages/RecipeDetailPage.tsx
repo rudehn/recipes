@@ -1,32 +1,36 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { api, type Recipe } from "../api";
+import { api } from "../api";
 import { RecipePhoto } from "../components/RecipeBits";
 import { formatQuantity } from "../quantity";
-import { errorMessage } from "../useLoad";
+import { useAction } from "../useAction";
+import { useLoad } from "../useLoad";
 
 export default function RecipeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const { data: recipe, error, reload } = useLoad(
+    useCallback(() => api.getRecipe(Number(id)), [id]),
+  );
+  const action = useAction();
   // Cook-time scaling of the displayed ingredient amounts.
   const [scaledServings, setScaledServings] = useState<number | null>(null);
 
-  useEffect(() => {
-    api
-      .getRecipe(Number(id))
-      .then(setRecipe)
-      .catch((e: unknown) => setError(errorMessage(e)));
-  }, [id]);
-
-  if (error) {
+  // Two ways to get here that want different offers: a recipe that is not
+  // there, where the only move is back to the list, and a server that could
+  // not be asked, where the answer may well be different in a moment. Both are
+  // on screen because the message is the server's and we cannot reliably tell
+  // them apart from it.
+  if (error && !recipe) {
     return (
-      <div className="empty-state">
+      <div className="empty-state" role="alert">
         <div className="glyph">🤷</div>
         <h2>{error}</h2>
-        <p>
+        <p className="toolbar" style={{ justifyContent: "center" }}>
+          <button className="btn primary" onClick={reload}>
+            Try again
+          </button>
           <Link to="/recipes" className="btn">
             Back to recipes
           </Link>
@@ -45,8 +49,7 @@ export default function RecipeDetailPage() {
     if (!window.confirm(`Delete “${recipe!.title}”? This also removes it from your meal plan.`)) {
       return;
     }
-    await api.deleteRecipe(recipe!.id);
-    navigate("/recipes");
+    if (await action.run(() => api.deleteRecipe(recipe!.id))) navigate("/recipes");
   }
 
   return (
@@ -63,6 +66,10 @@ export default function RecipeDetailPage() {
           </button>
         </div>
       </div>
+
+      {action.error && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+      )}
 
       <div className="detail-hero">
         <RecipePhoto recipe={recipe} />

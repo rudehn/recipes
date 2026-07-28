@@ -2,8 +2,9 @@ import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Meal, type MealPlanEntry } from "../api";
-import { LoadError } from "../components/LoadError";
+import { LoadFailure } from "../components/LoadError";
 import { RecipePickerModal } from "../components/RecipeBits";
+import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 import {
   addDays,
@@ -33,6 +34,7 @@ export default function PlannerPage() {
       [weekStart, weekEnd],
     ),
   );
+  const action = useAction();
 
   const byCell = useMemo(() => {
     const map = new Map<string, MealPlanEntry[]>();
@@ -45,14 +47,14 @@ export default function PlannerPage() {
 
   async function addEntry(recipeId: number) {
     if (!picker) return;
-    await api.addMealPlanEntry(picker.date, picker.meal, recipeId);
-    setPicker(null);
-    reload();
+    if (await action.run(() => api.addMealPlanEntry(picker.date, picker.meal, recipeId))) {
+      setPicker(null);
+      reload();
+    }
   }
 
   async function removeEntry(id: number) {
-    await api.deleteMealPlanEntry(id);
-    reload();
+    if (await action.run(() => api.deleteMealPlanEntry(id))) reload();
   }
 
   async function changeServings(entry: MealPlanEntry, delta: number) {
@@ -60,18 +62,18 @@ export default function PlannerPage() {
     if (base == null) return;
     const next = Math.max(1, base + delta);
     // Back to the recipe default? Store null so future recipe edits flow through.
-    await api.updateMealPlanServings(
-      entry.id,
-      next === entry.recipe.servings ? null : next,
+    const saved = await action.run(() =>
+      api.updateMealPlanServings(entry.id, next === entry.recipe.servings ? null : next),
     );
-    reload();
+    if (saved) reload();
   }
 
   async function copyLastWeek() {
-    const created = await api.copyWeek(
-      toISODate(addDays(weekStart, -7)),
-      toISODate(weekStart),
-    );
+    let created: MealPlanEntry[] = [];
+    const copied = await action.run(async () => {
+      created = await api.copyWeek(toISODate(addDays(weekStart, -7)), toISODate(weekStart));
+    });
+    if (!copied) return;
     if (created.length === 0) {
       window.alert("Nothing new to copy from last week.");
     }
@@ -114,9 +116,22 @@ export default function PlannerPage() {
         </div>
       </div>
 
-      {error && <LoadError what="your meal plan" message={error} onRetry={reload} />}
+      {action.error && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+      )}
 
-      {!error && (
+      {error && (
+        <LoadFailure
+          what="your meal plan"
+          message={error}
+          onRetry={reload}
+          showing={entries !== null}
+        />
+      )}
+
+      {/* The empty grid is also what a first load looks like, so it stays up
+          unless the page has nothing and no prospect of any. */}
+      {!(error && entries === null) && (
       <div className="week-grid">
         <div className="corner" />
         {days.map((d) => (

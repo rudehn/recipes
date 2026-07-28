@@ -337,7 +337,7 @@ describe("GroceryPage", () => {
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
 
     expect(
-      await screen.findByText(/Showing the list as it was last loaded/),
+      await screen.findByText(/Showing the last version that loaded/),
     ).toBeInTheDocument();
     expect(screen.getByText("chicken thighs")).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't load your grocery list/)).not.toBeInTheDocument();

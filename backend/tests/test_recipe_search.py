@@ -1,3 +1,5 @@
+import logging
+
 import httpx
 import pytest
 
@@ -212,6 +214,25 @@ async def test_near_misses_fill_out_a_result_set_too_thin_to_compare(fake_net):
     # The near miss is shown, below the sure thing. The banana bread is not:
     # padding a thin list stops at results that matched something.
     assert [d.title for d in drafts] == ["Kimchi Jjigae", "Kimchi Jigae (Kimchee Soup)"]
+
+
+async def test_a_site_whose_search_fails_is_named_in_the_log(fake_net, caplog):
+    """A blocked or moved site costs us its results silently - thinner output
+    reads exactly like a query with fewer matches. The log is the only place
+    the two can be told apart, so it has to name the site and the reason."""
+    good = "https://www.budgetbytes.com/banana-bread/"
+    # Every site except Budget Bytes errors out of its search.
+    fake_net({"www.budgetbytes.com": [good]}, {good: _recipe_html("Banana Bread")})
+
+    with caplog.at_level(logging.WARNING):
+        drafts = await search_recipes("banana bread")
+
+    assert [d.title for d in drafts] == ["Banana Bread"]
+    assert "AllRecipes search failed" in caplog.text
+    assert "banana bread" in caplog.text
+    assert "403" in caplog.text or "500" in caplog.text  # the reason, not just the fact
+    # The site that worked is not reported as broken.
+    assert "Budget Bytes search failed" not in caplog.text
 
 
 async def test_a_query_with_no_words_in_it_never_reaches_the_network(fake_net):

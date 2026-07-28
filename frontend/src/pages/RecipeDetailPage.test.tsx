@@ -146,6 +146,40 @@ describe("RecipeDetailPage", () => {
     expect(await screen.findByText("Your recipe box is empty")).toBeInTheDocument();
   });
 
+  it("says so when the delete did not happen, rather than nothing at all", async () => {
+    // Confirming a warning about the meal plan and then seeing no change is
+    // indistinguishable from a tap that missed the button.
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    mockBackend({
+      "GET /api/recipes/:id": curry,
+      "DELETE /api/recipes/:id": new HttpError(503, "Server is restarting"),
+    });
+    const { user } = renderApp("/recipes/1");
+    await screen.findByRole("heading", { name: "Weeknight chicken curry" });
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Weeknight chicken curry" })).toBeVisible();
+  });
+
+  it("offers a retry when the recipe could not be fetched", async () => {
+    let attempt = 0;
+    const backend = mockBackend({
+      "GET /api/recipes/:id": () =>
+        ++attempt === 1 ? new HttpError(503, "Server is restarting") : curry,
+    });
+    const { user } = renderApp("/recipes/1");
+    await screen.findByText("Server is restarting");
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Weeknight chicken curry" }),
+    ).toBeInTheDocument();
+    expect(backend.requestsTo("GET /api/recipes/:id")).toHaveLength(2);
+  });
+
   it("keeps the recipe when the confirmation is dismissed", async () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     const backend = mockBackend({ "GET /api/recipes/:id": curry });

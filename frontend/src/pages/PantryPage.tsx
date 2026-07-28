@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 
 import { api, type PantryItem } from "../api";
-import { LoadError } from "../components/LoadError";
+import { LoadFailure } from "../components/LoadError";
+import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 
 export default function PantryPage() {
@@ -12,32 +13,37 @@ export default function PantryPage() {
     reload,
   } = useLoad(useCallback(() => api.listPantry(), []));
   const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const action = useAction();
 
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     if (!name.trim()) return;
-    try {
-      await api.addPantryItem(name.trim(), true);
+    if (await action.run(() => api.addPantryItem(name.trim(), true))) {
       setName("");
       reload();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not add item.");
     }
   }
 
+  function showStock(id: number, in_stock: boolean) {
+    setItems((prev) => prev?.map((i) => (i.id === id ? { ...i, in_stock } : i)) ?? prev);
+  }
+
   async function setStock(item: PantryItem, in_stock: boolean) {
-    setItems((prev) =>
-      prev ? prev.map((i) => (i.id === item.id ? { ...i, in_stock } : i)) : prev,
-    );
-    await api.updatePantryItem(item.id, { in_stock });
-    reload();
+    // Flipped first: the switch is the whole interaction, and waiting on a
+    // round trip to move it feels broken. Put back if the server disagrees,
+    // since a switch that says "in stock" when the server has it out of stock
+    // silently drops the item from the next grocery list.
+    showStock(item.id, in_stock);
+    if (await action.run(
+      () => api.updatePantryItem(item.id, { in_stock }),
+      () => showStock(item.id, item.in_stock),
+    )) {
+      reload();
+    }
   }
 
   async function remove(item: PantryItem) {
-    await api.deletePantryItem(item.id);
-    reload();
+    if (await action.run(() => api.deletePantryItem(item.id))) reload();
   }
 
   const outCount = items?.filter((i) => !i.in_stock).length ?? 0;
@@ -72,10 +78,17 @@ export default function PantryPage() {
         </button>
       </form>
 
-      {error && <div className="error-banner" style={{ marginBottom: 16 }}>{error}</div>}
+      {action.error && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+      )}
 
       {loadError && (
-        <LoadError what="your pantry" message={loadError} onRetry={reload} />
+        <LoadFailure
+          what="your pantry"
+          message={loadError}
+          onRetry={reload}
+          showing={items !== null}
+        />
       )}
 
       {!loadError && items && items.length === 0 && (

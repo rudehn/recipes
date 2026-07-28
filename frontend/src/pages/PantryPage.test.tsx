@@ -185,4 +185,58 @@ describe("PantryPage", () => {
     expect(await screen.findByText("rice")).toBeInTheDocument();
     expect(backend.requestsTo("GET /api/pantry")).toHaveLength(2);
   });
+
+  it("puts the switch back when the server did not take the change", async () => {
+    // A switch left reading "out of stock" that the server never heard about
+    // silently drops the staple from the next grocery list.
+    mockBackend({
+      "GET /api/pantry": [pantryItem({ id: 4, name: "rice", in_stock: true })],
+      "PUT /api/pantry/:id": new HttpError(503, "Server is restarting"),
+    });
+    const { user } = renderApp("/pantry");
+    await screen.findByText("rice");
+
+    await user.click(within(row("rice")).getByRole("button", { name: /in stock/i }));
+
+    expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(row("rice")).getByRole("button", { name: /in stock/i })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+  });
+
+  it("says so when a staple could not be removed", async () => {
+    mockBackend({
+      "GET /api/pantry": [pantryItem({ id: 4, name: "rice" })],
+      "DELETE /api/pantry/:id": new HttpError(503, "Server is restarting"),
+    });
+    const { user } = renderApp("/pantry");
+    await screen.findByText("rice");
+
+    await user.click(screen.getByRole("button", { name: "Delete rice" }));
+
+    expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
+    expect(screen.getByText("rice")).toBeInTheDocument();
+  });
+
+  it("keeps the staples on screen when a refresh fails", async () => {
+    let attempt = 0;
+    mockBackend({
+      "GET /api/pantry": () =>
+        ++attempt === 1
+          ? [pantryItem({ id: 4, name: "rice", in_stock: true })]
+          : new HttpError(503, "Server is restarting"),
+      "PUT /api/pantry/:id": undefined,
+    });
+    const { user } = renderApp("/pantry");
+    await screen.findByText("rice");
+
+    await user.click(within(row("rice")).getByRole("button", { name: /in stock/i }));
+
+    expect(await screen.findByText(/Showing the last version that loaded/)).toBeInTheDocument();
+    expect(screen.getByText("rice")).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load your pantry/)).not.toBeInTheDocument();
+  });
 });

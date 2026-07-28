@@ -2,9 +2,10 @@ import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, type GroceryItem, type GroceryList } from "../api";
-import { LoadError } from "../components/LoadError";
+import { LoadFailure } from "../components/LoadError";
 import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
-import { errorMessage, useLoad } from "../useLoad";
+import { useAction } from "../useAction";
+import { useLoad } from "../useLoad";
 
 /**
  * Checkmarks the server has not accepted, by item key.
@@ -42,7 +43,7 @@ export default function GroceryPage() {
 
   const [unsaved, setUnsaved] = useState<Unsaved>(new Map());
   const [saving, setSaving] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const action = useAction();
 
   const list = useMemo(() => applyUnsaved(loaded, unsaved), [loaded, unsaved]);
 
@@ -97,13 +98,9 @@ export default function GroceryPage() {
   }
 
   async function clearChecks() {
-    setActionError(null);
-    try {
-      await api.clearGroceryChecks();
+    if (await action.run(() => api.clearGroceryChecks())) {
       setUnsaved(new Map());
       reload();
-    } catch (e) {
-      setActionError(errorMessage(e, "Could not clear the checkmarks."));
     }
   }
 
@@ -145,10 +142,8 @@ export default function GroceryPage() {
         </button>
       </div>
 
-      {actionError && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>
-          {actionError}
-        </div>
+      {action.error && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
       )}
 
       {unsaved.size > 0 && (
@@ -163,20 +158,13 @@ export default function GroceryPage() {
         </div>
       )}
 
-      {/* A list already on screen is worth more than the news that refreshing
-          it failed - especially mid-shop - so the failure is reported beside it
-          rather than in place of it. */}
-      {error && list && (
-        <div className="notice-banner" role="status">
-          <span>Showing the list as it was last loaded. {error}</span>
-          <button className="btn small" onClick={reload}>
-            Try again
-          </button>
-        </div>
-      )}
-
-      {error && !list && (
-        <LoadError what="your grocery list" message={error} onRetry={reload} />
+      {error && (
+        <LoadFailure
+          what="your grocery list"
+          message={error}
+          onRetry={reload}
+          showing={list !== null}
+        />
       )}
 
       {!error && empty && (
