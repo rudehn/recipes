@@ -8,7 +8,6 @@ from app.services.recipe_search import (
     ALLOWLIST,
     MAX_FETCHES,
     RESULTS_PER_SITE,
-    _search_allrecipes,
     _search_wordpress,
     search_recipes,
     site_label,
@@ -25,18 +24,6 @@ def _recipe_html(title: str, description: str = "", mentions: str = "") -> str:
     if mentions:
         html = html.replace("Mash the bananas.", f"Mash the bananas. {mentions}")
     return html
-
-
-def _allrecipes_search_html(urls: list[str]) -> str:
-    """An AllRecipes results page: recipe cards among the site chrome that
-    surrounds them, so the extractor has to be selective."""
-    cards = "".join(f'<a class="mntl-card" href="{u}">A recipe</a>' for u in urls)
-    return f"""<html><body>
-      <a href="https://www.allrecipes.com/">Home</a>
-      <a href="https://www.allrecipes.com/recipes/17562/dinner/">Dinner ideas</a>
-      <a href="https://www.allrecipes.com/article/how-to-braise/">How to braise</a>
-      {cards}
-    </body></html>"""
 
 
 def _title_from(url: str) -> str:
@@ -62,13 +49,6 @@ class FakeNet:
                 return httpx.Response(500, text="boom", request=request)
             body = [{"url": u, "title": _title_from(u)} for u in self.results[host]]
             return httpx.Response(200, json=body, request=request)
-        # AllRecipes has no search API; it is scraped from its results page.
-        if url == "https://www.allrecipes.com/search":
-            host = httpx.URL(url).host
-            if host not in self.results:
-                return httpx.Response(500, text="boom", request=request)
-            html = _allrecipes_search_html(self.results[host])
-            return httpx.Response(200, text=html, request=request)
         self.fetched.append(url)
         if url not in self.pages:
             return httpx.Response(404, text="gone", request=request)
@@ -228,9 +208,9 @@ async def test_a_site_whose_search_fails_is_named_in_the_log(fake_net, caplog):
         drafts = await search_recipes("banana bread")
 
     assert [d.title for d in drafts] == ["Banana Bread"]
-    assert "AllRecipes search failed" in caplog.text
+    assert "Pinch of Yum search failed" in caplog.text
     assert "banana bread" in caplog.text
-    assert "403" in caplog.text or "500" in caplog.text  # the reason, not just the fact
+    assert "500" in caplog.text  # the reason, not just the fact
     # The site that worked is not reported as broken.
     assert "Budget Bytes search failed" not in caplog.text
 
@@ -292,70 +272,12 @@ def test_every_allowlisted_site_has_a_distinct_label_and_https_base():
     assert all(s.base.startswith("https://") and not s.base.endswith("/") for s in ALLOWLIST)
 
 
-def test_allrecipes_is_allowlisted_with_its_own_search_strategy():
-    """AllRecipes is not WordPress, so the default strategy would find nothing
-    for it - and would do so silently, since search failures are swallowed."""
-    site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
-    assert site.base == "https://www.allrecipes.com"
-    assert site.search is _search_allrecipes
-    assert all(
-        s.search is _search_wordpress for s in ALLOWLIST if s.label != "AllRecipes"
-    )
-
-
-async def test_allrecipes_search_keeps_only_recipe_links(fake_net):
-    """Recipe pages live at /recipe/<id>/; category and article links on the
-    same results page are not recipes and must not be offered as drafts."""
-    found = [
-        "https://www.allrecipes.com/recipe/223042/chicken-parmesan/",
-        "https://www.allrecipes.com/recipe/62696/chicken-parmesan-casserole/",
-    ]
-    fake_net({"www.allrecipes.com": found}, {})
-
-    async with httpx.AsyncClient() as client:
-        site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
-        hits = await _search_allrecipes(client, site, "chicken parmesan")
-
-    assert [c.url for c in hits] == found
-
-
-async def test_allrecipes_search_caps_results_and_deduplicates(fake_net):
-    """A results page is longer than we want from any one site, and lists the
-    same recipe more than once."""
-    dupe = "https://www.allrecipes.com/recipe/1/a/"
-    rest = [
-        f"https://www.allrecipes.com/recipe/{n}/r{n}/"
-        for n in range(2, RESULTS_PER_SITE + 3)
-    ]
-    fake_net({"www.allrecipes.com": [dupe, dupe, *rest]}, {})
-
-    async with httpx.AsyncClient() as client:
-        site = next(s for s in ALLOWLIST if s.label == "AllRecipes")
-        hits = await _search_allrecipes(client, site, "anything")
-
-    assert [c.url for c in hits] == [dupe, *rest][:RESULTS_PER_SITE]
-
-
-async def test_search_includes_allrecipes_drafts(fake_net):
-    """The whole point: an AllRecipes result reaches the comparison list
-    alongside the WordPress sites."""
-    wp = "https://www.budgetbytes.com/x/"
-    ar = "https://www.allrecipes.com/recipe/223042/chicken-parmesan/"
-    fake_net(
-        {"www.budgetbytes.com": [wp], "www.allrecipes.com": [ar]},
-        {
-            wp: _recipe_html("Budget Chicken Parmesan"),
-            ar: _recipe_html("AllRecipes Chicken Parmesan"),
-        },
-    )
-    drafts = await search_recipes("chicken parmesan")
-
-    assert {d.title for d in drafts} == {
-        "Budget Chicken Parmesan",
-        "AllRecipes Chicken Parmesan",
-    }
-    by_url = {d.source_url: d for d in drafts}
-    assert site_label(by_url[ar].source_url) == "AllRecipes"
+def test_every_allowlisted_site_is_searched_the_wordpress_way():
+    """The per-site strategy is the seam for a site that needs its own way in;
+    every site currently on the list answers the WordPress endpoint. AllRecipes
+    was the exception until it started refusing this service outright."""
+    assert all(s.search is _search_wordpress for s in ALLOWLIST)
+    assert not any("allrecipes" in s.base for s in ALLOWLIST)
 
 
 @pytest.mark.parametrize(

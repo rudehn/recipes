@@ -6,13 +6,20 @@ URL importer uses. That keeps the feature key-free and keeps us on publicly
 exposed endpoints of sites we have explicitly vetted, instead of crawling the
 open web.
 
-Most of the allowlist runs WordPress and answers on ``/wp-json/wp/v2/search``.
-Sites that do not need their own strategy, so each ``Site`` carries the
-function that searches it.
+Every site on the allowlist today runs WordPress and answers on
+``/wp-json/wp/v2/search``, but a site needing its own way in is expected
+rather than exceptional, so each ``Site`` carries the function that searches
+it and ``_search_wordpress`` is merely the default.
 
-Sites earn a place on the allowlist by publishing schema.org/Recipe JSON-LD;
-one that does not (Smitten Kitchen, for instance) can be searched but never
-parsed, so it is left off rather than shipped as a permanent failure.
+Sites earn a place on the allowlist by being reachable and by publishing
+schema.org/Recipe JSON-LD. One that does not (Smitten Kitchen, for instance)
+can be searched but never parsed, so it is left off rather than shipped as a
+permanent failure. AllRecipes was removed on the same principle from the
+other direction: it parses fine, but Cloudflare bot management answers this
+service with 403 while letting a developer's machine through, so shipping it
+meant a site that silently contributed nothing in production. Reaching it
+would take forging a browser TLS fingerprint, which is not a thing to do to
+a site that has said no.
 
 What each site considers a match is looser than what a person does, so their
 ranking is treated as a nomination rather than an answer: candidates are
@@ -28,7 +35,6 @@ from html import unescape
 from urllib.parse import urlsplit
 
 import httpx
-from bs4 import BeautifulSoup
 
 from ..schemas import RecipeDraft
 from .fetch import BROWSER_HEADERS
@@ -88,37 +94,6 @@ def _plain_text(value: object) -> str:
     return unescape(_TAG.sub(" ", value)).strip()
 
 
-# Individual AllRecipes recipes always live at /recipe/<id>/<slug>. Matching
-# the URL rather than the markup keeps this clear of their generated CSS
-# class names, which change far more often than the URL scheme does.
-ALLRECIPES_URL = re.compile(r"^https://www\.allrecipes\.com/recipe/\d+/")
-
-
-async def _search_allrecipes(
-    client: httpx.AsyncClient, site: "Site", query: str
-) -> list[Candidate]:
-    """Results scraped from the AllRecipes search page.
-
-    AllRecipes is not WordPress and exposes no search API, so we read the
-    same results page a visitor would and keep the recipe links."""
-    resp = await client.get(
-        f"{site.base}/search", params={"q": query}, timeout=SEARCH_TIMEOUT
-    )
-    resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
-
-    found: list[Candidate] = []
-    seen: set[str] = set()
-    for anchor in soup.find_all("a", href=True):
-        href = anchor["href"].split("?")[0]
-        if ALLRECIPES_URL.match(href) and href not in seen:
-            seen.add(href)
-            found.append(Candidate(href, anchor.get_text(" ", strip=True)))
-            if len(found) == RESULTS_PER_SITE:
-                break
-    return found
-
-
 @dataclass(frozen=True)
 class Site:
     label: str
@@ -133,7 +108,6 @@ ALLOWLIST: tuple[Site, ...] = (
     Site("Half Baked Harvest", "https://www.halfbakedharvest.com"),
     Site("The Woks of Life", "https://thewoksoflife.com"),
     Site("Pinch of Yum", "https://pinchofyum.com"),
-    Site("AllRecipes", "https://www.allrecipes.com", search=_search_allrecipes),
 )
 
 # How many results to ask each site for. Far more than we intend to show,
