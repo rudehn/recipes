@@ -65,8 +65,30 @@ class RecipeSummary(BaseModel):
     cook_minutes: int | None
     servings: int | None
     tags: list[str] = []
-    # Lets the client search recipes by what's in them.
-    ingredient_names: list[str] = []
+
+
+class RecipePage(BaseModel):
+    """One page of recipes plus the numbers a pager needs.
+
+    `total` counts everything matching the filters, not the page, so the client
+    can say how much is left without asking for it.
+    """
+
+    items: list[RecipeSummary]
+    total: int
+    page: int
+    per_page: int
+
+
+class TagCount(BaseModel):
+    """A tag and how many recipes carry it, for the filter bar.
+
+    The bar can no longer be derived from the loaded recipes now that a page is
+    only ever part of the collection.
+    """
+
+    name: str
+    count: int
 
 
 class MealPlanEntryIn(BaseModel):
@@ -162,6 +184,10 @@ class RecipeDraft(BaseModel):
     ingredients: list[IngredientIn] = []
     image_url: str | None = None
     source_url: str
+    # Human-readable name of the site this came from ("Budget Bytes"), for the
+    # comparison tabs. Falls back to the bare host for anything off the
+    # allowlist. Set by the caller, which is what knows the allowlist.
+    source_label: str = ""
 
 
 class ImageFromUrl(BaseModel):

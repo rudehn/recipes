@@ -4,12 +4,12 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   api,
   imageUrl,
-  sourceLabel,
   type Ingredient,
   type RecipeDraft,
   type RecipeInput,
 } from "../api";
 import { formatAmount, parseQuantity } from "../quantity";
+import { errorMessage } from "../useLoad";
 
 interface IngredientDraft {
   quantity: string;
@@ -72,7 +72,7 @@ export default function RecipeFormPage() {
         setExistingImage(r.image_filename);
         setRows(toRows(r.ingredients));
       })
-      .catch((e) => setError(e.message));
+      .catch((e: unknown) => setError(errorMessage(e)));
   }, [id, isEdit]);
 
   const applyDraft = useCallback((draft: RecipeDraft) => {
@@ -181,7 +181,7 @@ export default function RecipeFormPage() {
           <span className="hint">
             Prefilled from{" "}
             <a href={pickedDraft.source_url} target="_blank" rel="noreferrer noopener">
-              {sourceLabel(pickedDraft.source_url)}
+              {pickedDraft.source_label}
             </a>
             . Edit anything you like, then save it to your recipe box.
           </span>
@@ -199,7 +199,7 @@ export default function RecipeFormPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
-                  handleImport();
+                  void handleImport();
                 }
               }}
             />

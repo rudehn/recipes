@@ -1,17 +1,18 @@
-import { useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, type PantryItem } from "../api";
+import { LoadError } from "../components/LoadError";
+import { useLoad } from "../useLoad";
 
 export default function PantryPage() {
-  const [items, setItems] = useState<PantryItem[] | null>(null);
+  const {
+    data: items,
+    setData: setItems,
+    error: loadError,
+    reload,
+  } = useLoad(useCallback(() => api.listPantry(), []));
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
-
-  function reload() {
-    api.listPantry().then(setItems).catch(() => setItems([]));
-  }
-
-  useEffect(reload, []);
 
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
@@ -73,7 +74,11 @@ export default function PantryPage() {
 
       {error && <div className="error-banner" style={{ marginBottom: 16 }}>{error}</div>}
 
-      {items && items.length === 0 && (
+      {loadError && (
+        <LoadError what="your pantry" message={loadError} onRetry={reload} />
+      )}
+
+      {!loadError && items && items.length === 0 && (
         <div className="empty-state">
           <div className="glyph">🫙</div>
           <h2>No pantry staples yet</h2>

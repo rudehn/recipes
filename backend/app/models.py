@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
@@ -17,7 +17,7 @@ from .db import Base
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Recipe(Base):
@@ -52,10 +52,6 @@ class Recipe(Base):
     @property
     def tags(self) -> list[str]:
         return [t.name for t in self.tag_rows]
-
-    @property
-    def ingredient_names(self) -> list[str]:
-        return [i.name for i in self.ingredients]
 
 
 class RecipeTag(Base):

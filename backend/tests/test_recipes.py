@@ -39,7 +39,10 @@ async def test_list_recipes(client):
     await client.post("/api/recipes", json={**PANCAKES, "title": "Crepes"})
     resp = await client.get("/api/recipes")
     assert resp.status_code == 200
-    assert [r["title"] for r in resp.json()] == ["Crepes", "Pancakes"]
+    body = resp.json()
+    assert [r["title"] for r in body["items"]] == ["Crepes", "Pancakes"]
+    assert body["total"] == 2
+    assert body["page"] == 1
 
 
 async def test_update_recipe_replaces_ingredients(client):

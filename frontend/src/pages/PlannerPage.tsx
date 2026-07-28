@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { api, type Meal, type MealPlanEntry } from "../api";
+import { LoadError } from "../components/LoadError";
 import { RecipePickerModal } from "../components/RecipeBits";
+import { useLoad } from "../useLoad";
 import {
   addDays,
   formatDate,
@@ -17,7 +19,6 @@ const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [entries, setEntries] = useState<MealPlanEntry[]>([]);
   const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(null);
 
   const days = useMemo(
@@ -26,18 +27,16 @@ export default function PlannerPage() {
   );
   const weekEnd = days[6];
 
-  const reload = useCallback(() => {
-    api
-      .listMealPlan(toISODate(weekStart), toISODate(weekEnd))
-      .then(setEntries)
-      .catch(() => setEntries([]));
-  }, [weekStart, weekEnd]);
-
-  useEffect(reload, [reload]);
+  const { data: entries, error, reload } = useLoad(
+    useCallback(
+      () => api.listMealPlan(toISODate(weekStart), toISODate(weekEnd)),
+      [weekStart, weekEnd],
+    ),
+  );
 
   const byCell = useMemo(() => {
     const map = new Map<string, MealPlanEntry[]>();
-    for (const e of entries) {
+    for (const e of entries ?? []) {
       const key = `${e.plan_date}|${e.meal}`;
       map.set(key, [...(map.get(key) ?? []), e]);
     }
@@ -115,6 +114,9 @@ export default function PlannerPage() {
         </div>
       </div>
 
+      {error && <LoadError what="your meal plan" message={error} onRetry={reload} />}
+
+      {!error && (
       <div className="week-grid">
         <div className="corner" />
         {days.map((d) => (
@@ -136,6 +138,7 @@ export default function PlannerPage() {
           />
         ))}
       </div>
+      )}
 
       {picker && (
         <RecipePickerModal

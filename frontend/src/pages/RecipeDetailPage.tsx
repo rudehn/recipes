@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, type Recipe } from "../api";
 import { RecipePhoto } from "../components/RecipeBits";
 import { formatQuantity } from "../quantity";
+import { errorMessage } from "../useLoad";
 
 export default function RecipeDetailPage() {
   const { id } = useParams();
@@ -17,7 +18,7 @@ export default function RecipeDetailPage() {
     api
       .getRecipe(Number(id))
       .then(setRecipe)
-      .catch((e) => setError(e.message));
+      .catch((e: unknown) => setError(errorMessage(e)));
   }, [id]);
 
   if (error) {

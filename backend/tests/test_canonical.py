@@ -72,4 +72,5 @@ def test_best_display_drops_prep_words_from_single_variant():
     assert best_display(["finely diced onion"]) == "onion"
     assert best_display(["green bell pepper (diced)"]) == "green bell pepper"
     # Words that change what you buy stay.
-    assert best_display(["ground pork sausage (cooked, crumbled, and drained)"]) == "ground pork sausage"
+    sausage = ["ground pork sausage (cooked, crumbled, and drained)"]
+    assert best_display(sausage) == "ground pork sausage"

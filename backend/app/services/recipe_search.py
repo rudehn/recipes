@@ -134,9 +134,11 @@ async def _fetch_draft(client: httpx.AsyncClient, url: str) -> RecipeDraft | Non
     except httpx.HTTPError:
         return None
     try:
-        return parse_recipe_html(resp.text, url)
+        draft = parse_recipe_html(resp.text, url)
     except RecipeNotFound:
         return None
+    draft.source_label = site_label(url)
+    return draft
 
 
 async def search_recipes(query: str, limit: int = MAX_RESULTS) -> list[RecipeDraft]:

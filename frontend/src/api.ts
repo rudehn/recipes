@@ -16,12 +16,34 @@ export interface RecipeSummary {
   cook_minutes: number | null;
   servings: number | null;
   tags: string[];
-  ingredient_names: string[];
 }
 
-export interface Recipe extends Omit<RecipeSummary, "ingredient_names"> {
+export interface Recipe extends RecipeSummary {
   instructions: string;
   ingredients: Ingredient[];
+}
+
+/** One page of a collection. `total` counts every match, not the page. */
+export interface Page<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+/** A tag and how many recipes carry it, for the filter bar. */
+export interface TagCount {
+  name: string;
+  count: number;
+}
+
+export interface RecipeQuery {
+  /** Matches title, description, tags, and ingredient names. */
+  q?: string;
+  tag?: string | null;
+  sort?: "title" | "newest";
+  page?: number;
+  per_page?: number;
 }
 
 export interface RecipeInput {
@@ -45,6 +67,8 @@ export interface RecipeDraft {
   ingredients: Omit<Ingredient, "id">[];
   image_url: string | null;
   source_url: string;
+  /** Display name of the source site, e.g. "Budget Bytes". */
+  source_label: string;
 }
 
 export interface MealPlanEntry {
@@ -86,40 +110,77 @@ export interface GroceryList {
   pantry_restock: GroceryItem[];
 }
 
+/**
+ * The request never reached the server, so there is no answer to report.
+ *
+ * Worth its own type because it is the one failure that is usually about to
+ * stop being true: the app is reached over Tailscale, and a launch from the
+ * iOS home screen routinely fires its first request before the tunnel has
+ * finished coming up. Callers retry this and nothing else - an HTTP status is
+ * the server's considered answer, and asking again will not change it.
+ */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    // Browsers word this for developers ("Load failed", "Failed to fetch");
+    // the cause is kept for the console and this stands in for the user.
+    super("Could not reach the server.");
+    this.name = "NetworkError";
+    this.cause = cause;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, {
-    headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
-    ...init,
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(path, {
+      headers: init?.body instanceof FormData ? undefined : { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch (cause) {
+    throw new NetworkError(cause);
+  }
   if (!resp.ok) {
     let detail = resp.statusText;
     try {
-      const body = await resp.json();
-      if (typeof body.detail === "string") detail = body.detail;
+      // FastAPI puts the human-readable reason in `detail`; anything else on
+      // the wire is not something we can show, so statusText stands.
+      const body: unknown = await resp.json();
+      if (body && typeof body === "object" && "detail" in body) {
+        if (typeof body.detail === "string") detail = body.detail;
+      }
     } catch {
       // keep statusText
     }
     throw new Error(detail);
   }
   if (resp.status === 204) return undefined as T;
-  return resp.json();
+  // The server is the only source of these shapes, so the caller's `T` is the
+  // contract; there is nothing here to validate it against.
+  return resp.json() as Promise<T>;
 }
 
 export function imageUrl(filename: string | null): string | null {
   return filename ? `/api/images/${filename}` : null;
 }
 
-/** Site a search result came from, for labelling the comparison tabs. */
-export function sourceLabel(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
+/** A "?a=1&b=2" string, dropping the params the caller left unset. */
+function queryString(params: Record<string, string | number | null | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== "") {
+      search.set(key, String(value));
+    }
   }
+  const query = search.toString();
+  return query ? `?${query}` : "";
 }
 
 export const api = {
-  listRecipes: () => request<RecipeSummary[]>("/api/recipes"),
+  listRecipes: ({ q, tag, sort, page, per_page }: RecipeQuery = {}) =>
+    request<Page<RecipeSummary>>(
+      `/api/recipes${queryString({ q, tag, sort, page, per_page })}`,
+    ),
+  listRecipeTags: () => request<TagCount[]>("/api/recipes/tags"),
   getRecipe: (id: number) => request<Recipe>(`/api/recipes/${id}`),
   createRecipe: (data: RecipeInput) =>
     request<Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(data) }),

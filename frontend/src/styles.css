@@ -226,6 +226,32 @@ input:focus, select:focus, textarea:focus {
   gap: 22px;
 }
 
+/* Results already on screen while the next filter loads. Dimmed rather than
+   cleared, so typing does not strobe the page. */
+.recipe-grid.stale {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.load-more .sub {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.list-status {
+  color: var(--muted);
+  padding: 28px 0;
+  text-align: center;
+}
+
 .recipe-card {
   background: var(--surface);
   border-radius: var(--radius);
@@ -328,6 +354,13 @@ input:focus, select:focus, textarea:focus {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--bg);
+}
+
+.tag-pill .count {
+  margin-left: 7px;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8rem;
+  opacity: 0.55;
 }
 
 .import-box {
@@ -542,6 +575,34 @@ input:focus, select:focus, textarea:focus {
   padding: 10px 14px;
 }
 
+/*
+ * Something the page wants the user to know while they keep working, as
+ * against .error-banner's "that did not happen". Deliberately quieter: it sits
+ * above a list that is still perfectly usable.
+ */
+.notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+  font-size: 0.92rem;
+}
+
+.notice-banner span {
+  flex: 1;
+  min-width: 200px;
+}
+
+.notice-banner .btn {
+  flex-shrink: 0;
+}
+
 /* ---------- Planner ---------- */
 
 .planner-controls {
@@ -558,7 +619,19 @@ input:focus, select:focus, textarea:focus {
   padding-bottom: 8px;
 }
 
-.week-grid .corner { position: sticky; left: 0; }
+/* The label column pins while the seven days scroll under it. The corner and
+   the meal labels make up that column, so they have to stick together: pinning
+   only the corner leaves an empty box hovering over the grid while the row
+   names it belongs to slide away, and on a phone - where the grid always
+   scrolls - the meal each row belongs to becomes unreadable. The background is
+   what stops cells showing through as they pass beneath. */
+.week-grid .corner,
+.week-grid .meal-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+}
 
 .day-head {
   text-align: center;
@@ -741,6 +814,12 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius-sm);
 }
 
+.modal-note {
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
 .modal-recipe:hover { background: var(--surface-2); }
 
 .modal-recipe img,
@@ -910,7 +989,8 @@ input:focus, select:focus, textarea:focus {
 .empty-state h2 { color: var(--ink-soft); margin-bottom: 6px; }
 
 .searchbar {
-  min-width: 240px;
+  /* Wide enough for the placeholder, which was clipping mid-word at 240px. */
+  min-width: 280px;
 }
 
 .toolbar {

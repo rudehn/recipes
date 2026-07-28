@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-import { api, sourceLabel, type RecipeDraft } from "../api";
+import { api, type RecipeDraft } from "../api";
 import { formatQuantity } from "../quantity";
 
 function totalMinutes(draft: RecipeDraft): number | null {
@@ -72,7 +72,7 @@ export default function RecipeSearchPage() {
   }
 
   // Nothing is saved until the form is submitted; this just prefills it.
-  function useDraft(draft: RecipeDraft) {
+  function pickDraft(draft: RecipeDraft) {
     navigate("/recipes/new", { state: { draft } });
   }
 
@@ -101,14 +101,14 @@ export default function RecipeSearchPage() {
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                handleSearch();
+                void handleSearch();
               }
             }}
           />
           <button
             type="button"
             className="btn primary"
-            onClick={handleSearch}
+            onClick={() => void handleSearch()}
             disabled={searching || query.trim().length < 2}
           >
             {searching ? "Searching…" : "Search"}
@@ -155,7 +155,7 @@ export default function RecipeSearchPage() {
                     className={`result-tab${i === active ? " active" : ""}`}
                     onClick={() => setActive(i)}
                   >
-                    <span className="site">{sourceLabel(draft.source_url)}</span>
+                    <span className="site">{draft.source_label}</span>
                     <span className="name">{draft.title}</span>
                   </button>
                 ))}
@@ -168,12 +168,12 @@ export default function RecipeSearchPage() {
             <span>
               From{" "}
               <a href={current.source_url} target="_blank" rel="noreferrer noopener">
-                {sourceLabel(current.source_url)}
+                {current.source_label}
               </a>
               . Not saved yet.
             </span>
             <span className="spacer" />
-            <button className="btn primary" onClick={() => useDraft(current)}>
+            <button className="btn primary" onClick={() => pickDraft(current)}>
               Use this recipe
             </button>
           </div>
@@ -241,7 +241,7 @@ export default function RecipeSearchPage() {
           </div>
 
           <div className="form-actions">
-            <button className="btn primary" onClick={() => useDraft(current)}>
+            <button className="btn primary" onClick={() => pickDraft(current)}>
               Use this recipe
             </button>
             <span className="hint">

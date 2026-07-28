@@ -70,7 +70,10 @@ def test_parse_recipe_html_without_recipe_raises():
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        ("2 cups all-purpose flour", IngredientIn(name="all-purpose flour", quantity=2, unit="cups")),
+        (
+            "2 cups all-purpose flour",
+            IngredientIn(name="all-purpose flour", quantity=2, unit="cups"),
+        ),
         ("1½ tsp baking soda", IngredientIn(name="baking soda", quantity=1.5, unit="tsp")),
         ("¾ cup sugar", IngredientIn(name="sugar", quantity=0.75, unit="cup")),
         ("1 1/2 lbs chicken thighs", IngredientIn(name="chicken thighs", quantity=1.5, unit="lbs")),
@@ -79,7 +82,10 @@ def test_parse_recipe_html_without_recipe_raises():
         ("1-2 cloves garlic", IngredientIn(name="garlic", quantity=1, unit="cloves")),
         ("2 tbsp. of olive oil", IngredientIn(name="olive oil", quantity=2, unit="tbsp")),
         ("1 pinch", IngredientIn(name="pinch", quantity=1, unit=None)),
-        ("350g self-raising flour", IngredientIn(name="self-raising flour", quantity=350, unit="g")),
+        (
+            "350g self-raising flour",
+            IngredientIn(name="self-raising flour", quantity=350, unit="g"),
+        ),
         ("250ml whole milk", IngredientIn(name="whole milk", quantity=250, unit="ml")),
         # A modifier between the amount and the unit must not hide the unit.
         (
@@ -98,7 +104,10 @@ def test_parse_recipe_html_without_recipe_raises():
             IngredientIn(name="black beans", quantity=2, unit="cans"),
         ),
         # An unclosed parenthesis leaves the text alone rather than eating it.
-        ("1 (14 ounce package cream cheese", IngredientIn(name="(14 ounce package cream cheese", quantity=1, unit=None)),
+        (
+            "1 (14 ounce package cream cheese",
+            IngredientIn(name="(14 ounce package cream cheese", quantity=1, unit=None),
+        ),
     ],
 )
 def test_parse_ingredient_line(line, expected):
@@ -119,7 +128,9 @@ async def test_import_endpoint_rejects_pages_without_recipe(client, monkeypatch)
     import httpx
 
     async def fake_get(self, url):
-        return httpx.Response(200, text="<html><body>nope</body></html>", request=httpx.Request("GET", url))
+        return httpx.Response(
+            200, text="<html><body>nope</body></html>", request=httpx.Request("GET", url)
+        )
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
     resp = await client.post("/api/import/recipe", json={"url": "https://example.com/post"})

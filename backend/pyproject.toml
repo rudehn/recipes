@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Recipe manager backend: recipes, meal planning, pantry, and grocery lists"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.13",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sqlalchemy[asyncio]>=2.0",
@@ -20,12 +21,43 @@ dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
     "httpx>=0.27",
+    "ruff>=0.14",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Beyond the defaults (pycodestyle errors + pyflakes): import order, modern
+# syntax, comprehension, bugbear and simplification checks. Chosen to catch
+# real mistakes rather than to impose taste.
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    # Re-raising as an HTTPException inside `except` is the FastAPI idiom; the
+    # upstream error is deliberately not chained into the client's response.
+    "B904",
+    # Ingredient parsing and quantity formatting are *about* characters like
+    # ½ and ⅓, so "ambiguous unicode" is the subject matter, not a typo.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# `session: AsyncSession = Depends(get_session)` is how FastAPI declares a
+# dependency. It looks like the mutable-default bug B008 catches, but the
+# framework re-evaluates it per request, which is the entire point.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.File", "fastapi.Form"]
+
+[tool.ruff.lint.per-file-ignores]
+# Alembic's generated scaffolding does not follow the same conventions.
+"alembic/**" = ["E402", "F401", "I001"]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

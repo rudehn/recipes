@@ -1,44 +1,110 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { api, type GroceryItem, type GroceryList } from "../api";
+import { LoadError } from "../components/LoadError";
 import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
+import { errorMessage, useLoad } from "../useLoad";
+
+/**
+ * Checkmarks the server has not accepted, by item key.
+ *
+ * This page is used in a grocery aisle, which is where the signal is worst, so
+ * a failed toggle is expected rather than exceptional. The mark stays on
+ * screen: the shopper put the thing in the cart, and quietly taking the tick
+ * back would be the more damaging lie. Holding the intended state here instead
+ * of only in the loaded list also means a later reload cannot silently undo it.
+ */
+type Unsaved = ReadonlyMap<string, boolean>;
+
+function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList | null {
+  if (!list || unsaved.size === 0) return list;
+  const apply = (item: GroceryItem) =>
+    unsaved.has(item.key) ? { ...item, checked: unsaved.get(item.key)! } : item;
+  return {
+    ...list,
+    items: list.items.map(apply),
+    pantry_restock: list.pantry_restock.map(apply),
+  };
+}
 
 export default function GroceryPage() {
   const [params, setParams] = useSearchParams();
   const start = params.get("start") ?? toISODate(startOfWeek(new Date()));
   const end = params.get("end") ?? toISODate(addDays(startOfWeek(new Date()), 6));
-  const [list, setList] = useState<GroceryList | null>(null);
 
-  const reload = useCallback(() => {
-    api.groceryList(start, end).then(setList).catch(() => setList(null));
-  }, [start, end]);
+  const {
+    data: loaded,
+    setData: setList,
+    error,
+    reload,
+  } = useLoad(useCallback(() => api.groceryList(start, end), [start, end]));
 
-  useEffect(reload, [reload]);
+  const [unsaved, setUnsaved] = useState<Unsaved>(new Map());
+  const [saving, setSaving] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const list = useMemo(() => applyUnsaved(loaded, unsaved), [loaded, unsaved]);
 
   function setRange(nextStart: string, nextEnd: string) {
     if (nextStart && nextEnd) setParams({ start: nextStart, end: nextEnd });
   }
 
+  function forget(key: string): (prev: Unsaved) => Unsaved {
+    return (prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    };
+  }
+
   async function toggle(item: GroceryItem) {
+    const checked = !item.checked;
     // Optimistic flip so the list feels instant.
     setList((prev) => {
       if (!prev) return prev;
-      const flip = (i: GroceryItem) =>
-        i.key === item.key ? { ...i, checked: !item.checked } : i;
+      const flip = (i: GroceryItem) => (i.key === item.key ? { ...i, checked } : i);
       return {
         ...prev,
         items: prev.items.map(flip),
         pantry_restock: prev.pantry_restock.map(flip),
       };
     });
-    await api.toggleGroceryItem(item.key, !item.checked);
-    reload();
+    try {
+      await api.toggleGroceryItem(item.key, checked);
+      setUnsaved(forget(item.key));
+      reload();
+    } catch {
+      setUnsaved((prev) => new Map(prev).set(item.key, checked));
+    }
+  }
+
+  /** Send the marks again, for when the signal is back. */
+  async function saveUnsaved() {
+    setSaving(true);
+    const stillUnsaved = new Map<string, boolean>();
+    for (const [key, checked] of unsaved) {
+      try {
+        await api.toggleGroceryItem(key, checked);
+      } catch {
+        stillUnsaved.set(key, checked);
+      }
+    }
+    setUnsaved(stillUnsaved);
+    setSaving(false);
+    if (stillUnsaved.size === 0) reload();
   }
 
   async function clearChecks() {
-    await api.clearGroceryChecks();
-    reload();
+    setActionError(null);
+    try {
+      await api.clearGroceryChecks();
+      setUnsaved(new Map());
+      reload();
+    } catch (e) {
+      setActionError(errorMessage(e, "Could not clear the checkmarks."));
+    }
   }
 
   const rangeDays =
@@ -79,7 +145,41 @@ export default function GroceryPage() {
         </button>
       </div>
 
-      {empty && (
+      {actionError && (
+        <div className="error-banner" style={{ marginBottom: 16 }}>
+          {actionError}
+        </div>
+      )}
+
+      {unsaved.size > 0 && (
+        <div className="notice-banner" role="status">
+          <span>
+            {unsaved.size} checkmark{unsaved.size === 1 ? "" : "s"} not saved yet. They
+            are on this list but not on your other devices.
+          </span>
+          <button className="btn small" onClick={saveUnsaved} disabled={saving}>
+            {saving ? "Saving…" : "Save now"}
+          </button>
+        </div>
+      )}
+
+      {/* A list already on screen is worth more than the news that refreshing
+          it failed - especially mid-shop - so the failure is reported beside it
+          rather than in place of it. */}
+      {error && list && (
+        <div className="notice-banner" role="status">
+          <span>Showing the list as it was last loaded. {error}</span>
+          <button className="btn small" onClick={reload}>
+            Try again
+          </button>
+        </div>
+      )}
+
+      {error && !list && (
+        <LoadError what="your grocery list" message={error} onRetry={reload} />
+      )}
+
+      {!error && empty && (
         <div className="empty-state">
           <div className="glyph">🧺</div>
           <h2>Nothing to buy</h2>

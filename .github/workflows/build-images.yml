@@ -26,6 +26,12 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v7
 
+      # Lint before tests: a lint failure is cheaper to read than a test one,
+      # and it is the same command a developer runs locally.
+      - name: Backend lint
+        working-directory: backend
+        run: uv run --frozen ruff check .
+
       - name: Backend tests
         working-directory: backend
         run: uv run --frozen pytest -q
@@ -36,11 +42,21 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
       - name: Frontend typecheck & build
         working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        run: npm run build
 
   build:
     # Push images only from main / version tags, never from PRs.

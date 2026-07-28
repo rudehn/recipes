@@ -1,29 +1,25 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from .config import IMAGES_DIR
-from .db import Base, engine
+from .db import engine
+from .migrations import run_migrations
 from .routes import grocery, import_recipe, meal_plan, pantry, recipes
 
-
-def _additive_migrations(sync_conn) -> None:
-    """Adds columns create_all can't (it only creates missing tables)."""
-    from sqlalchemy import inspect, text
-
-    inspector = inspect(sync_conn)
-    columns = {c["name"] for c in inspector.get_columns("meal_plan_entries")}
-    if "servings" not in columns:
-        sync_conn.execute(text("ALTER TABLE meal_plan_entries ADD COLUMN servings INTEGER"))
+# Uvicorn only installs handlers on its own loggers, so without this the app's
+# own records - including what the migration step did - go nowhere.
+logging.basicConfig(
+    level=logging.INFO, format="%(levelname)-8s %(name)s: %(message)s"
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        await conn.run_sync(_additive_migrations)
+    await run_migrations()
     yield
     await engine.dispose()
 

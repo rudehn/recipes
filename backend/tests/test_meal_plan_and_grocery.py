@@ -177,9 +177,7 @@ async def test_out_of_stock_pantry_items_appear_in_restock(client):
 
 
 async def test_checking_pantry_item_restocks_it(client):
-    pantry = (
-        await client.post("/api/pantry", json={"name": "Coffee", "in_stock": False})
-    ).json()
+    await client.post("/api/pantry", json={"name": "Coffee", "in_stock": False})
     data = await grocery(client)
     key = data["pantry_restock"][0]["key"]
 
@@ -191,8 +189,64 @@ async def test_checking_pantry_item_restocks_it(client):
     items = (await client.get("/api/pantry")).json()
     assert items[0]["in_stock"] is True
 
-    # Restocked, so it no longer needs buying.
+    # Restocked, but it stays on the list for the rest of the trip - see
+    # test_checked_pantry_item_stays_on_the_list.
     data = await grocery(client)
+    assert [i["name"] for i in data["pantry_restock"]] == ["Coffee"]
+    assert data["pantry_restock"][0]["checked"] is True
+
+
+async def test_checked_pantry_item_stays_on_the_list(client):
+    """Checking a staple off restocks it, and an in-stock staple is normally
+    dropped - so without care the row vanishes the moment it is ticked. In the
+    shop that reads as the item never having been there: nothing to check
+    against the basket, and no way to undo a misplaced tap."""
+    pantry = (
+        await client.post("/api/pantry", json={"name": "Coffee", "in_stock": False})
+    ).json()
+    key = (await grocery(client))["pantry_restock"][0]["key"]
+
+    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    data = await grocery(client)
+    assert [i["name"] for i in data["pantry_restock"]] == ["Coffee"]
+    assert data["pantry_restock"][0]["checked"] is True
+
+    # And unticking it is possible, because the row is still there to untick.
+    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": False})
+    data = await grocery(client)
+    assert data["pantry_restock"][0]["checked"] is False
+    assert (await client.get("/api/pantry")).json()[0]["in_stock"] is False
+    assert data["pantry_restock"][0]["pantry_item_id"] == pantry["id"]
+
+
+async def test_checked_pantry_ingredient_stays_in_the_buy_section(client):
+    """Same rule for a staple a planned recipe calls for: it is listed under
+    "to buy" rather than restock, and must survive being checked off there."""
+    recipe = await make_recipe(
+        client, "Salad", [{"name": "Olive oil", "quantity": 2, "unit": "tbsp"}]
+    )
+    await plan(client, "2026-07-20", "lunch", recipe["id"])
+    await client.post("/api/pantry", json={"name": "olive oil", "in_stock": False})
+    key = (await grocery(client))["items"][0]["key"]
+
+    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    data = await grocery(client)
+    assert [i["name"] for i in data["items"]] == ["Olive oil"]
+    assert data["items"][0]["checked"] is True
+    # Still one row, not one in each section.
+    assert data["pantry_restock"] == []
+
+
+async def test_stocked_staple_is_dropped_when_it_was_never_checked(client):
+    """The exception is narrow: an ordinary in-stock staple stays off the list."""
+    recipe = await make_recipe(
+        client, "Salad", [{"name": "Olive oil", "quantity": 2, "unit": "tbsp"}]
+    )
+    await plan(client, "2026-07-20", "lunch", recipe["id"])
+    await client.post("/api/pantry", json={"name": "olive oil", "in_stock": True})
+
+    data = await grocery(client)
+    assert data["items"] == []
     assert data["pantry_restock"] == []
 
 

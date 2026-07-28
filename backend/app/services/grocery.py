@@ -16,7 +16,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import GroceryCheck, Ingredient, MealPlanEntry, PantryItem, Recipe
+from ..models import GroceryCheck, MealPlanEntry, PantryItem, Recipe
 from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse
 from .canonical import best_display, canonical_key
 from .quantity import format_quantity
@@ -91,6 +91,19 @@ def _format_amounts(per_unit: dict[str | None, float], unitless_uses: int) -> li
     return amounts
 
 
+def _still_shoppable(pantry: PantryItem | None, checked: bool) -> bool:
+    """Whether a pantry-tracked line still belongs on the list.
+
+    An in-stock staple is nothing to buy, so it is normally dropped. But
+    checking an item off is itself what restocks it (routes.grocery.toggle_item
+    flips in_stock), so dropping every in-stock staple would delete the row the
+    instant the user ticked it - mid-trip, with no way to confirm it was bought
+    and no way to untick it. A checked staple therefore stays on the list and
+    renders struck through, until the checkmarks are cleared.
+    """
+    return pantry is None or not pantry.in_stock or checked
+
+
 async def build_grocery_list(
     session: AsyncSession, start: date, end: date
 ) -> GroceryList:
@@ -141,8 +154,7 @@ async def build_grocery_list(
     for key, variants in name_variants.items():
         name = best_display(variants)
         pantry = pantry_by_key.get(key)
-        if pantry is not None and pantry.in_stock:
-            # Already stocked; nothing to buy.
+        if not _still_shoppable(pantry, key in checked_keys):
             continue
         items.append(
             GroceryItem(
@@ -161,7 +173,7 @@ async def build_grocery_list(
     restock: list[GroceryItem] = []
     for pantry in pantry_items:
         key = item_key(pantry.name)
-        if pantry.in_stock or key in covered_keys:
+        if key in covered_keys or not _still_shoppable(pantry, key in checked_keys):
             continue
         restock.append(
             GroceryItem(

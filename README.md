@@ -55,6 +55,24 @@ cd backend && uv run pytest
 cd frontend && npm run build   # includes typecheck
 ```
 
+## Database migrations
+
+Alembic owns the schema, and the backend runs `upgrade head` itself on startup, so a deploy needs no manual step.
+
+After changing a model, generate the matching revision from the `backend/` directory:
+
+```sh
+uv run alembic revision --autogenerate -m "what changed"   # review the result before committing
+uv run alembic upgrade head
+uv run alembic check                                       # models and migrations agree
+```
+
+The URL comes from `DATABASE_URL`, the same variable the app reads, so the CLI and the app can never target different databases.
+`tests/test_migrations.py` fails the build if a model change lands without its revision.
+
+Databases created before Alembic was introduced have no `alembic_version` table.
+Rather than rebuild them, startup stamps them at the revision whose schema they already match and upgrades forward from there, so existing recipes are left untouched - see `app/migrations.py`.
+
 ## Deployment
 
 Pushes to `main` (and `v*` tags) run tests, then build and push multi-arch images to GHCR via `.github/workflows/build-images.yml`.

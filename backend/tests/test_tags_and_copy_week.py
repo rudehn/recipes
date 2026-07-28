@@ -70,7 +70,8 @@ async def test_update_does_not_churn_kept_tag_rows(client):
     assert "weeknight" in after
 
 
-async def test_summaries_include_tags_and_ingredient_names(client):
+async def test_summaries_include_tags_but_not_ingredients(client):
+    """Ingredients are searched server-side now, so a card never carries them."""
     await make_recipe(
         client,
         "Pesto Pasta",
@@ -80,9 +81,10 @@ async def test_summaries_include_tags_and_ingredient_names(client):
             {"name": "Parmesan", "quantity": None, "unit": None},
         ],
     )
-    summaries = (await client.get("/api/recipes")).json()
+    summaries = (await client.get("/api/recipes")).json()["items"]
     assert summaries[0]["tags"] == ["vegetarian"]
-    assert summaries[0]["ingredient_names"] == ["Basil", "Parmesan"]
+    assert "ingredient_names" not in summaries[0]
+    assert "ingredients" not in summaries[0]
 
 
 async def test_copy_week(client):

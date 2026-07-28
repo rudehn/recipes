@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
+import { useDebounced } from "../useDebounced";
+import { useLoad } from "../useLoad";
+
+/** How many matches the picker shows before asking for a narrower search. */
+const PICKER_LIMIT = 20;
 
 export function TimeChips({
   recipe,
@@ -41,12 +46,14 @@ export function RecipePickerModal({
   onPick: (recipe: RecipeSummary) => void;
   onClose: () => void;
 }) {
-  const [recipes, setRecipes] = useState<RecipeSummary[]>([]);
   const [query, setQuery] = useState("");
-
-  useEffect(() => {
-    api.listRecipes().then(setRecipes).catch(() => setRecipes([]));
-  }, []);
+  const search = useDebounced(query.trim());
+  // A modal paging through recipes would be a worse way to find one than
+  // typing, so it shows the first screenful of matches and asks for more
+  // letters instead of a page number.
+  const { data: matches, error } = useLoad(
+    useCallback(() => api.listRecipes({ q: search, per_page: PICKER_LIMIT }), [search]),
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -56,11 +63,8 @@ export function RecipePickerModal({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return recipes;
-    return recipes.filter((r) => r.title.toLowerCase().includes(q));
-  }, [recipes, query]);
+  const found = matches?.items ?? [];
+  const hidden = (matches?.total ?? 0) - found.length;
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -80,7 +84,7 @@ export function RecipePickerModal({
           />
         </div>
         <div className="modal-list">
-          {filtered.map((r) => (
+          {found.map((r) => (
             <button key={r.id} className="modal-recipe" onClick={() => onPick(r)}>
               {r.image_filename ? (
                 <img src={imageUrl(r.image_filename)!} alt="" />
@@ -90,9 +94,14 @@ export function RecipePickerModal({
               <span>{r.title}</span>
             </button>
           ))}
-          {filtered.length === 0 && (
-            <p style={{ padding: "8px 10px", color: "var(--muted)" }}>
-              No recipes found.
+          {found.length === 0 && (
+            <p className="modal-note">
+              {error ? `Could not load your recipes. ${error}` : "No recipes found."}
+            </p>
+          )}
+          {hidden > 0 && (
+            <p className="modal-note">
+              {hidden} more {hidden === 1 ? "match" : "matches"} - keep typing to narrow.
             </p>
           )}
         </div>

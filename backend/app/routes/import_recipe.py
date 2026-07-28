@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from ..schemas import ImportRequest, RecipeDraft, RecipeSearchRequest
 from ..services.fetch import BROWSER_HEADERS
 from ..services.recipe_import import RecipeNotFound, parse_recipe_html
-from ..services.recipe_search import search_recipes
+from ..services.recipe_search import search_recipes, site_label
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -21,9 +21,11 @@ async def import_recipe(data: ImportRequest):
         raise HTTPException(status_code=502, detail=f"Could not fetch that page: {exc}")
 
     try:
-        return parse_recipe_html(resp.text, str(data.url))
+        draft = parse_recipe_html(resp.text, str(data.url))
     except RecipeNotFound as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    draft.source_label = site_label(str(data.url))
+    return draft
 
 
 @router.post("/search", response_model=list[RecipeDraft])
