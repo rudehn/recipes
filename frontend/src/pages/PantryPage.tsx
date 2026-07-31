@@ -32,7 +32,7 @@ export default function PantryPage() {
     // Flipped first: the switch is the whole interaction, and waiting on a
     // round trip to move it feels broken. Put back if the server disagrees,
     // since a switch that says "in stock" when the server has it out of stock
-    // silently drops the item from the next grocery list.
+    // sends the next grocery list to the wrong section.
     showStock(item.id, in_stock);
     if (await action.run(
       () => api.updatePantryItem(item.id, { in_stock }),
@@ -63,8 +63,9 @@ export default function PantryPage() {
 
       <p style={{ color: "var(--muted)", marginTop: 0 }}>
         Staples you always want on hand. Items marked out of stock are added to your
-        grocery list automatically, and in-stock staples are skipped when a recipe
-        calls for them.
+        grocery list automatically. When a recipe calls for one you have in stock, the
+        list sets it aside instead of buying it - and shows the amount, so you can
+        still buy more.
       </p>
 
       <form className="pantry-add" onSubmit={addItem}>

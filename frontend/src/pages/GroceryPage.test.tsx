@@ -103,7 +103,7 @@ describe("GroceryPage", () => {
 
     await screen.findByText("chicken thighs");
     expect(screen.getByText("To buy")).toBeInTheDocument();
-    expect(screen.getByText("1 items")).toBeInTheDocument();
+    expect(screen.getByText("1 item")).toBeInTheDocument();
     expect(row("chicken thighs")).toHaveTextContent("· 2 lb + 1½ lb");
     expect(row("chicken thighs")).toHaveTextContent("for Curry, Tacos");
   });
@@ -156,6 +156,103 @@ describe("GroceryPage", () => {
     expect(within(restock).getByText("olive oil")).toBeInTheDocument();
     expect(within(restock).queryByText("chicken thighs")).not.toBeInTheDocument();
     expect(row("olive oil")).toHaveTextContent("pantry");
+  });
+
+  it("shows what the pantry already covers instead of hiding it", async () => {
+    // The old behaviour dropped these outright, so a half-empty bag of rice
+    // marked "in stock" went missing until the cook reached for it.
+    mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [groceryItem({ name: "chicken thighs" })],
+        in_pantry: [
+          groceryItem({
+            name: "rice",
+            amounts: ["3 cups"],
+            uses: [{ recipe_id: 1, recipe_title: "Biryani", quantity: 3, unit: "cup" }],
+            from_pantry: true,
+            pantry_item_id: 7,
+          }),
+        ],
+      }),
+    });
+    renderApp(WEEK);
+
+    await screen.findByText("rice");
+    const stocked = screen.getByText("Already in your pantry").closest<HTMLElement>("details")!;
+    expect(within(stocked).getByText("1 item")).toBeInTheDocument();
+    // The amount is the point: it is what the decision to buy more rests on.
+    expect(row("rice")).toHaveTextContent("· 3 cups");
+    expect(row("rice")).toHaveTextContent("for Biryani");
+    // Not something to tick off - there is no trip for it.
+    expect(within(row("rice")).queryByRole("checkbox")).not.toBeInTheDocument();
+    const buy = screen.getByText("To buy").closest<HTMLElement>("section")!;
+    expect(within(buy).queryByText("rice")).not.toBeInTheDocument();
+  });
+
+  it("opens the pantry section when it is the only thing on the page", async () => {
+    mockBackend({
+      "GET /api/grocery-list": groceryList({
+        in_pantry: [groceryItem({ name: "rice", from_pantry: true, pantry_item_id: 7 })],
+      }),
+    });
+    renderApp(WEEK);
+
+    await screen.findByText("rice");
+    expect(screen.getByText("Already in your pantry").closest("details")).toHaveAttribute(
+      "open",
+    );
+    expect(screen.queryByText("Nothing to buy")).not.toBeInTheDocument();
+  });
+
+  it("moves a stocked item onto the list when asked to buy it anyway", async () => {
+    let inStock = true;
+    const backend = mockBackend({
+      "GET /api/grocery-list": () => {
+        const rice = groceryItem({
+          key: "rice",
+          name: "rice",
+          from_pantry: true,
+          pantry_item_id: 7,
+        });
+        return inStock
+          ? groceryList({ in_pantry: [rice] })
+          : groceryList({ items: [rice] });
+      },
+      "PUT /api/pantry/7": (req: MockRequest) => {
+        inStock = (req.body as { in_stock: boolean }).in_stock;
+        return { id: 7, name: "rice", in_stock: inStock };
+      },
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("rice");
+
+    await user.click(screen.getByRole("button", { name: "Buy anyway" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PUT /api/pantry/7")[0].body).toEqual({ in_stock: false }),
+    );
+    // It comes back as a normal line to tick off at the shop.
+    await waitFor(() =>
+      expect(within(row("rice")).getByRole("checkbox")).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole("button", { name: "Buy anyway" })).not.toBeInTheDocument();
+  });
+
+  it("reports a failure to move a stocked item onto the list", async () => {
+    mockBackend({
+      "GET /api/grocery-list": groceryList({
+        in_pantry: [groceryItem({ name: "rice", from_pantry: true, pantry_item_id: 7 })],
+      }),
+      "PUT /api/pantry/7": new HttpError(503, "Server is restarting"),
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("rice");
+
+    await user.click(screen.getByRole("button", { name: "Buy anyway" }));
+
+    expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
+    // Still where it was, rather than looking like it moved.
+    expect(screen.getByRole("button", { name: "Buy anyway" })).toBeInTheDocument();
   });
 
   it("ticks an item off immediately, then tells the server", async () => {

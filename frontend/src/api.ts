@@ -107,6 +107,8 @@ export interface GroceryList {
   start: string;
   end: string;
   items: GroceryItem[];
+  /** Planned ingredients the pantry already has. Not bought unless asked for. */
+  in_pantry: GroceryItem[];
   pantry_restock: GroceryItem[];
 }
 

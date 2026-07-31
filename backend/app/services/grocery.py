@@ -5,8 +5,9 @@ summed per normalized unit, so "2 cups flour" + "1 cup flour" becomes
 "3 cups", while mixed units are listed side by side ("1 cup + 2 tbsp").
 Totals are rendered as cooking fractions rather than decimals by
 services.quantity, so a scaled half-batch reads "1½ cups", not "1.5 cups".
-Pantry items that are in stock are dropped from the list; out-of-stock
-pantry items are added so a single list covers the whole shopping trip.
+Ingredients already in the pantry are set aside rather than bought, and
+out-of-stock pantry items are added, so a single list covers the whole
+shopping trip.
 """
 
 import re
@@ -91,15 +92,16 @@ def _format_amounts(per_unit: dict[str | None, float], unitless_uses: int) -> li
     return amounts
 
 
-def _still_shoppable(pantry: PantryItem | None, checked: bool) -> bool:
-    """Whether a pantry-tracked line still belongs on the list.
+def _needs_buying(pantry: PantryItem | None, checked: bool) -> bool:
+    """Whether a pantry-tracked line belongs in the "to buy" section.
 
-    An in-stock staple is nothing to buy, so it is normally dropped. But
+    An in-stock staple is nothing to buy, so it is normally set aside. But
     checking an item off is itself what restocks it (routes.grocery.toggle_item
-    flips in_stock), so dropping every in-stock staple would delete the row the
-    instant the user ticked it - mid-trip, with no way to confirm it was bought
-    and no way to untick it. A checked staple therefore stays on the list and
-    renders struck through, until the checkmarks are cleared.
+    flips in_stock), so treating every in-stock staple as set aside would move
+    the row out from under the user the instant they ticked it - mid-trip, with
+    no way to confirm it was bought and no way to untick it. A checked staple
+    therefore stays in "to buy" and renders struck through, until the
+    checkmarks are cleared.
     """
     return pantry is None or not pantry.in_stock or checked
 
@@ -151,29 +153,35 @@ async def build_grocery_list(
             )
 
     items: list[GroceryItem] = []
+    in_pantry: list[GroceryItem] = []
     for key, variants in name_variants.items():
-        name = best_display(variants)
         pantry = pantry_by_key.get(key)
-        if not _still_shoppable(pantry, key in checked_keys):
-            continue
-        items.append(
-            GroceryItem(
-                key=key,
-                name=name,
-                amounts=_format_amounts(quantities.get(key, {}), no_quantity_uses[key]),
-                uses=uses[key],
-                checked=key in checked_keys,
-                from_pantry=pantry is not None,
-                pantry_item_id=pantry.id if pantry is not None else None,
-            )
+        item = GroceryItem(
+            key=key,
+            name=best_display(variants),
+            amounts=_format_amounts(quantities.get(key, {}), no_quantity_uses[key]),
+            uses=uses[key],
+            checked=key in checked_keys,
+            from_pantry=pantry is not None,
+            pantry_item_id=pantry.id if pantry is not None else None,
         )
+        # An ingredient already in the pantry is set aside, not dropped: "in
+        # stock" says nothing about whether there is enough for the week being
+        # planned, and an ingredient that silently never appears is only
+        # discovered at the stove. The amounts travel with it so the cook can
+        # weigh what the meals need against what the jar holds.
+        if _needs_buying(pantry, key in checked_keys):
+            items.append(item)
+        else:
+            in_pantry.append(item)
     items.sort(key=lambda i: normalize_name(i.name))
+    in_pantry.sort(key=lambda i: normalize_name(i.name))
 
-    covered_keys = {i.key for i in items}
+    covered_keys = {i.key for i in items} | {i.key for i in in_pantry}
     restock: list[GroceryItem] = []
     for pantry in pantry_items:
         key = item_key(pantry.name)
-        if key in covered_keys or not _still_shoppable(pantry, key in checked_keys):
+        if key in covered_keys or not _needs_buying(pantry, key in checked_keys):
             continue
         restock.append(
             GroceryItem(
@@ -188,4 +196,10 @@ async def build_grocery_list(
         )
     restock.sort(key=lambda i: normalize_name(i.name))
 
-    return GroceryList(start=start, end=end, items=items, pantry_restock=restock)
+    return GroceryList(
+        start=start,
+        end=end,
+        items=items,
+        in_pantry=in_pantry,
+        pantry_restock=restock,
+    )

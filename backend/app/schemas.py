@@ -154,6 +154,9 @@ class GroceryList(BaseModel):
     start: date
     end: date
     items: list[GroceryItem]
+    # Planned ingredients already stocked in the pantry: nothing to buy by
+    # default, but shown with their amounts so the cook can decide otherwise.
+    in_pantry: list[GroceryItem]
     pantry_restock: list[GroceryItem]
 
 

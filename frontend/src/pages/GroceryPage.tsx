@@ -18,6 +18,8 @@ import { useLoad } from "../useLoad";
  */
 type Unsaved = ReadonlyMap<string, boolean>;
 
+const itemCount = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
+
 function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList | null {
   if (!list || unsaved.size === 0) return list;
   const apply = (item: GroceryItem) =>
@@ -25,6 +27,7 @@ function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList |
   return {
     ...list,
     items: list.items.map(apply),
+    in_pantry: list.in_pantry.map(apply),
     pantry_restock: list.pantry_restock.map(apply),
   };
 }
@@ -69,6 +72,7 @@ export default function GroceryPage() {
       return {
         ...prev,
         items: prev.items.map(flip),
+        in_pantry: prev.in_pantry.map(flip),
         pantry_restock: prev.pantry_restock.map(flip),
       };
     });
@@ -97,6 +101,20 @@ export default function GroceryPage() {
     if (stillUnsaved.size === 0) reload();
   }
 
+  /**
+   * Move a stocked staple onto the shopping list.
+   *
+   * Wanting more of something is the same fact as being low on it, which the
+   * pantry already records - so this marks the item out of stock rather than
+   * inventing a second flag. The row then appears under "to buy", and ticking
+   * it off at the shop puts it back in stock the way any other staple does.
+   */
+  async function buyAnyway(item: GroceryItem) {
+    const id = item.pantry_item_id;
+    if (id === null) return;
+    if (await action.run(() => api.updatePantryItem(id, { in_stock: false }))) reload();
+  }
+
   async function clearChecks() {
     if (await action.run(() => api.clearGroceryChecks())) {
       setUnsaved(new Map());
@@ -108,7 +126,11 @@ export default function GroceryPage() {
     Math.round(
       (fromISODate(end).getTime() - fromISODate(start).getTime()) / 86_400_000,
     ) + 1;
-  const empty = list && list.items.length === 0 && list.pantry_restock.length === 0;
+  const empty =
+    list &&
+    list.items.length === 0 &&
+    list.in_pantry.length === 0 &&
+    list.pantry_restock.length === 0;
 
   return (
     <div className="grocery-layout">
@@ -181,7 +203,7 @@ export default function GroceryPage() {
       {list && list.items.length > 0 && (
         <section className="grocery-section">
           <h2>
-            To buy <span className="count">{list.items.length} items</span>
+            To buy <span className="count">{itemCount(list.items.length)}</span>
           </h2>
           {list.items.map((item) => (
             <GroceryRow key={item.key} item={item} onToggle={toggle} />
@@ -189,11 +211,31 @@ export default function GroceryPage() {
         </section>
       )}
 
+      {list && list.in_pantry.length > 0 && (
+        // Folded away, because the answer for these is usually "you have it".
+        // Opened when there is nothing to buy, so the page is never just a
+        // heading and a number. The count stays visible either way: the point
+        // is that nothing is hidden without saying so.
+        <details className="grocery-section stocked-section" open={list.items.length === 0}>
+          <summary>
+            Already in your pantry{" "}
+            <span className="count">{itemCount(list.in_pantry.length)}</span>
+          </summary>
+          <p className="section-note">
+            Off the list because the pantry has them. Check the amounts your meals
+            need if you are not sure there is enough.
+          </p>
+          {list.in_pantry.map((item) => (
+            <StockedRow key={item.key} item={item} onBuyAnyway={buyAnyway} />
+          ))}
+        </details>
+      )}
+
       {list && list.pantry_restock.length > 0 && (
         <section className="grocery-section">
           <h2>
             Restock pantry{" "}
-            <span className="count">{list.pantry_restock.length} items</span>
+            <span className="count">{itemCount(list.pantry_restock.length)}</span>
           </h2>
           {list.pantry_restock.map((item) => (
             <GroceryRow key={item.key} item={item} onToggle={toggle} />
@@ -204,6 +246,23 @@ export default function GroceryPage() {
   );
 }
 
+/** Name, totals, and the recipes asking for it - the same in every section. */
+function ItemText({ item }: { item: GroceryItem }) {
+  const recipeTitles = [...new Set(item.uses.map((u) => u.recipe_title))];
+  return (
+    <span style={{ flex: 1 }}>
+      <span className="name">{item.name}</span>
+      {item.amounts.length > 0 && (
+        <>
+          {" "}
+          <span className="amounts">· {item.amounts.join(" + ")}</span>
+        </>
+      )}
+      {recipeTitles.length > 0 && <div className="uses">for {recipeTitles.join(", ")}</div>}
+    </span>
+  );
+}
+
 function GroceryRow({
   item,
   onToggle,
@@ -211,7 +270,6 @@ function GroceryRow({
   item: GroceryItem;
   onToggle: (item: GroceryItem) => void;
 }) {
-  const recipeTitles = [...new Set(item.uses.map((u) => u.recipe_title))];
   return (
     <label className={`grocery-item${item.checked ? " checked" : ""}`}>
       <input
@@ -219,19 +277,30 @@ function GroceryRow({
         checked={item.checked}
         onChange={() => onToggle(item)}
       />
-      <span style={{ flex: 1 }}>
-        <span className="name">{item.name}</span>
-        {item.amounts.length > 0 && (
-          <>
-            {" "}
-            <span className="amounts">· {item.amounts.join(" + ")}</span>
-          </>
-        )}
-        {recipeTitles.length > 0 && (
-          <div className="uses">for {recipeTitles.join(", ")}</div>
-        )}
-      </span>
+      <ItemText item={item} />
       {item.from_pantry && <span className="pantry-tag">pantry</span>}
     </label>
+  );
+}
+
+/**
+ * A stocked staple. No checkbox: there is nothing to tick off a trip you are
+ * not making, and a checkbox here would read as "buy this" - the opposite of
+ * what the row says. The button is the only action, and it says what it does.
+ */
+function StockedRow({
+  item,
+  onBuyAnyway,
+}: {
+  item: GroceryItem;
+  onBuyAnyway: (item: GroceryItem) => void;
+}) {
+  return (
+    <div className="grocery-item stocked">
+      <ItemText item={item} />
+      <button className="btn small" onClick={() => onBuyAnyway(item)}>
+        Buy anyway
+      </button>
+    </div>
   );
 }

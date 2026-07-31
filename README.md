@@ -14,8 +14,8 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.
 * Pantry staples: items you always keep in stock.
-  In-stock staples are skipped on the grocery list; out-of-stock ones are added to it.
-  Checking a pantry item off the list marks it back in stock.
+  Out-of-stock staples are added to the grocery list, and checking a pantry item off the list marks it back in stock.
+  When a planned recipe calls for a staple you already have, it is set aside under "already in your pantry" rather than put on the list - listed with the amount the week's meals need, so you can buy more anyway if the jar won't cover it.
 
 ## Architecture
 

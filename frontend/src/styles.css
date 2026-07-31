@@ -859,11 +859,58 @@ input:focus, select:focus, textarea:focus {
   gap: 10px;
 }
 
-.grocery-section h2 .count {
+.grocery-section h2 .count,
+.stocked-section summary .count {
   font-family: var(--font-body);
   font-size: 0.85rem;
   color: var(--muted);
   font-weight: 500;
+}
+
+/* A <details>, so the summary has to carry the h2 look itself. */
+.stocked-section summary {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--muted);
+  list-style: none;
+}
+
+.stocked-section summary::-webkit-details-marker { display: none; }
+
+/* Its own chevron, drawn after the count rather than in the default marker
+   slot, so the heading starts on the same left edge as the sections above and
+   below it instead of sitting indented from them. */
+.stocked-section summary::after {
+  content: "";
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.stocked-section[open] summary {
+  color: inherit;
+  margin-bottom: 10px;
+}
+
+.stocked-section[open] summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.section-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  max-width: 46ch;
 }
 
 .grocery-item {
@@ -881,6 +928,19 @@ input:focus, select:focus, textarea:focus {
 .grocery-item.checked { opacity: 0.55; }
 
 .grocery-item.checked .name { text-decoration: line-through; }
+
+/* Settled, not struck out: these are not bought, they are simply not needed. */
+.grocery-item.stocked {
+  align-items: center;
+  background: transparent;
+  border-style: dashed;
+}
+
+.grocery-item.stocked .name { font-weight: 500; color: var(--muted); }
+
+.grocery-item.stocked .amounts { color: var(--muted); font-weight: 600; }
+
+.grocery-item.stocked .btn { flex: none; }
 
 .grocery-item input[type="checkbox"] {
   width: 19px;

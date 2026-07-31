@@ -121,6 +121,7 @@ async def test_pantry_matches_descriptive_ingredient_names(client):
 
     data = await grocery(client)
     assert data["items"] == []
+    assert [i["name"] for i in data["in_pantry"]] == ["Kosher salt"]
 
 
 async def test_grocery_respects_date_range(client):
@@ -133,7 +134,7 @@ async def test_grocery_respects_date_range(client):
     assert data["items"] == []
 
 
-async def test_pantry_in_stock_items_are_excluded(client):
+async def test_pantry_in_stock_items_are_set_aside_not_bought(client):
     recipe = await make_recipe(
         client,
         "Salad",
@@ -143,11 +144,61 @@ async def test_pantry_in_stock_items_are_excluded(client):
         ],
     )
     await plan(client, "2026-07-20", "lunch", recipe["id"])
-    await client.post("/api/pantry", json={"name": "olive oil", "in_stock": True})
+    pantry = (
+        await client.post("/api/pantry", json={"name": "olive oil", "in_stock": True})
+    ).json()
 
     data = await grocery(client)
-    names = [i["name"].lower() for i in data["items"]]
-    assert names == ["lettuce"]
+    assert [i["name"].lower() for i in data["items"]] == ["lettuce"]
+    assert [i["name"].lower() for i in data["in_pantry"]] == ["olive oil"]
+    assert data["pantry_restock"] == []
+    # It is set aside, not forgotten: the amount the week's meals need travels
+    # with it, which is the whole basis for overriding the default.
+    stocked = data["in_pantry"][0]
+    assert stocked["amounts"] == ["2 tbsp"]
+    assert [u["recipe_title"] for u in stocked["uses"]] == ["Salad"]
+    assert stocked["from_pantry"] is True
+    assert stocked["pantry_item_id"] == pantry["id"]
+
+
+async def test_stocked_staple_moves_to_the_buy_list_when_marked_out_of_stock(client):
+    """"Buy anyway" on the grocery page marks the staple out of stock, which is
+    what moves it across. The trip then finishes it off like any other item."""
+    recipe = await make_recipe(
+        client, "Salad", [{"name": "Olive oil", "quantity": 2, "unit": "tbsp"}]
+    )
+    await plan(client, "2026-07-20", "lunch", recipe["id"])
+    pantry = (
+        await client.post("/api/pantry", json={"name": "olive oil", "in_stock": True})
+    ).json()
+
+    resp = await client.put(f"/api/pantry/{pantry['id']}", json={"in_stock": False})
+    assert resp.status_code == 200
+
+    data = await grocery(client)
+    assert [i["name"] for i in data["items"]] == ["Olive oil"]
+    assert data["in_pantry"] == []
+    assert data["items"][0]["amounts"] == ["2 tbsp"]
+
+    # Ticking it off at the shop restocks it, and it goes back to being set aside.
+    key = data["items"][0]["key"]
+    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    await client.post("/api/grocery-list/clear-checks")
+
+    data = await grocery(client)
+    assert data["items"] == []
+    assert [i["name"] for i in data["in_pantry"]] == ["Olive oil"]
+
+
+async def test_in_stock_staple_no_recipe_needs_is_not_listed(client):
+    """The set-aside section is about this week's meals, not the whole pantry -
+    otherwise it is just a second, longer copy of the pantry page."""
+    await client.post("/api/pantry", json={"name": "Rice", "in_stock": True})
+
+    data = await grocery(client)
+    assert data["items"] == []
+    assert data["in_pantry"] == []
+    assert data["pantry_restock"] == []
 
 
 async def test_out_of_stock_pantry_item_needed_by_recipe_stays_on_list(client):
@@ -233,12 +284,15 @@ async def test_checked_pantry_ingredient_stays_in_the_buy_section(client):
     data = await grocery(client)
     assert [i["name"] for i in data["items"]] == ["Olive oil"]
     assert data["items"][0]["checked"] is True
-    # Still one row, not one in each section.
+    # Still one row, not one in each section - checking it off restocked it,
+    # which is exactly the state that would otherwise move it to "in pantry".
+    assert data["in_pantry"] == []
     assert data["pantry_restock"] == []
 
 
-async def test_stocked_staple_is_dropped_when_it_was_never_checked(client):
-    """The exception is narrow: an ordinary in-stock staple stays off the list."""
+async def test_stocked_staple_is_set_aside_when_it_was_never_checked(client):
+    """The exception is narrow: an ordinary in-stock staple stays off the buy
+    list, and is only there at all because it was checked."""
     recipe = await make_recipe(
         client, "Salad", [{"name": "Olive oil", "quantity": 2, "unit": "tbsp"}]
     )
@@ -247,6 +301,7 @@ async def test_stocked_staple_is_dropped_when_it_was_never_checked(client):
 
     data = await grocery(client)
     assert data["items"] == []
+    assert [i["name"] for i in data["in_pantry"]] == ["Olive oil"]
     assert data["pantry_restock"] == []
 
 

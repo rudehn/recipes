@@ -109,6 +109,7 @@ export function groceryList(overrides: Partial<GroceryList> = {}): GroceryList {
     start: "2026-07-27",
     end: "2026-08-02",
     items: [],
+    in_pantry: [],
     pantry_restock: [],
     ...overrides,
   };
