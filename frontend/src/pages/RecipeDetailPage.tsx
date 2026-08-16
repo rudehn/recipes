@@ -1,8 +1,19 @@
 import { useCallback, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 import { api } from "../api";
 import { RecipePhoto } from "../components/RecipeBits";
+import {
+  Banner,
+  Button,
+  Chip,
+  Chips,
+  EmptyState,
+  LinkButton,
+  PageHead,
+  Panel,
+  Toolbar,
+} from "../components/ui";
 import { formatQuantity } from "../quantity";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
@@ -24,18 +35,14 @@ export default function RecipeDetailPage() {
   // them apart from it.
   if (error && !recipe) {
     return (
-      <div className="empty-state" role="alert">
-        <div className="glyph">🤷</div>
-        <h2>{error}</h2>
-        <p className="toolbar" style={{ justifyContent: "center" }}>
-          <button className="btn primary" onClick={reload}>
+      <EmptyState glyph="🤷" title={error} role="alert">
+        <Toolbar center>
+          <Button variant="primary" onClick={reload}>
             Try again
-          </button>
-          <Link to="/recipes" className="btn">
-            Back to recipes
-          </Link>
-        </p>
-      </div>
+          </Button>
+          <LinkButton to="/recipes">Back to recipes</LinkButton>
+        </Toolbar>
+      </EmptyState>
     );
   }
   if (!recipe) return null;
@@ -54,51 +61,47 @@ export default function RecipeDetailPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>{recipe.title}</h1>
-        <span className="spacer" />
-        <div className="toolbar">
-          <Link to={`/recipes/${recipe.id}/edit`} className="btn">
-            Edit
-          </Link>
-          <button className="btn danger" onClick={handleDelete}>
+      <PageHead title={recipe.title}>
+        <Toolbar>
+          <LinkButton to={`/recipes/${recipe.id}/edit`}>Edit</LinkButton>
+          <Button variant="danger" onClick={handleDelete}>
             Delete
-          </button>
-        </div>
-      </div>
+          </Button>
+        </Toolbar>
+      </PageHead>
 
       {action.error && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+        <Banner tone="error" spaced>
+          {action.error}
+        </Banner>
       )}
 
       <div className="detail-hero">
         <RecipePhoto recipe={recipe} />
         <div>
           {recipe.description && <p>{recipe.description}</p>}
-          <div className="chips">
+          <Chips>
             {recipe.prep_minutes != null && (
-              <span className="chip accent">Prep {recipe.prep_minutes} min</span>
+              <Chip tone="accent">Prep {recipe.prep_minutes} min</Chip>
             )}
             {recipe.cook_minutes != null && (
-              <span className="chip accent">Cook {recipe.cook_minutes} min</span>
+              <Chip tone="accent">Cook {recipe.cook_minutes} min</Chip>
             )}
-            {recipe.servings != null && (
-              <span className="chip">Serves {recipe.servings}</span>
-            )}
+            {recipe.servings != null && <Chip>Serves {recipe.servings}</Chip>}
             {recipe.tags.map((tag) => (
-              <span key={tag} className="chip green">
+              <Chip key={tag} tone="green">
                 {tag}
-              </span>
+              </Chip>
             ))}
-          </div>
+          </Chips>
         </div>
       </div>
 
       <div className="detail-cols">
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Ingredients</h2>
-            {recipe.servings != null && (
+        <Panel
+          title="Ingredients"
+          action={
+            recipe.servings != null ? (
               <div className="servings-stepper">
                 <button
                   aria-label="Fewer servings"
@@ -123,8 +126,9 @@ export default function RecipeDetailPage() {
                   +
                 </button>
               </div>
-            )}
-          </div>
+            ) : undefined
+          }
+        >
           <ul className="ingredient-list">
             {recipe.ingredients.map((ing) => {
               const factor =
@@ -140,21 +144,18 @@ export default function RecipeDetailPage() {
               );
             })}
             {recipe.ingredients.length === 0 && (
-              <li style={{ color: "var(--muted)" }}>No ingredients listed.</li>
+              <li className="empty-note">No ingredients listed.</li>
             )}
           </ul>
-        </div>
-        <div className="panel">
-          <h2>Instructions</h2>
+        </Panel>
+        <Panel title="Instructions">
           <ol className="steps">
             {steps.map((step, i) => (
               <li key={i}>{step}</li>
             ))}
           </ol>
-          {steps.length === 0 && (
-            <p style={{ color: "var(--muted)", margin: 0 }}>No instructions yet.</p>
-          )}
-        </div>
+          {steps.length === 0 && <p className="empty-note">No instructions yet.</p>}
+        </Panel>
       </div>
     </>
   );

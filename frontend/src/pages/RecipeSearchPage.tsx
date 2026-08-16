@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, type RecipeDraft } from "../api";
+import { Banner, Button, EmptyState, LinkButton, PageHead, Panel } from "../components/ui";
 import { formatQuantity } from "../quantity";
 
 function totalMinutes(draft: RecipeDraft): number | null {
@@ -83,13 +84,9 @@ export default function RecipeSearchPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Find a recipe</h1>
-        <span className="spacer" />
-        <Link to="/recipes" className="btn">
-          Back to recipes
-        </Link>
-      </div>
+      <PageHead title="Find a recipe">
+        <LinkButton to="/recipes">Back to recipes</LinkButton>
+      </PageHead>
 
       <div className="import-box">
         <div className="import-row">
@@ -105,28 +102,25 @@ export default function RecipeSearchPage() {
               }
             }}
           />
-          <button
-            type="button"
-            className="btn primary"
+          <Button
+            variant="primary"
             onClick={() => void handleSearch()}
             disabled={searching || query.trim().length < 2}
           >
             {searching ? "Searching…" : "Search"}
-          </button>
+          </Button>
         </div>
         <span className="hint">
           Searches a handful of trusted cooking sites and pulls in each recipe so
           you can compare them side by side. Nothing is saved until you pick one.
         </span>
-        {error && <div className="error-banner">{error}</div>}
+        {error && <Banner tone="error">{error}</Banner>}
       </div>
 
       {searching && (
-        <div className="empty-state">
-          <div className="glyph">🥣</div>
-          <h2>Gathering recipes…</h2>
+        <EmptyState glyph="🥣" title="Gathering recipes…">
           <p>Reading a few cooking sites at once.</p>
-        </div>
+        </EmptyState>
       )}
 
       {drafts && drafts.length > 0 && current && (
@@ -173,9 +167,9 @@ export default function RecipeSearchPage() {
               . Not saved yet.
             </span>
             <span className="spacer" />
-            <button className="btn primary" onClick={() => pickDraft(current)}>
+            <Button variant="primary" onClick={() => pickDraft(current)}>
               Use this recipe
-            </button>
+            </Button>
           </div>
 
           <div className="detail-hero">
@@ -211,8 +205,7 @@ export default function RecipeSearchPage() {
           </div>
 
           <div className="detail-cols">
-            <div className="panel">
-              <h2>Ingredients</h2>
+            <Panel title="Ingredients">
               <ul className="ingredient-list">
                 {current.ingredients.map((ing, i) => (
                   <li key={i}>
@@ -221,29 +214,26 @@ export default function RecipeSearchPage() {
                   </li>
                 ))}
                 {current.ingredients.length === 0 && (
-                  <li style={{ color: "var(--muted)" }}>No ingredients listed.</li>
+                  <li className="empty-note">No ingredients listed.</li>
                 )}
               </ul>
-            </div>
-            <div className="panel">
-              <h2>Instructions</h2>
+            </Panel>
+            <Panel title="Instructions">
               <ol className="steps">
                 {steps.map((step, i) => (
                   <li key={i}>{step}</li>
                 ))}
               </ol>
               {steps.length === 0 && (
-                <p style={{ color: "var(--muted)", margin: 0 }}>
-                  No instructions found.
-                </p>
+                <p className="empty-note">No instructions found.</p>
               )}
-            </div>
+            </Panel>
           </div>
 
           <div className="form-actions">
-            <button className="btn primary" onClick={() => pickDraft(current)}>
+            <Button variant="primary" onClick={() => pickDraft(current)}>
               Use this recipe
-            </button>
+            </Button>
             <span className="hint">
               You can edit everything before saving.
             </span>
@@ -252,9 +242,7 @@ export default function RecipeSearchPage() {
       )}
 
       {drafts && drafts.length === 0 && (
-        <div className="empty-state">
-          <div className="glyph">🔍</div>
-          <h2>No recipes for “{searched}”</h2>
+        <EmptyState glyph="🔍" title={`No recipes for “${searched}”`}>
           <p>
             Try the dish name on its own, or{" "}
             <Link to="/recipes/new" className="inline-link">
@@ -262,7 +250,7 @@ export default function RecipeSearchPage() {
             </Link>
             .
           </p>
-        </div>
+        </EmptyState>
       )}
     </>
   );

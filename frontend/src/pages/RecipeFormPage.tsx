@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   api,
@@ -8,6 +8,15 @@ import {
   type RecipeDraft,
   type RecipeInput,
 } from "../api";
+import {
+  Banner,
+  Button,
+  Field,
+  FieldRow,
+  IconButton,
+  LinkButton,
+  PageHead,
+} from "../components/ui";
 import { formatAmount, parseQuantity } from "../quantity";
 import { errorMessage } from "../useLoad";
 
@@ -172,9 +181,7 @@ export default function RecipeFormPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>{isEdit ? "Edit recipe" : "New recipe"}</h1>
-      </div>
+      <PageHead title={isEdit ? "Edit recipe" : "New recipe"} />
 
       {!isEdit && pickedDraft && (
         <div className="import-box">
@@ -203,28 +210,26 @@ export default function RecipeFormPage() {
                 }
               }}
             />
-            <button
-              type="button"
-              className="btn primary"
+            <Button
+              variant="primary"
               onClick={handleImport}
               disabled={importing || !importUrl.trim()}
             >
               {importing ? "Importing…" : "Import"}
-            </button>
+            </Button>
           </div>
           <span className="hint">
             Reads the recipe data most cooking sites embed and fills in the form
             below for you to review.
           </span>
-          {importError && <div className="error-banner">{importError}</div>}
+          {importError && <Banner tone="error">{importError}</Banner>}
         </div>
       )}
 
       <form className="form" onSubmit={handleSubmit}>
-        {error && <div className="error-banner">{error}</div>}
+        {error && <Banner tone="error">{error}</Banner>}
 
-        <div className="field">
-          <label htmlFor="title">Title</label>
+        <Field label="Title" htmlFor="title">
           <input
             id="title"
             value={title}
@@ -232,23 +237,21 @@ export default function RecipeFormPage() {
             placeholder="e.g. Weeknight chicken curry"
             autoFocus={!isEdit}
           />
-        </div>
+        </Field>
 
-        <div className="field">
-          <label htmlFor="description">Description</label>
+        <Field label="Description" htmlFor="description">
           <input
             id="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="A short note about this dish (optional)"
           />
-        </div>
+        </Field>
 
-        <div className="field">
-          <label>Photo</label>
+        <Field label="Photo">
           <div className="image-drop">
             {previewUrl && <img src={previewUrl} alt="Recipe preview" />}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="image-drop-actions">
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -258,10 +261,9 @@ export default function RecipeFormPage() {
                 }}
               />
               {(imageFile || importedImageUrl || (existingImage && !removeImage)) && (
-                <button
-                  type="button"
-                  className="btn small danger"
-                  style={{ alignSelf: "flex-start" }}
+                <Button
+                  variant="danger"
+                  size="small"
                   onClick={() => {
                     setImageFile(null);
                     setImportedImageUrl(null);
@@ -269,15 +271,14 @@ export default function RecipeFormPage() {
                   }}
                 >
                   Remove photo
-                </button>
+                </Button>
               )}
             </div>
           </div>
-        </div>
+        </Field>
 
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="prep">Prep (min)</label>
+        <FieldRow>
+          <Field label="Prep (min)" htmlFor="prep">
             <input
               id="prep"
               type="number"
@@ -285,9 +286,8 @@ export default function RecipeFormPage() {
               value={prep}
               onChange={(e) => setPrep(e.target.value)}
             />
-          </div>
-          <div className="field">
-            <label htmlFor="cook">Cook (min)</label>
+          </Field>
+          <Field label="Cook (min)" htmlFor="cook">
             <input
               id="cook"
               type="number"
@@ -295,9 +295,8 @@ export default function RecipeFormPage() {
               value={cook}
               onChange={(e) => setCook(e.target.value)}
             />
-          </div>
-          <div className="field">
-            <label htmlFor="servings">Servings</label>
+          </Field>
+          <Field label="Servings" htmlFor="servings">
             <input
               id="servings"
               type="number"
@@ -305,15 +304,18 @@ export default function RecipeFormPage() {
               value={servings}
               onChange={(e) => setServings(e.target.value)}
             />
-          </div>
-        </div>
+          </Field>
+        </FieldRow>
 
-        <div className="field">
-          <label>Ingredients</label>
-          <span className="hint">
-            Quantity and unit are optional; leave them blank for “to taste”. Fractions
-            like “1 1/2” and “3/4” work.
-          </span>
+        <Field
+          label="Ingredients"
+          hint={
+            <>
+              Quantity and unit are optional; leave them blank for “to taste”.
+              Fractions like “1 1/2” and “3/4” work.
+            </>
+          }
+        >
           {rows.map((row, i) => (
             <div className="ingredient-row" key={i}>
               <input
@@ -334,40 +336,37 @@ export default function RecipeFormPage() {
                 value={row.name}
                 onChange={(e) => updateRow(i, { name: e.target.value })}
               />
-              <button
-                type="button"
-                className="icon-btn"
-                aria-label="Remove ingredient"
-                onClick={() => removeRow(i)}
-              >
+              <IconButton label="Remove ingredient" onClick={() => removeRow(i)}>
                 ✕
-              </button>
+              </IconButton>
             </div>
           ))}
-          <button
-            type="button"
-            className="btn small"
-            style={{ alignSelf: "flex-start" }}
+          <Button
+            size="small"
             onClick={() => setRows((rows) => [...rows, { ...EMPTY_ROW }])}
           >
             + Add ingredient
-          </button>
-        </div>
+          </Button>
+        </Field>
 
-        <div className="field">
-          <label htmlFor="tags">Tags</label>
-          <span className="hint">Comma separated, e.g. quick, vegetarian, weeknight.</span>
+        <Field
+          label="Tags"
+          htmlFor="tags"
+          hint="Comma separated, e.g. quick, vegetarian, weeknight."
+        >
           <input
             id="tags"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="quick, vegetarian"
           />
-        </div>
+        </Field>
 
-        <div className="field">
-          <label htmlFor="instructions">Instructions</label>
-          <span className="hint">One step per line; they will be numbered automatically.</span>
+        <Field
+          label="Instructions"
+          htmlFor="instructions"
+          hint="One step per line; they will be numbered automatically."
+        >
           <textarea
             id="instructions"
             rows={8}
@@ -375,15 +374,13 @@ export default function RecipeFormPage() {
             onChange={(e) => setInstructions(e.target.value)}
             placeholder={"Preheat the oven to 400°F\nSeason the chicken\n…"}
           />
-        </div>
+        </Field>
 
         <div className="form-actions">
-          <button type="submit" className="btn primary" disabled={saving}>
+          <Button type="submit" variant="primary" disabled={saving}>
             {saving ? "Saving…" : isEdit ? "Save changes" : "Create recipe"}
-          </button>
-          <Link to={isEdit ? `/recipes/${id}` : "/recipes"} className="btn">
-            Cancel
-          </Link>
+          </Button>
+          <LinkButton to={isEdit ? `/recipes/${id}` : "/recipes"}>Cancel</LinkButton>
         </div>
       </form>
     </>

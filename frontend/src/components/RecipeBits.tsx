@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
+import { Chip, Chips, Modal } from "./ui";
 
 /** How many matches the picker shows before asking for a narrower search. */
 const PICKER_LIMIT = 20;
@@ -14,10 +15,10 @@ export function TimeChips({
 }) {
   const total = (recipe.prep_minutes ?? 0) + (recipe.cook_minutes ?? 0);
   return (
-    <div className="chips">
-      {total > 0 && <span className="chip accent">⏱ {total} min</span>}
-      {recipe.servings != null && <span className="chip">Serves {recipe.servings}</span>}
-    </div>
+    <Chips>
+      {total > 0 && <Chip tone="accent">⏱ {total} min</Chip>}
+      {recipe.servings != null && <Chip>Serves {recipe.servings}</Chip>}
+    </Chips>
   );
 }
 
@@ -55,57 +56,42 @@ export function RecipePickerModal({
     useCallback(() => api.listRecipes({ q: search, per_page: PICKER_LIMIT }), [search]),
   );
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   const found = matches?.items ?? [];
   const hidden = (matches?.total ?? 0) - found.length;
 
+  // Escape, the focus trap and the focus restore belong to Modal.
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <header>
-          <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </header>
-        <div className="modal-search">
-          <input
-            autoFocus
-            placeholder="Search recipes…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <div className="modal-list">
-          {found.map((r) => (
-            <button key={r.id} className="modal-recipe" onClick={() => onPick(r)}>
-              {r.image_filename ? (
-                <img src={imageUrl(r.image_filename)!} alt="" />
-              ) : (
-                <span className="thumb-placeholder">🍽️</span>
-              )}
-              <span>{r.title}</span>
-            </button>
-          ))}
-          {found.length === 0 && (
-            <p className="modal-note">
-              {error ? `Could not load your recipes. ${error}` : "No recipes found."}
-            </p>
-          )}
-          {hidden > 0 && (
-            <p className="modal-note">
-              {hidden} more {hidden === 1 ? "match" : "matches"} - keep typing to narrow.
-            </p>
-          )}
-        </div>
+    <Modal title={title} onClose={onClose}>
+      <div className="modal-search">
+        <input
+          autoFocus
+          placeholder="Search recipes…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
-    </div>
+      <div className="modal-list">
+        {found.map((r) => (
+          <button key={r.id} className="modal-recipe" onClick={() => onPick(r)}>
+            {r.image_filename ? (
+              <img src={imageUrl(r.image_filename)!} alt="" />
+            ) : (
+              <span className="thumb-placeholder">🍽️</span>
+            )}
+            <span>{r.title}</span>
+          </button>
+        ))}
+        {found.length === 0 && (
+          <p className="modal-note">
+            {error ? `Could not load your recipes. ${error}` : "No recipes found."}
+          </p>
+        )}
+        {hidden > 0 && (
+          <p className="modal-note">
+            {hidden} more {hidden === 1 ? "match" : "matches"} - keep typing to narrow.
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }

@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { api, type GroceryItem, type GroceryList } from "../api";
 import { LoadFailure } from "../components/LoadError";
+import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
@@ -134,12 +135,10 @@ export default function GroceryPage() {
 
   return (
     <div className="grocery-layout">
-      <div className="page-head">
-        <h1>Groceries</h1>
-        <span className="sub">
-          {rangeDays > 0 ? `${rangeDays} day${rangeDays === 1 ? "" : "s"} of meals` : ""}
-        </span>
-      </div>
+      <PageHead
+        title="Groceries"
+        sub={rangeDays > 0 ? `${rangeDays} day${rangeDays === 1 ? "" : "s"} of meals` : ""}
+      />
 
       <div className="grocery-range">
         <label>
@@ -158,26 +157,28 @@ export default function GroceryPage() {
             onChange={(e) => setRange(start, e.target.value)}
           />
         </label>
-        <span style={{ flex: 1 }} />
-        <button className="btn small" onClick={clearChecks}>
+        <span className="spacer" />
+        <Button size="small" onClick={clearChecks}>
           Clear checkmarks
-        </button>
+        </Button>
       </div>
 
       {action.error && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+        <Banner tone="error" spaced>
+          {action.error}
+        </Banner>
       )}
 
       {unsaved.size > 0 && (
-        <div className="notice-banner" role="status">
+        <Banner tone="notice" spaced role="status">
           <span>
             {unsaved.size} checkmark{unsaved.size === 1 ? "" : "s"} not saved yet. They
             are on this list but not on your other devices.
           </span>
-          <button className="btn small" onClick={saveUnsaved} disabled={saving}>
+          <Button size="small" onClick={saveUnsaved} disabled={saving}>
             {saving ? "Saving…" : "Save now"}
-          </button>
-        </div>
+          </Button>
+        </Banner>
       )}
 
       {error && (
@@ -190,14 +191,12 @@ export default function GroceryPage() {
       )}
 
       {!error && empty && (
-        <div className="empty-state">
-          <div className="glyph">🧺</div>
-          <h2>Nothing to buy</h2>
+        <EmptyState glyph="🧺" title="Nothing to buy">
           <p>
             Plan some meals for this date range, or mark pantry items out of stock,
             and they will show up here.
           </p>
-        </div>
+        </EmptyState>
       )}
 
       {list && list.items.length > 0 && (
@@ -250,7 +249,7 @@ export default function GroceryPage() {
 function ItemText({ item }: { item: GroceryItem }) {
   const recipeTitles = [...new Set(item.uses.map((u) => u.recipe_title))];
   return (
-    <span style={{ flex: 1 }}>
+    <span className="item-text">
       <span className="name">{item.name}</span>
       {item.amounts.length > 0 && (
         <>
@@ -298,9 +297,9 @@ function StockedRow({
   return (
     <div className="grocery-item stocked">
       <ItemText item={item} />
-      <button className="btn small" onClick={() => onBuyAnyway(item)}>
+      <Button size="small" onClick={() => onBuyAnyway(item)}>
         Buy anyway
-      </button>
+      </Button>
     </div>
   );
 }

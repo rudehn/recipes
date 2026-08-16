@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { RecipePhoto, RecipePickerModal, TimeChips } from "./RecipeBits";
@@ -174,6 +175,70 @@ describe("RecipePickerModal", () => {
     await user.keyboard("{Escape}");
 
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("is a dialog assistive tech can name", async () => {
+    mockBackend({ "GET /api/recipes": page([curry]) });
+    renderPicker();
+
+    const dialog = await screen.findByRole("dialog", { name: "Add to dinner" });
+
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("moves focus to the box the cook came here to type in", async () => {
+    mockBackend({ "GET /api/recipes": page([curry]) });
+    renderPicker();
+
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText("Search recipes…")).toHaveFocus(),
+    );
+  });
+
+  it("puts focus back where it was when it closes", async () => {
+    // Without the restore, dismissing the picker drops focus onto <body> and a
+    // keyboard user starts again from the top of the page.
+    mockBackend({ "GET /api/recipes": page([curry]) });
+
+    function Harness() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open picker</button>
+          {open && (
+            <RecipePickerModal
+              title="Add to dinner"
+              onPick={vi.fn()}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </>
+      );
+    }
+
+    const { user } = renderInRouter(<Harness />);
+    const trigger = screen.getByRole("button", { name: "Open picker" });
+
+    await user.click(trigger);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("keeps Tab inside the dialog", async () => {
+    // Tabbing out of a modal leaves the user driving a page they cannot see.
+    mockBackend({ "GET /api/recipes": page([curry, bread]) });
+    const { user } = renderPicker();
+    const last = await screen.findByRole("button", { name: /Banana bread/ });
+    const close = screen.getByRole("button", { name: "Close" });
+
+    last.focus();
+    await user.tab();
+    expect(close).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(last).toHaveFocus();
   });
 
   it("says why the list is empty when the recipes could not be loaded", async () => {

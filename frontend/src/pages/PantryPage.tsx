@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 
 import { api, type PantryItem } from "../api";
 import { LoadFailure } from "../components/LoadError";
+import { Banner, Button, EmptyState, IconButton, PageHead, Switch } from "../components/ui";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 
@@ -50,18 +51,18 @@ export default function PantryPage() {
 
   return (
     <div className="pantry-layout">
-      <div className="page-head">
-        <h1>Pantry</h1>
-        <span className="sub">
-          {items && items.length > 0
+      <PageHead
+        title="Pantry"
+        sub={
+          items && items.length > 0
             ? outCount > 0
               ? `${outCount} item${outCount === 1 ? "" : "s"} to restock`
               : "Fully stocked"
-            : ""}
-        </span>
-      </div>
+            : ""
+        }
+      />
 
-      <p style={{ color: "var(--muted)", marginTop: 0 }}>
+      <p className="page-note">
         Staples you always want on hand. Items marked out of stock are added to your
         grocery list automatically. When a recipe calls for one you have in stock, the
         list sets it aside instead of buying it - and shows the amount, so you can
@@ -74,13 +75,15 @@ export default function PantryPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button type="submit" className="btn primary">
+        <Button type="submit" variant="primary">
           Add
-        </button>
+        </Button>
       </form>
 
       {action.error && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+        <Banner tone="error" spaced>
+          {action.error}
+        </Banner>
       )}
 
       {loadError && (
@@ -93,31 +96,20 @@ export default function PantryPage() {
       )}
 
       {!loadError && items && items.length === 0 && (
-        <div className="empty-state">
-          <div className="glyph">🫙</div>
-          <h2>No pantry staples yet</h2>
+        <EmptyState glyph="🫙" title="No pantry staples yet">
           <p>Add the basics you always keep around, like salt, rice, or coffee.</p>
-        </div>
+        </EmptyState>
       )}
 
       {items?.map((item) => (
         <div key={item.id} className={`pantry-item${item.in_stock ? "" : " out"}`}>
           <span className="name">{item.name}</span>
-          <button
-            className="stock-toggle"
-            onClick={() => setStock(item, !item.in_stock)}
-            aria-pressed={item.in_stock}
-          >
-            <span className={`switch${item.in_stock ? " on" : ""}`} />
+          <Switch on={item.in_stock} onToggle={() => setStock(item, !item.in_stock)}>
             {item.in_stock ? "In stock" : "Out of stock"}
-          </button>
-          <button
-            className="icon-btn"
-            aria-label={`Delete ${item.name}`}
-            onClick={() => remove(item)}
-          >
+          </Switch>
+          <IconButton label={`Delete ${item.name}`} onClick={() => remove(item)}>
             ✕
-          </button>
+          </IconButton>
         </div>
       ))}
     </div>

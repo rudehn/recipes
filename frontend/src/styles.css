@@ -288,7 +288,14 @@ input:focus, select:focus, textarea:focus {
   color: var(--muted);
 }
 
-.page-head .spacer { flex: 1; }
+/* Pushes whatever follows it to the trailing edge of a flex row. */
+.spacer { flex: 1; }
+
+/* A page's opening paragraph, sitting directly under .page-head. */
+.page-note {
+  margin-top: 0;
+  color: var(--muted);
+}
 
 /* ---------- Buttons ---------- */
 
@@ -684,6 +691,19 @@ input:focus, select:focus, textarea:focus {
   gap: var(--space-20);
 }
 
+.image-drop-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-8);
+}
+
+/* A button in a field column sizes to its label rather than stretching the
+   full width the way an input should. */
+.field > .btn {
+  align-self: flex-start;
+}
+
 .image-drop img {
   width: 148px;
   aspect-ratio: 4 / 3;
@@ -706,6 +726,13 @@ input:focus, select:focus, textarea:focus {
   padding: var(--space-10) var(--space-16);
 }
 
+/* Banners standing on their own need the gap below; ones inside a flex
+   container whose gap already spaces them do not, so it is opt-in. */
+.error-banner.spaced,
+.notice-banner.spaced {
+  margin-bottom: var(--space-16);
+}
+
 /*
  * Something the page wants the user to know while they keep working, as
  * against .error-banner's "that did not happen". Deliberately quieter: it sits
@@ -721,7 +748,6 @@ input:focus, select:focus, textarea:focus {
   color: var(--ink-soft);
   border-radius: var(--radius-sm);
   padding: var(--space-10) var(--space-16);
-  margin-bottom: var(--space-16);
   font-size: var(--text-md);
 }
 
@@ -1056,6 +1082,9 @@ input:focus, select:focus, textarea:focus {
   transition: opacity var(--transition);
 }
 
+/* Name, amounts and uses: the block that takes the row's spare width. */
+.item-text { flex: 1; }
+
 .grocery-item.checked { opacity: 0.55; }
 
 .grocery-item.checked .name { text-decoration: line-through; }
@@ -1190,6 +1219,14 @@ input:focus, select:focus, textarea:focus {
   gap: var(--space-12);
   align-items: center;
   flex-wrap: wrap;
+}
+
+.toolbar.center { justify-content: center; }
+
+/* What a panel or list says when it has nothing to list. */
+.empty-note {
+  margin: 0;
+  color: var(--muted);
 }
 
 /* ---------- Recipe search: comparing candidate recipes ---------- */

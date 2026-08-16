@@ -1,3 +1,5 @@
+import { Banner, Button, EmptyState } from "./ui";
+
 /**
  * What a page shows when it could not load its data.
  *
@@ -30,28 +32,26 @@ export function LoadFailure({
 }) {
   if (showing) {
     return (
-      <div className="notice-banner" role="status">
+      <Banner tone="notice" spaced role="status">
         <span>Showing the last version that loaded. {message}</span>
-        <button className="btn small" onClick={onRetry}>
+        <Button size="small" onClick={onRetry}>
           Try again
-        </button>
-      </div>
+        </Button>
+      </Banner>
     );
   }
 
   return (
-    <div className="empty-state" role="alert">
-      <div className="glyph">📡</div>
-      <h2>Couldn't load {what}</h2>
+    <EmptyState glyph="📡" title={`Couldn't load ${what}`} role="alert">
       <p>{message}</p>
       <p className="hint">
         Nothing has been lost - the app could not reach the server.
       </p>
       <p>
-        <button className="btn primary" onClick={onRetry}>
+        <Button variant="primary" onClick={onRetry}>
           Try again
-        </button>
+        </Button>
       </p>
-    </div>
+    </EmptyState>
   );
 }

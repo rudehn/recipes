@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, type Meal, type MealPlanEntry } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePickerModal } from "../components/RecipeBits";
+import { Banner, Button, LinkButton, PageHead } from "../components/ui";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 import {
@@ -82,42 +83,42 @@ export default function PlannerPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Planner</h1>
-        <span className="sub">{formatRange(weekStart, weekEnd)}</span>
-        <span className="spacer" />
+      <PageHead title="Planner" sub={formatRange(weekStart, weekEnd)}>
         <div className="planner-controls">
-          <button
-            className="btn small"
+          <Button
+            size="small"
             onClick={() => setWeekStart((d) => addDays(d, -7))}
             aria-label="Previous week"
           >
             ← Prev
-          </button>
-          <button className="btn small" onClick={() => setWeekStart(startOfWeek(new Date()))}>
+          </Button>
+          <Button size="small" onClick={() => setWeekStart(startOfWeek(new Date()))}>
             Today
-          </button>
-          <button
-            className="btn small"
+          </Button>
+          <Button
+            size="small"
             onClick={() => setWeekStart((d) => addDays(d, 7))}
             aria-label="Next week"
           >
             Next →
-          </button>
-          <button className="btn small" onClick={copyLastWeek}>
+          </Button>
+          <Button size="small" onClick={copyLastWeek}>
             ⧉ Copy last week
-          </button>
-          <Link
+          </Button>
+          <LinkButton
+            variant="primary"
+            size="small"
             to={`/groceries?start=${toISODate(weekStart)}&end=${toISODate(weekEnd)}`}
-            className="btn primary small"
           >
             🛒 Grocery list
-          </Link>
+          </LinkButton>
         </div>
-      </div>
+      </PageHead>
 
       {action.error && (
-        <div className="error-banner" style={{ marginBottom: 16 }}>{action.error}</div>
+        <Banner tone="error" spaced>
+          {action.error}
+        </Banner>
       )}
 
       {error && (

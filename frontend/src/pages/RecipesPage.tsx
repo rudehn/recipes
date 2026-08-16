@@ -4,6 +4,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { api, type Page, type RecipeSummary } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePhoto, TimeChips } from "../components/RecipeBits";
+import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
 
@@ -119,31 +120,29 @@ export default function RecipesPage() {
 
   return (
     <>
-      <div className="page-head">
-        <h1>Recipes</h1>
-        <span className="sub">
-          {!listing
+      <PageHead
+        title="Recipes"
+        sub={
+          !listing
             ? ""
             : filtering
               ? `${total} ${total === 1 ? "match" : "matches"}`
-              : `${total} saved`}
-        </span>
-        <span className="spacer" />
-        <div className="toolbar">
+              : `${total} saved`
+        }
+      >
+        <Toolbar>
           <input
             className="searchbar"
             placeholder="Search recipes or ingredients…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
           />
-          <Link to="/recipes/search" className="btn">
-            🔍 Find online
-          </Link>
-          <Link to="/recipes/new" className="btn primary">
+          <LinkButton to="/recipes/search">🔍 Find online</LinkButton>
+          <LinkButton to="/recipes/new" variant="primary">
             + New recipe
-          </Link>
-        </div>
-      </div>
+          </LinkButton>
+        </Toolbar>
+      </PageHead>
 
       {error && (
         <LoadFailure
@@ -180,19 +179,15 @@ export default function RecipesPage() {
       {!blank && !listing && loading && <p className="list-status">Loading recipes…</p>}
 
       {!blank && listing && listing.items.length === 0 && !filtering && (
-        <div className="empty-state">
-          <div className="glyph">🍳</div>
-          <h2>Your recipe box is empty</h2>
+        <EmptyState glyph="🍳" title="Your recipe box is empty">
           <p>Search for a dish to fill one in for you, or write your own.</p>
-          <p className="toolbar" style={{ justifyContent: "center" }}>
-            <Link to="/recipes/search" className="btn primary">
+          <Toolbar center>
+            <LinkButton to="/recipes/search" variant="primary">
               🔍 Find a recipe online
-            </Link>
-            <Link to="/recipes/new" className="btn">
-              + New recipe
-            </Link>
-          </p>
-        </div>
+            </LinkButton>
+            <LinkButton to="/recipes/new">+ New recipe</LinkButton>
+          </Toolbar>
+        </EmptyState>
       )}
 
       {!blank && listing && listing.items.length > 0 && (
@@ -214,9 +209,9 @@ export default function RecipesPage() {
 
       {!blank && shown > 0 && shown < total && (
         <div className="load-more">
-          <button className="btn" onClick={loadMore} disabled={loadingMore}>
+          <Button onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? "Loading…" : "Load more"}
-          </button>
+          </Button>
           <span className="sub">
             Showing {shown} of {total}
           </span>
@@ -224,15 +219,13 @@ export default function RecipesPage() {
       )}
 
       {!blank && listing && listing.items.length === 0 && filtering && (
-        <div className="empty-state">
-          <div className="glyph">🔍</div>
-          <h2>No matches</h2>
+        <EmptyState glyph="🔍" title="No matches">
           <p>
             No recipes match
             {applied?.q ? ` “${applied.q}”` : ""}
             {applied?.tag ? ` with tag “${applied.tag}”` : ""}.
           </p>
-        </div>
+        </EmptyState>
       )}
     </>
   );
