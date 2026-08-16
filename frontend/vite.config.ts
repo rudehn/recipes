@@ -35,8 +35,11 @@ function themeColor(): string {
 
 /** The same token again, as the dark theme redefines it. */
 function darkThemeColor(): string {
+  // Loose about the rest of the query on purpose. It only has to find the
+  // block that answers "dark"; pinning the exact text would break the build
+  // over an added condition or a reordered one.
   const match =
-    /@media \(prefers-color-scheme: dark\)\s*\{[\s\S]*?--bg:\s*([^;]+);/.exec(
+    /@media[^{]*prefers-color-scheme:\s*dark[^{]*\{[\s\S]*?--bg:\s*([^;]+);/.exec(
       stylesheet(),
     );
   if (!match) {

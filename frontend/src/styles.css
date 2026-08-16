@@ -46,6 +46,12 @@
   /* Foreground on an accent-filled surface. */
   --ink-on-accent: #fff;
 
+  /* The fill behind a selected nav item or tag pill. Not --ink: that is a
+     text colour, and a theme wants to answer "how loud is a selection"
+     separately from "how dark is body text". */
+  --selected: var(--ink);
+  --selected-ink: var(--bg);
+
   /* ---------- Lines ---------- */
   --line: #e5dccc;
   /* Cards and cells want a border that reads as a seam rather than an edge. */
@@ -196,6 +202,13 @@
     --ink-soft: #c6bdae;
     --muted: #a1978a;
     --ink-on-accent: #fff;
+
+    /* Dimmed rather than the full --ink. A light fill on a dark page reads
+       far louder than a dark fill on a light one, so taking the top of the
+       ramp here made the selected pill 3.8x the primary action, against 2.9x
+       in the light theme. This lands it back on 2.9x - matching what the
+       light theme already chose, rather than reopening that choice. */
+    --selected: #d8cbb4;
 
     --line: #3a352d;
 
@@ -355,8 +368,8 @@ input:focus, select:focus, textarea:focus {
 .nav a:hover { background: var(--surface-2); }
 
 .nav a.active {
-  background: var(--ink);
-  color: var(--bg);
+  background: var(--selected);
+  color: var(--selected-ink);
 }
 
 .page {
@@ -580,9 +593,9 @@ input:focus, select:focus, textarea:focus {
 .tag-pill:hover { background: var(--surface-2); }
 
 .tag-pill.active {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--bg);
+  background: var(--selected);
+  border-color: var(--selected);
+  color: var(--selected-ink);
 }
 
 .tag-pill .count {
