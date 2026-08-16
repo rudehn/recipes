@@ -33,6 +33,21 @@ function themeColor(): string {
   return match[1].trim();
 }
 
+/** The same token again, as the dark theme redefines it. */
+function darkThemeColor(): string {
+  const match =
+    /@media \(prefers-color-scheme: dark\)\s*\{[\s\S]*?--bg:\s*([^;]+);/.exec(
+      stylesheet(),
+    );
+  if (!match) {
+    throw new Error(
+      `Could not find --bg inside the dark theme block in ${TOKENS}. The dark ` +
+        `theme-color meta is generated from it.`,
+    );
+  }
+  return match[1].trim();
+}
+
 /**
  * Writes the theme colour into index.html and emits the web manifest.
  *
@@ -55,10 +70,15 @@ function brandMetadata(): Plugin {
     name: "brand-metadata",
 
     transformIndexHtml(html) {
-      return html.replace(
-        /(<meta name="theme-color" content=")[^"]*(")/,
-        `$1${themeColor()}$2`,
-      );
+      return html
+        .replace(
+          /(<meta name="theme-color" content=")[^"]*(")/,
+          `$1${themeColor()}$2`,
+        )
+        .replace(
+          /(<meta name="theme-color" media="\(prefers-color-scheme: dark\)" content=")[^"]*(")/,
+          `$1${darkThemeColor()}$2`,
+        );
     },
 
     // Dev has no bundle to emit into, so the manifest is served on request -

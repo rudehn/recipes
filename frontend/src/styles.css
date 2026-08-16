@@ -18,6 +18,11 @@
  * a relationship between them that does not exist.
  */
 :root {
+  /* Tells the browser which way round its own controls go. Without it the
+     checkboxes, scrollbars and date pickers stay in their light styling on a
+     dark page, because those are drawn by the browser and never see a token. */
+  color-scheme: light;
+
   /* ---------- Surfaces ---------- */
   /* --bg is the single source for the app's chrome colour: vite.config.ts
      reads it out of this file at build time and writes it into index.html's
@@ -44,20 +49,25 @@
 
   /* ---------- Accent ---------- */
   --accent: #c2552f;
-  --accent-dark: #a84523;
+  /* Accent as readable text. In a dark theme this has to get lighter, which
+     is why it is not called --accent-dark any more: the old name described
+     how it looked in one theme rather than what it is for. */
+  --accent-ink: #a84523;
+  /* Accent as a pressed fill, which moves the other way. */
+  --accent-hover: #a84523;
   --accent-soft: #f6e3d8;
 
   /* ---------- Success: the pantry and planner green ---------- */
   --green: #5f7a54;
-  --green-dark: #3c5233;
+  --green-ink: #3c5233;
   --green-muted: #6c8260;
   --green-soft: #e6ecdf;
   /* Hover wash for controls sitting on a green surface. */
-  --green-wash: color-mix(in srgb, var(--green-dark) 12%, transparent);
+  --green-wash: color-mix(in srgb, var(--green-ink) 12%, transparent);
 
   /* ---------- Danger ---------- */
   --danger: #a03123;
-  --danger-dark: #8c2b1e;
+  --danger-ink: #8c2b1e;
   --danger-soft: #f8e4e0;
   --danger-line: #e5c2bb;
 
@@ -147,6 +157,81 @@
   --width-narrow: 640px;
   --width-compact: 560px;
 }
+
+/*
+ * Dark theme.
+ *
+ * Nothing below this block knows the theme exists: every rule already names a
+ * role, so a dark theme is a second set of answers rather than a second set of
+ * rules. That is the whole return on the token layer, and writing this is what
+ * proved the roles were real - three tokens had to be renamed first, because
+ * --accent-dark, --green-dark and --danger-dark were named for how they looked
+ * in a light theme rather than for what they do, and ink has to get lighter
+ * here while a pressed fill goes the other way.
+ *
+ * Warm near-black rather than neutral grey. The app is cream and terracotta;
+ * a cold grey dark theme reads as a different product wearing its name.
+ *
+ * Follows the system and offers no switch of its own. A toggle needs storage,
+ * a considered default and a way to avoid flashing the wrong theme on load -
+ * worth adding when somebody wants it, not before.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #191713;
+    --surface: #221f1a;
+    --surface-2: #2d2922;
+    --surface-tint: #2a2318;
+    --surface-raised: #4a443c;
+
+    --ink: #ede7dc;
+    --ink-soft: #c6bdae;
+    --muted: #a1978a;
+    --ink-on-accent: #fff;
+
+    --line: #3a352d;
+
+    --accent: #c05427;
+    --accent-ink: #ef9d74;
+    --accent-hover: #d96b3f;
+    --accent-soft: #3b2418;
+
+    --green: #9cb78c;
+    --green-ink: #c3d7b7;
+    --green-muted: #a6bb99;
+    --green-soft: #253020;
+
+    --danger: #f09c88;
+    --danger-ink: #f6b8a7;
+    --danger-soft: #3a1e18;
+    --danger-line: #5d3027;
+
+    /* Deliberately not derived from --ink the way the light theme does it:
+       --ink is nearly white here, and a scrim whose job is to darken the page
+       behind a dialog cannot follow the text colour. */
+    --scrim: color-mix(in srgb, #000 62%, transparent);
+    --placeholder-fill: linear-gradient(135deg, #2f2820, #3a3122);
+
+    /* Black and far stronger: a 6% warm brown is invisible on this ground. */
+    --shadow-rgb: 0 0 0;
+    --shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.3), 0 6px 20px rgb(var(--shadow-rgb) / 0.35);
+    --shadow-lift: 0 2px 4px rgb(var(--shadow-rgb) / 0.35), 0 12px 32px rgb(var(--shadow-rgb) / 0.45);
+    --shadow-knob: 0 1px 3px rgb(var(--shadow-rgb) / 0.5);
+
+    /* --accent-soft is near-black here, so a ring made from it would vanish
+       into the field it is meant to outline. A focus ring's whole job is
+       contrast with its surroundings, which is the one thing the soft token
+       stops providing once the theme inverts. */
+    --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
+/* --line-soft, --bg-blur and --green-wash are absent above on purpose: they
+   are color-mix() of tokens this block already replaces, so they follow on
+   their own. Restating them here would put back exactly the duplication the
+   derivation removed. */
 
 * {
   box-sizing: border-box;
@@ -322,7 +407,7 @@ input:focus, select:focus, textarea:focus {
   color: var(--ink-on-accent);
 }
 
-.btn.primary:hover { background: var(--accent-dark); }
+.btn.primary:hover { background: var(--accent-hover); }
 
 .btn.danger {
   color: var(--danger);
@@ -458,7 +543,7 @@ input:focus, select:focus, textarea:focus {
 
 .chip.accent {
   background: var(--accent-soft);
-  color: var(--accent-dark);
+  color: var(--accent-ink);
 }
 
 .chip.green {
@@ -588,7 +673,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: 50%;
   display: grid;
   place-items: center;
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   font-size: var(--text-base);
 }
 
@@ -611,7 +696,7 @@ input:focus, select:focus, textarea:focus {
 
 .ingredient-list .qty {
   font-weight: var(--weight-bold);
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   white-space: nowrap;
   min-width: 64px;
 }
@@ -637,7 +722,7 @@ input:focus, select:focus, textarea:focus {
   height: 28px;
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   font-weight: var(--weight-bold);
   font-size: var(--text-md);
   display: grid;
@@ -721,7 +806,7 @@ input:focus, select:focus, textarea:focus {
 .error-banner {
   background: var(--danger-soft);
   border: 1px solid var(--danger-line);
-  color: var(--danger-dark);
+  color: var(--danger-ink);
   border-radius: var(--radius-sm);
   padding: var(--space-10) var(--space-16);
 }
@@ -814,7 +899,7 @@ input:focus, select:focus, textarea:focus {
   background: var(--accent-soft);
 }
 
-.day-head.today .dow, .day-head.today .date { color: var(--accent-dark); }
+.day-head.today .dow, .day-head.today .date { color: var(--accent-ink); }
 
 .meal-label {
   display: flex;
@@ -846,7 +931,7 @@ input:focus, select:focus, textarea:focus {
   flex-direction: column;
   gap: var(--space-2);
   background: var(--green-soft);
-  color: var(--green-dark);
+  color: var(--green-ink);
   border-radius: var(--radius-xs);
   padding: var(--space-4) var(--space-6) var(--space-4) var(--space-10);
   font-size: var(--text-sm);
@@ -871,7 +956,7 @@ input:focus, select:focus, textarea:focus {
   color: var(--green-muted);
 }
 
-.serv .overridden { color: var(--accent-dark); }
+.serv .overridden { color: var(--accent-ink); }
 
 .serv button {
   width: 16px;
@@ -886,7 +971,7 @@ input:focus, select:focus, textarea:focus {
 
 .serv button:hover {
   background: var(--green-wash);
-  color: var(--green-dark);
+  color: var(--green-ink);
 }
 .plan-entry a:hover { text-decoration: underline; }
 
@@ -898,7 +983,7 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius-2xs);
 }
 
-.plan-entry .remove:hover { background: var(--green-wash); color: var(--green-dark); }
+.plan-entry .remove:hover { background: var(--green-wash); color: var(--green-ink); }
 
 .plan-add {
   margin-top: auto;
@@ -913,7 +998,7 @@ input:focus, select:focus, textarea:focus {
 
 .plan-cell:hover .plan-add,
 .plan-add:focus-visible {
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   border-color: var(--accent);
   background: var(--accent-soft);
 }
@@ -1113,7 +1198,7 @@ input:focus, select:focus, textarea:focus {
 .grocery-item .name { font-weight: var(--weight-semibold); }
 
 .grocery-item .amounts {
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   font-weight: var(--weight-bold);
   font-size: var(--text-md);
 }
@@ -1232,7 +1317,7 @@ input:focus, select:focus, textarea:focus {
 /* ---------- Recipe search: comparing candidate recipes ---------- */
 
 .inline-link {
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   text-decoration: underline;
 }
 
@@ -1331,7 +1416,7 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
 }
 
-.result-tab.active .site { color: var(--accent-dark); }
+.result-tab.active .site { color: var(--accent-ink); }
 
 .preview-banner {
   display: flex;
@@ -1348,7 +1433,7 @@ input:focus, select:focus, textarea:focus {
 }
 
 .preview-banner a {
-  color: var(--accent-dark);
+  color: var(--accent-ink);
   text-decoration: underline;
 }
 

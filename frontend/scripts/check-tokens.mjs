@@ -22,17 +22,28 @@ const SPACING = /^(padding|margin|gap|row-gap|column-gap)(-top|-right|-bottom|-l
 
 const source = readFileSync(FILE, "utf8");
 
-// Blank out comments and the :root block so their offsets still line up with
+// Blank out comments and every :root block so their offsets still line up with
 // the original, and a reported line number still points at the right place.
+//
+// Every one of them, not just the first: a theme is a second :root inside a
+// media query, and its literals are token definitions exactly like the ones
+// above it. The rule is about where a colour is declared, not how deeply it
+// happens to be nested.
 const blank = (text) => text.replace(/[^\n]/g, " ");
 let scannable = source.replace(/\/\*[\s\S]*?\*\//g, blank);
-const root = /:root\s*\{[\s\S]*?\n\}/.exec(scannable);
-if (!root) {
+
+const ROOT_BLOCK = /:root\s*\{[\s\S]*?\n\s*\}/g;
+const roots = [...scannable.matchAll(ROOT_BLOCK)];
+if (roots.length === 0) {
   console.error("check-tokens: no :root block found in styles.css");
   process.exit(1);
 }
-scannable =
-  scannable.slice(0, root.index) + blank(root[0]) + scannable.slice(root.index + root[0].length);
+for (const root of roots) {
+  scannable =
+    scannable.slice(0, root.index) +
+    blank(root[0]) +
+    scannable.slice(root.index + root[0].length);
+}
 
 const lineOf = (index) => source.slice(0, index).split("\n").length;
 
@@ -70,18 +81,23 @@ for (const match of scannable.matchAll(DECL)) {
 // padding a scale out to look regular, and they read later as though the app
 // uses a rung it has never once stood on. Single use is fine and common -
 // there is only one modal scrim - so only zero is a defect.
-const declared = [...root[0].matchAll(/^\s*(--[\w-]+):/gm)];
 const referenced = new Set(
   [...source.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]),
 );
-for (const token of declared) {
-  const name = token[1];
-  if (referenced.has(name)) continue;
-  problems.push({
-    line: lineOf(root.index + token.index),
-    found: name,
-    why: "unused token - delete it, or use it",
-  });
+// A theme redeclares names the base block already introduced, so a token
+// counts as used if anything references it anywhere.
+const seen = new Set();
+for (const root of roots) {
+  for (const token of root[0].matchAll(/^\s*(--[\w-]+):/gm)) {
+    const name = token[1];
+    if (referenced.has(name) || seen.has(name)) continue;
+    seen.add(name);
+    problems.push({
+      line: lineOf(root.index + token.index),
+      found: name,
+      why: "unused token - delete it, or use it",
+    });
+  }
 }
 
 if (problems.length === 0) {
