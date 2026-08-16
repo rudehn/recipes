@@ -38,7 +38,11 @@
   /* ---------- Ink ---------- */
   --ink: #33302b;
   --ink-soft: #5f594f;
-  --muted: #8f8778;
+  /* Darker than it looks like it wants to be. At #8f8778 this was 3.19:1 on
+     the page and 3.01:1 on a chip, and it carries card descriptions, hints,
+     counts and the uppercase day labels - all of it at 12-15px, where WCAG AA
+     asks for 4.5. This clears it on all three surfaces. */
+  --muted: #716a5e;
   /* Foreground on an accent-filled surface. */
   --ink-on-accent: #fff;
 
@@ -58,9 +62,11 @@
   --accent-soft: #f6e3d8;
 
   /* ---------- Success: the pantry and planner green ---------- */
-  --green: #5f7a54;
+  /* Both of these sit on --green-soft and were under 4.5 there: the pantry
+     tag at 3.96 and the planner's servings count at 3.49. */
+  --green: #57704d;
   --green-ink: #3c5233;
-  --green-muted: #6c8260;
+  --green-muted: #5c6f52;
   --green-soft: #e6ecdf;
   /* Hover wash for controls sitting on a green surface. */
   --green-wash: color-mix(in srgb, var(--green-ink) 12%, transparent);
