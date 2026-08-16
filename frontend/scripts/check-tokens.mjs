@@ -66,6 +66,24 @@ for (const match of scannable.matchAll(DECL)) {
   }
 }
 
+// A token nothing reaches for is a decision nobody asked for. They arrive by
+// padding a scale out to look regular, and they read later as though the app
+// uses a rung it has never once stood on. Single use is fine and common -
+// there is only one modal scrim - so only zero is a defect.
+const declared = [...root[0].matchAll(/^\s*(--[\w-]+):/gm)];
+const referenced = new Set(
+  [...source.matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]),
+);
+for (const token of declared) {
+  const name = token[1];
+  if (referenced.has(name)) continue;
+  problems.push({
+    line: lineOf(root.index + token.index),
+    found: name,
+    why: "unused token - delete it, or use it",
+  });
+}
+
 if (problems.length === 0) {
   console.log("check-tokens: ok");
   process.exit(0);

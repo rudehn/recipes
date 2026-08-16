@@ -78,7 +78,9 @@
   /* ---------- Space ---------- */
   /* Named for their own value, so a rule reading var(--space-16) tells you
      what it does without a lookup. Fine steps below 12 for controls, 4px
-     steps above it for layout. */
+     steps above it for layout, and 64 for the two places wanting real room.
+     The jump from 32 to 64 is honest: nothing in the app stands between
+     them. Add a rung when something needs one, not to look symmetrical. */
   --space-2: 2px;
   --space-4: 4px;
   --space-6: 6px;
@@ -89,10 +91,7 @@
   --space-20: 20px;
   --space-24: 24px;
   --space-32: 32px;
-  --space-40: 40px;
-  --space-48: 48px;
   --space-64: 64px;
-  --space-72: 72px;
 
   /* ---------- Radius ---------- */
   /* --radius-2xs exists because a 16px control given --radius-xs comes out
@@ -272,7 +271,7 @@ input:focus, select:focus, textarea:focus {
   width: 100%;
   max-width: var(--width-page);
   margin: 0 auto;
-  padding: var(--space-32) var(--space-24) var(--space-72);
+  padding: var(--space-32) var(--space-24) var(--space-64);
   flex: 1;
 }
 
