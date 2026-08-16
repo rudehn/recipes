@@ -9,9 +9,38 @@ for showing on the list.
 """
 
 import re
+import unicodedata
 
-_PRICE_RE = re.compile(r"\(\s*\$[^)]*\)")
-_PAREN_RE = re.compile(r"\([^)]*\)")
+_INNERMOST_PAREN_RE = re.compile(r"\([^()]*\)")
+
+
+def _fold_accents(s: str) -> str:
+    """Accented letters reduced to their base, for keying only.
+
+    The key is tokenized on ``[a-z0-9-]``, which does not merely leave an
+    accented letter alone - it splits on it. "jalapeño" became the key
+    "jalape-o", which merges with nothing and searches for nothing. Display
+    keeps the accents; only the merge key is folded.
+    """
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c)
+    )
+
+
+def _drop_parentheticals(s: str) -> str:
+    """Remove parenthesised asides, innermost first so nested ones go too.
+
+    One pass of ``\\([^)]*\\)`` cannot do this. Budget Bytes writes
+    "onion (small dice, (265 g, 2 cups) $0.72)", where a single pass stops at
+    the first closing bracket and leaves "onion $0.72)" behind - which then
+    reaches the grocery list as the item's name, and canonicalizes to the key
+    "onion-0-72" rather than "onion".
+    """
+    while True:
+        shorter = _INNERMOST_PAREN_RE.sub(" ", s)
+        if shorter == s:
+            return s
+        s = shorter
 
 # Preparation / size words that don't change what you buy.
 PREP_WORDS = {
@@ -53,8 +82,7 @@ def _singularize(word: str) -> str:
 def clean_display(name: str) -> str:
     """Human-facing cleanup: drop parentheticals, prices, and the trailing
     prep clause after a comma, but keep casing and plurality."""
-    s = _PRICE_RE.sub("", name)
-    s = _PAREN_RE.sub("", s)
+    s = _drop_parentheticals(name)
     s = s.split(",")[0]
     s = re.sub(r"^\s*optional[:,]?\s+", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip(" .,;")
@@ -64,7 +92,7 @@ def clean_display(name: str) -> str:
 def canonical_key(name: str) -> str:
     """Stable merge key: cleaned, lowercased, prep words dropped, last word
     singularized. "Large eggs, at room temperature" -> "egg"."""
-    s = clean_display(name).casefold()
+    s = _fold_accents(clean_display(name)).casefold()
     for phrase in _TRAILING_PHRASES:
         if s.endswith(phrase):
             s = s[: -len(phrase)].rstrip(" ,")

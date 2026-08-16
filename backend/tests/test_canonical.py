@@ -63,6 +63,38 @@ def test_clean_display_strips_annotations():
     assert clean_display("lo mein noodles ($1.30)") == "lo mein noodles"
 
 
+def test_clean_display_strips_nested_annotations():
+    """Budget Bytes nests a gram weight inside the note carrying the price.
+    Stopping at the first closing bracket left the price on the shopping list
+    as part of the item's name - "onion $0.72)" - and keyed it that way too."""
+    assert clean_display("onion (small dice, (265 g, 2 cups) $0.72)") == "onion"
+    assert canonical_key("onion (small dice, (265 g, 2 cups) $0.72)") == "onion"
+    assert (
+        clean_display("chipotle pepper in adobo sauce (finely chopped, (50 g) $0.41)")
+        == "chipotle pepper in adobo sauce"
+    )
+    # An unbalanced bracket is left alone rather than guessed at.
+    assert clean_display("garlic cloves (minced") == "garlic cloves (minced"
+
+
+def test_nested_annotations_merge_with_the_plain_name():
+    """The whole point: the annotated line and the plain one are one item."""
+    assert canonical_key("garlic cloves (minced (9 g, 1 heaping Tbsp) $0.18)") == (
+        canonical_key("garlic cloves")
+    )
+
+
+def test_accents_do_not_split_the_key():
+    """The key is tokenized on [a-z0-9-], which splits *on* an accented letter
+    rather than keeping it: "jalapeño" keyed as "jalape-o", merging with
+    nothing and searching for nothing."""
+    assert canonical_key("jalapeño") == "jalapeno"
+    assert canonical_key("jalapeño") == canonical_key("jalapenos")
+    assert canonical_key("crème fraîche") == canonical_key("creme fraiche")
+    # Display keeps them: only the merge key is folded.
+    assert clean_display("jalapeño (deseeded)") == "jalapeño"
+
+
 def test_best_display_prefers_shortest_variant():
     assert best_display(["large eggs, at room temperature", "eggs"]) == "eggs"
     assert best_display(["finely diced onion", "onion"]) == "onion"
