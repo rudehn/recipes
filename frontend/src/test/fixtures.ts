@@ -100,6 +100,8 @@ export function groceryItem(overrides: Partial<GroceryItem> = {}): GroceryItem {
     checked: false,
     from_pantry: false,
     pantry_item_id: null,
+    // Unpriced by default: pricing is opt-in, so this is the ordinary line.
+    price: null,
     ...overrides,
   };
 }
@@ -111,6 +113,7 @@ export function groceryList(overrides: Partial<GroceryList> = {}): GroceryList {
     items: [],
     in_pantry: [],
     pantry_restock: [],
+    pricing: null,
     ...overrides,
   };
 }

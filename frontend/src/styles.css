@@ -1187,7 +1187,65 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* Name, amounts and uses: the block that takes the row's spare width. */
-.item-text { flex: 1; }
+.item-text { flex: 1; min-width: 0; }
+
+/* The estimated total. Coverage sits beside it, never under it: the two are
+   one statement, and the number alone would overstate what it covers. */
+.pricing-summary {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-16);
+}
+
+.pricing-summary .total {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+}
+
+.pricing-summary .coverage { font-size: var(--text-sm); color: var(--muted); }
+
+.pricing-summary .store {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* Right-aligned and narrow, so the prices form a column the eye can add up
+   rather than sitting wherever each name happens to end. */
+.item-price {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-4);
+  text-align: right;
+  flex: 0 0 auto;
+  max-width: 45%;
+}
+
+.item-price .amount { font-weight: var(--weight-semibold); white-space: nowrap; }
+
+.item-price s { color: var(--muted); font-weight: normal; }
+
+/* --green-ink rather than --green: the pair above is tuned for --green-soft,
+   and this sits on --surface, like the other green text in the planner. */
+.item-price.on-sale .amount { color: var(--green-ink); }
+
+/* Kroger's own description, shown as returned: clipped for width rather than
+   reworded, with the full text on hover. */
+.item-price .product {
+  font-size: var(--text-xs);
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 
 .grocery-item.checked { opacity: 0.55; }
 

@@ -114,6 +114,32 @@ export interface GroceryRecipeUse {
   unit: string | null;
 }
 
+/** What one line costs at the chosen store. Kroger's wording, shown as returned. */
+export interface ItemPrice {
+  product_id: string;
+  description: string;
+  size: string;
+  regular: number;
+  /** Present only when the item is actually on offer. */
+  promo: number | null;
+  aisle: string;
+}
+
+/**
+ * The trip's total, and how much of the list it covers.
+ *
+ * Absent whenever nothing could be priced, which covers pricing being off, no
+ * store chosen, Kroger being unreachable, and nothing matching. Present only
+ * when at least one line has a price, so a total is never a claim that the
+ * shopping is free.
+ */
+export interface GroceryPricing {
+  store: Store;
+  total: number;
+  priced: number;
+  total_lines: number;
+}
+
 export interface GroceryItem {
   key: string;
   name: string;
@@ -122,6 +148,8 @@ export interface GroceryItem {
   checked: boolean;
   from_pantry: boolean;
   pantry_item_id: number | null;
+  /** Absent when pricing is off, or when nothing confident matched this line. */
+  price: ItemPrice | null;
 }
 
 export interface GroceryList {
@@ -131,6 +159,7 @@ export interface GroceryList {
   /** Planned ingredients the pantry already has. Not bought unless asked for. */
   in_pantry: GroceryItem[];
   pantry_restock: GroceryItem[];
+  pricing: GroceryPricing | null;
 }
 
 /**

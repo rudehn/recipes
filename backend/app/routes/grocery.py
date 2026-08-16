@@ -8,6 +8,7 @@ from ..db import get_session
 from ..models import GroceryCheck, PantryItem
 from ..schemas import GroceryList, GroceryToggle
 from ..services.grocery import build_grocery_list, item_key
+from ..services.kroger import pricing
 
 router = APIRouter(prefix="/grocery-list", tags=["grocery-list"])
 
@@ -18,7 +19,11 @@ async def get_grocery_list(
 ):
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
-    return await build_grocery_list(session, start, end)
+    grocery_list = await build_grocery_list(session, start, end)
+    # Prices are attached after the fact and never in the way: attach_prices
+    # returns the list unchanged if pricing is off, no store is set, or Kroger
+    # is unreachable.
+    return await pricing.attach_prices(session, grocery_list)
 
 
 @router.post("/toggle", status_code=204)

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type GroceryItem, type GroceryList } from "../api";
+import { api, type GroceryItem, type GroceryList, type GroceryPricing } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
@@ -20,6 +20,8 @@ import { useLoad } from "../useLoad";
 type Unsaved = ReadonlyMap<string, boolean>;
 
 const itemCount = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
+
+const money = (n: number) => `$${n.toFixed(2)}`;
 
 function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList | null {
   if (!list || unsaved.size === 0) return list;
@@ -190,6 +192,8 @@ export default function GroceryPage() {
         />
       )}
 
+      {list?.pricing && <PricingSummary pricing={list.pricing} />}
+
       {!error && empty && (
         <EmptyState glyph="🧺" title="Nothing to buy">
           <p>
@@ -245,6 +249,46 @@ export default function GroceryPage() {
   );
 }
 
+/**
+ * The estimated total, and how much of the list it covers.
+ *
+ * Coverage sits next to the number rather than in a footnote. A total that
+ * silently leaves out the lines it could not match reads exactly like a
+ * complete one, and the difference is only discovered at the till - so it is
+ * "est. $12.40 · 9 of 11 priced", never "$12.40".
+ */
+function PricingSummary({ pricing }: { pricing: GroceryPricing }) {
+  const missing = pricing.total_lines - pricing.priced;
+  return (
+    <div className="pricing-summary">
+      <span className="total">est. {money(pricing.total)}</span>
+      <span className="coverage">
+        {pricing.priced} of {pricing.total_lines} priced
+        {missing > 0 && ` · ${missing} not matched`}
+      </span>
+      <span className="store">{pricing.store.name}</span>
+    </div>
+  );
+}
+
+/** A line's price. Kroger's own description and size, shown as returned. */
+function ItemPriceTag({ item }: { item: GroceryItem }) {
+  if (!item.price) return null;
+  const { regular, promo, description, size } = item.price;
+  const onSale = promo !== null;
+  return (
+    <span className={`item-price${onSale ? " on-sale" : ""}`}>
+      <span className="amount">
+        {onSale && <s>{money(regular)}</s>} {money(onSale ? promo : regular)}
+      </span>
+      <span className="product" title={description}>
+        {description}
+        {size && ` · ${size}`}
+      </span>
+    </span>
+  );
+}
+
 /** Name, totals, and the recipes asking for it - the same in every section. */
 function ItemText({ item }: { item: GroceryItem }) {
   const recipeTitles = [...new Set(item.uses.map((u) => u.recipe_title))];
@@ -278,6 +322,7 @@ function GroceryRow({
       />
       <ItemText item={item} />
       {item.from_pantry && <span className="pantry-tag">pantry</span>}
+      <ItemPriceTag item={item} />
     </label>
   );
 }

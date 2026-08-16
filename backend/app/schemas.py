@@ -166,6 +166,36 @@ class GroceryRecipeUse(BaseModel):
     unit: str | None
 
 
+class ItemPrice(BaseModel):
+    """What one grocery line costs at the chosen store.
+
+    The description and size are Kroger's and are shown as returned. `promo`
+    is present only when the item is actually on offer - it is absent rather
+    than zero the rest of the time, which is most of the time.
+    """
+
+    product_id: str
+    description: str
+    size: str
+    regular: float
+    promo: float | None = None
+    aisle: str = ""
+
+
+class GroceryPricing(BaseModel):
+    """The trip's total, and how much of the list it actually covers.
+
+    `priced` against `total_lines` is not decoration. A total that silently
+    leaves out what could not be matched looks exactly like a complete one,
+    and the gap is discovered at the till.
+    """
+
+    store: StoreOut
+    total: float
+    priced: int
+    total_lines: int
+
+
 class GroceryItem(BaseModel):
     key: str
     name: str
@@ -176,6 +206,8 @@ class GroceryItem(BaseModel):
     # True when this line comes from the pantry restock list, not a recipe.
     from_pantry: bool = False
     pantry_item_id: int | None = None
+    # Absent when pricing is off, or when nothing confident matched.
+    price: ItemPrice | None = None
 
 
 class GroceryList(BaseModel):
@@ -186,6 +218,8 @@ class GroceryList(BaseModel):
     # default, but shown with their amounts so the cook can decide otherwise.
     in_pantry: list[GroceryItem]
     pantry_restock: list[GroceryItem]
+    # Absent whenever prices could not be attached, for any reason.
+    pricing: GroceryPricing | None = None
 
 
 class GroceryToggle(BaseModel):
