@@ -1,22 +1,151 @@
+/*
+ * Design tokens.
+ *
+ * Every value a rule below reaches for lives here. The rules name intent
+ * ("this is danger-coloured", "this is one step of space"); the tokens decide
+ * what that means. Two consequences worth stating, because they are the point:
+ *
+ * - No rule in this file should contain a raw hex, rgba, or px spacing value.
+ *   A literal in a rule is a decision made twice, and the second one drifts.
+ * - Values derived from another token say so with color-mix(), rather than
+ *   being hand-computed and pasted. Changing --line now moves --line-soft
+ *   with it, which is what stopped being true once the alpha was copied out
+ *   by hand in five places.
+ *
+ * Component geometry - the 34px brand mark, the 19px checkbox, the grid track
+ * minimums - is deliberately NOT tokenized. Those are the dimensions of one
+ * specific thing, not shared decisions, and hoisting them here would suggest
+ * a relationship between them that does not exist.
+ */
 :root {
+  /* ---------- Surfaces ---------- */
+  /* --bg is the single source for the app's chrome colour: vite.config.ts
+     reads it out of this file at build time and writes it into index.html's
+     theme-color and the web manifest, so those cannot drift from it. */
   --bg: #f7f2ea;
   --surface: #fffdf9;
   --surface-2: #f3ebdf;
+  /* A surface carrying a hint of warmth, for "this one is today". */
+  --surface-tint: #fffaf3;
+  /* A raised element sitting on a coloured track, e.g. a switch knob. */
+  --surface-raised: #fff;
+
+  /* ---------- Ink ---------- */
   --ink: #33302b;
   --ink-soft: #5f594f;
   --muted: #8f8778;
+  /* Foreground on an accent-filled surface. */
+  --ink-on-accent: #fff;
+
+  /* ---------- Lines ---------- */
   --line: #e5dccc;
+  /* Cards and cells want a border that reads as a seam rather than an edge. */
+  --line-soft: color-mix(in srgb, var(--line) 70%, transparent);
+
+  /* ---------- Accent ---------- */
   --accent: #c2552f;
   --accent-dark: #a84523;
   --accent-soft: #f6e3d8;
+
+  /* ---------- Success: the pantry and planner green ---------- */
   --green: #5f7a54;
+  --green-dark: #3c5233;
+  --green-muted: #6c8260;
   --green-soft: #e6ecdf;
-  --radius: 14px;
+  /* Hover wash for controls sitting on a green surface. */
+  --green-wash: color-mix(in srgb, var(--green-dark) 12%, transparent);
+
+  /* ---------- Danger ---------- */
+  --danger: #a03123;
+  --danger-dark: #8c2b1e;
+  --danger-soft: #f8e4e0;
+  --danger-line: #e5c2bb;
+
+  /* ---------- Overlays ---------- */
+  --scrim: color-mix(in srgb, var(--ink) 45%, transparent);
+  /* The sticky topbar, translucent over whatever scrolls beneath it. */
+  --bg-blur: color-mix(in srgb, var(--bg) 92%, transparent);
+  --placeholder-fill: linear-gradient(135deg, #f3e7d3, #ecd9c3);
+
+  /* ---------- Elevation ---------- */
+  /* One warm shadow colour, four weights of it. */
+  --shadow-rgb: 70 60 40;
+  --shadow: 0 1px 2px rgb(var(--shadow-rgb) / 0.06), 0 6px 20px rgb(var(--shadow-rgb) / 0.07);
+  --shadow-lift: 0 2px 4px rgb(var(--shadow-rgb) / 0.08), 0 12px 32px rgb(var(--shadow-rgb) / 0.12);
+  --shadow-knob: 0 1px 3px rgb(var(--shadow-rgb) / 0.3);
+  --ring: 0 0 0 3px var(--accent-soft);
+
+  /* ---------- Space ---------- */
+  /* Named for their own value, so a rule reading var(--space-16) tells you
+     what it does without a lookup. Fine steps below 12 for controls, 4px
+     steps above it for layout. */
+  --space-2: 2px;
+  --space-4: 4px;
+  --space-6: 6px;
+  --space-8: 8px;
+  --space-10: 10px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+  --space-32: 32px;
+  --space-40: 40px;
+  --space-48: 48px;
+  --space-64: 64px;
+  --space-72: 72px;
+
+  /* ---------- Radius ---------- */
+  /* --radius-2xs exists because a 16px control given --radius-xs comes out
+     all but circular. Small controls need a proportionally smaller corner. */
+  --radius-2xs: 5px;
+  --radius-xs: 7px;
   --radius-sm: 9px;
-  --shadow: 0 1px 2px rgba(70, 60, 40, 0.06), 0 6px 20px rgba(70, 60, 40, 0.07);
-  --shadow-lift: 0 2px 4px rgba(70, 60, 40, 0.08), 0 12px 32px rgba(70, 60, 40, 0.12);
+  --radius-md: 14px;
+  --radius-pill: 999px;
+
+  /* ---------- Type ---------- */
   --font-display: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+
+  /* rem here is relative to the document root (16px), not to --text-body. */
+  --text-2xs: 0.75rem;
+  --text-xs: 0.8rem;
+  --text-sm: 0.85rem;
+  --text-md: 0.9rem;
+  --text-base: 1rem;
+  --text-lg: 1.1rem;
+  --text-xl: 1.35rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.9rem;
+  --text-body: 15.5px;
+
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.55;
+
+  --tracking-tight: -0.01em;
+  --tracking-caps: 0.06em;
+
+  /* ---------- Motion ---------- */
+  --transition: 0.15s;
+  /* For a press: fast enough to read as the button moving under the finger
+     rather than as an animation. */
+  --transition-fast: 0.05s;
+
+  /* ---------- Layering ---------- */
+  --z-raised: 1;
+  --z-topbar: 20;
+  --z-modal: 50;
+
+  /* ---------- Content measure ---------- */
+  --width-page: 1120px;
+  --width-prose: 760px;
+  --width-narrow: 640px;
+  --width-compact: 560px;
 }
 
 * {
@@ -28,21 +157,21 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 15.5px;
-  line-height: 1.55;
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
 }
 
 h1, h2, h3 {
   font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
   margin: 0;
 }
 
-h1 { font-size: 1.9rem; }
-h2 { font-size: 1.35rem; }
-h3 { font-size: 1.1rem; }
+h1 { font-size: var(--text-3xl); }
+h2 { font-size: var(--text-xl); }
+h3 { font-size: var(--text-lg); }
 
 a { color: inherit; text-decoration: none; }
 
@@ -61,14 +190,14 @@ input, select, textarea {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  padding: 9px 12px;
+  padding: var(--space-10) var(--space-12);
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: var(--ring);
 }
 
 /* ---------- App shell ---------- */
@@ -82,54 +211,54 @@ input:focus, select:focus, textarea:focus {
 .topbar {
   position: sticky;
   top: 0;
-  z-index: 20;
-  background: rgba(247, 242, 234, 0.92);
+  z-index: var(--z-topbar);
+  background: var(--bg-blur);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
 }
 
 .topbar-inner {
-  max-width: 1120px;
+  max-width: var(--width-page);
   margin: 0 auto;
-  padding: 14px 24px;
+  padding: var(--space-16) var(--space-24);
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: var(--space-32);
 }
 
 .brand {
   font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 700;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-10);
 }
 
 .brand .mark {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   background: var(--accent);
-  color: #fff;
+  color: var(--ink-on-accent);
   display: grid;
   place-items: center;
-  font-size: 1.05rem;
+  font-size: var(--text-lg);
   box-shadow: var(--shadow);
 }
 
 .nav {
   display: flex;
-  gap: 4px;
+  gap: var(--space-4);
   margin-left: auto;
 }
 
 .nav a {
-  padding: 7px 14px;
-  border-radius: 999px;
+  padding: var(--space-8) var(--space-16);
+  border-radius: var(--radius-pill);
   color: var(--ink-soft);
-  font-weight: 500;
-  transition: background 0.15s, color 0.15s;
+  font-weight: var(--weight-medium);
+  transition: background var(--transition), color var(--transition);
 }
 
 .nav a:hover { background: var(--surface-2); }
@@ -141,18 +270,18 @@ input:focus, select:focus, textarea:focus {
 
 .page {
   width: 100%;
-  max-width: 1120px;
+  max-width: var(--width-page);
   margin: 0 auto;
-  padding: 32px 24px 72px;
+  padding: var(--space-32) var(--space-24) var(--space-72);
   flex: 1;
 }
 
 .page-head {
   display: flex;
   align-items: baseline;
-  gap: 16px;
+  gap: var(--space-16);
   flex-wrap: wrap;
-  margin-bottom: 24px;
+  margin-bottom: var(--space-24);
 }
 
 .page-head .sub {
@@ -166,14 +295,14 @@ input:focus, select:focus, textarea:focus {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 9px 18px;
-  border-radius: 999px;
-  font-weight: 600;
+  gap: var(--space-8);
+  padding: var(--space-10) var(--space-20);
+  border-radius: var(--radius-pill);
+  font-weight: var(--weight-semibold);
   background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink);
-  transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  transition: background var(--transition), border-color var(--transition), transform var(--transition-fast);
   white-space: nowrap;
 }
 
@@ -183,23 +312,23 @@ input:focus, select:focus, textarea:focus {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #fff;
+  color: var(--ink-on-accent);
 }
 
 .btn.primary:hover { background: var(--accent-dark); }
 
 .btn.danger {
-  color: #a03123;
+  color: var(--danger);
 }
 
 .btn.danger:hover {
-  background: #f8e4e0;
-  border-color: #e5c2bb;
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
 }
 
 .btn.small {
-  padding: 5px 12px;
-  font-size: 0.88rem;
+  padding: var(--space-6) var(--space-12);
+  font-size: var(--text-md);
 }
 
 .icon-btn {
@@ -207,9 +336,9 @@ input:focus, select:focus, textarea:focus {
   height: 30px;
   display: inline-grid;
   place-items: center;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
-  transition: background 0.15s, color 0.15s;
+  transition: background var(--transition), color var(--transition);
   flex: none;
 }
 
@@ -223,42 +352,42 @@ input:focus, select:focus, textarea:focus {
 .recipe-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 22px;
+  gap: var(--space-24);
 }
 
 /* Results already on screen while the next filter loads. Dimmed rather than
    cleared, so typing does not strobe the page. */
 .recipe-grid.stale {
   opacity: 0.55;
-  transition: opacity 0.15s;
+  transition: opacity var(--transition);
 }
 
 .load-more {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
-  margin-top: 28px;
+  gap: var(--space-16);
+  margin-top: var(--space-32);
 }
 
 .load-more .sub {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .list-status {
   color: var(--muted);
-  padding: 28px 0;
+  padding: var(--space-32) 0;
   text-align: center;
 }
 
 .recipe-card {
   background: var(--surface);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   overflow: hidden;
   box-shadow: var(--shadow);
-  border: 1px solid rgba(229, 220, 204, 0.6);
-  transition: transform 0.15s, box-shadow 0.15s;
+  border: 1px solid var(--line-soft);
+  transition: transform var(--transition), box-shadow var(--transition);
   display: flex;
   flex-direction: column;
 }
@@ -280,21 +409,23 @@ input:focus, select:focus, textarea:focus {
   aspect-ratio: 4 / 3;
   display: grid;
   place-items: center;
+  /* Decorative glyph sizes sit outside the type scale on purpose: this is an
+     illustration standing in for a photo, not text. */
   font-size: 2.6rem;
-  background: linear-gradient(135deg, #f3e7d3, #ecd9c3);
+  background: var(--placeholder-fill);
 }
 
 .recipe-card .body {
-  padding: 14px 16px 16px;
+  padding: var(--space-16);
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
   flex: 1;
 }
 
 .recipe-card .desc {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -303,19 +434,19 @@ input:focus, select:focus, textarea:focus {
 
 .chips {
   display: flex;
-  gap: 6px;
+  gap: var(--space-6);
   flex-wrap: wrap;
   margin-top: auto;
-  padding-top: 6px;
+  padding-top: var(--space-6);
 }
 
 .chip {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   color: var(--ink-soft);
   background: var(--surface-2);
-  border-radius: 999px;
-  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  padding: var(--space-4) var(--space-10);
 }
 
 .chip.accent {
@@ -332,20 +463,20 @@ input:focus, select:focus, textarea:focus {
 
 .tag-filter {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   flex-wrap: wrap;
-  margin: -6px 0 22px;
+  margin: calc(var(--space-6) * -1) 0 var(--space-24);
 }
 
 .tag-pill {
-  padding: 5px 14px;
-  border-radius: 999px;
+  padding: var(--space-6) var(--space-16);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--ink-soft);
-  font-size: 0.88rem;
-  font-weight: 600;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
 }
 
 .tag-pill:hover { background: var(--surface-2); }
@@ -357,34 +488,34 @@ input:focus, select:focus, textarea:focus {
 }
 
 .tag-pill .count {
-  margin-left: 7px;
+  margin-left: var(--space-8);
   font-variant-numeric: tabular-nums;
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   opacity: 0.55;
 }
 
 .import-box {
   background: var(--surface);
   border: 1px dashed var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-  margin-bottom: 26px;
-  max-width: 760px;
+  border-radius: var(--radius-md);
+  padding: var(--space-16) var(--space-20);
+  margin-bottom: var(--space-24);
+  max-width: var(--width-prose);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-8);
 }
 
 .import-box .import-row {
   display: flex;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .import-box .import-row input { flex: 1; }
 
 .import-box .hint {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 /* ---------- Recipe detail ---------- */
@@ -392,8 +523,8 @@ input:focus, select:focus, textarea:focus {
 .detail-hero {
   display: grid;
   grid-template-columns: minmax(280px, 420px) 1fr;
-  gap: 32px;
-  margin-bottom: 32px;
+  gap: var(--space-32);
+  margin-bottom: var(--space-32);
   align-items: start;
 }
 
@@ -402,46 +533,46 @@ input:focus, select:focus, textarea:focus {
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow);
 }
 
 .detail-cols {
   display: grid;
   grid-template-columns: minmax(260px, 340px) 1fr;
-  gap: 32px;
+  gap: var(--space-32);
   align-items: start;
 }
 
 .panel {
   background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid rgba(229, 220, 204, 0.6);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-soft);
   box-shadow: var(--shadow);
-  padding: 20px 22px;
+  padding: var(--space-20) var(--space-24);
 }
 
 .panel h2 {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-12);
 }
 
 .panel-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .servings-stepper {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  gap: var(--space-8);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--ink-soft);
   background: var(--surface-2);
-  border-radius: 999px;
-  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  padding: var(--space-4) var(--space-8);
 }
 
 .servings-stepper button {
@@ -451,7 +582,7 @@ input:focus, select:focus, textarea:focus {
   display: grid;
   place-items: center;
   color: var(--accent-dark);
-  font-size: 1rem;
+  font-size: var(--text-base);
 }
 
 .servings-stepper button:hover { background: var(--accent-soft); }
@@ -464,15 +595,15 @@ input:focus, select:focus, textarea:focus {
 
 .ingredient-list li {
   display: flex;
-  gap: 10px;
-  padding: 7px 0;
+  gap: var(--space-10);
+  padding: var(--space-8) 0;
   border-bottom: 1px dashed var(--line);
 }
 
 .ingredient-list li:last-child { border-bottom: none; }
 
 .ingredient-list .qty {
-  font-weight: 650;
+  font-weight: var(--weight-bold);
   color: var(--accent-dark);
   white-space: nowrap;
   min-width: 64px;
@@ -488,8 +619,8 @@ input:focus, select:focus, textarea:focus {
 .steps li {
   counter-increment: step;
   display: flex;
-  gap: 14px;
-  padding: 10px 0;
+  gap: var(--space-16);
+  padding: var(--space-10) 0;
 }
 
 .steps li::before {
@@ -500,8 +631,8 @@ input:focus, select:focus, textarea:focus {
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent-dark);
-  font-weight: 700;
-  font-size: 0.9rem;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-md);
   display: grid;
   place-items: center;
   margin-top: 1px;
@@ -512,29 +643,29 @@ input:focus, select:focus, textarea:focus {
 .form {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  max-width: 760px;
+  gap: var(--space-24);
+  max-width: var(--width-prose);
 }
 
 .field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .field label {
-  font-weight: 600;
-  font-size: 0.92rem;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-md);
 }
 
 .field .hint {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 .field-row {
   display: flex;
-  gap: 14px;
+  gap: var(--space-16);
   flex-wrap: wrap;
 }
 
@@ -543,14 +674,14 @@ input:focus, select:focus, textarea:focus {
 .ingredient-row {
   display: grid;
   grid-template-columns: 90px 110px 1fr 34px;
-  gap: 8px;
+  gap: var(--space-8);
   align-items: center;
 }
 
 .image-drop {
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: var(--space-20);
 }
 
 .image-drop img {
@@ -563,16 +694,16 @@ input:focus, select:focus, textarea:focus {
 
 .form-actions {
   display: flex;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
 }
 
 .error-banner {
-  background: #f8e4e0;
-  border: 1px solid #e5c2bb;
-  color: #8c2b1e;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
+  color: var(--danger-dark);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
+  padding: var(--space-10) var(--space-16);
 }
 
 /*
@@ -583,15 +714,15 @@ input:focus, select:focus, textarea:focus {
 .notice-banner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
   flex-wrap: wrap;
   background: var(--surface-2);
   border: 1px solid var(--line);
   color: var(--ink-soft);
   border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  margin-bottom: 16px;
-  font-size: 0.92rem;
+  padding: var(--space-10) var(--space-16);
+  margin-bottom: var(--space-16);
+  font-size: var(--text-md);
 }
 
 .notice-banner span {
@@ -608,15 +739,15 @@ input:focus, select:focus, textarea:focus {
 .planner-controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .week-grid {
   display: grid;
   grid-template-columns: 106px repeat(7, minmax(120px, 1fr));
-  gap: 6px;
+  gap: var(--space-6);
   overflow-x: auto;
-  padding-bottom: 8px;
+  padding-bottom: var(--space-8);
 }
 
 /* The label column pins while the seven days scroll under it. The corner and
@@ -629,28 +760,28 @@ input:focus, select:focus, textarea:focus {
 .week-grid .meal-label {
   position: sticky;
   left: 0;
-  z-index: 1;
+  z-index: var(--z-raised);
   background: var(--bg);
 }
 
 .day-head {
   text-align: center;
-  padding: 8px 4px 10px;
+  padding: var(--space-8) var(--space-4) var(--space-10);
   border-radius: var(--radius-sm);
 }
 
 .day-head .dow {
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
   color: var(--muted);
 }
 
 .day-head .date {
   font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 600;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
 }
 
 .day-head.today {
@@ -663,44 +794,44 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  padding-right: 10px;
-  font-size: 0.8rem;
-  font-weight: 700;
+  padding-right: var(--space-10);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-caps);
   color: var(--muted);
 }
 
 .plan-cell {
   background: var(--surface);
-  border: 1px solid rgba(229, 220, 204, 0.7);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
   min-height: 74px;
-  padding: 6px;
+  padding: var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--space-6);
 }
 
-.plan-cell.today { background: #fffaf3; }
+.plan-cell.today { background: var(--surface-tint); }
 
 .plan-entry {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-2);
   background: var(--green-soft);
-  color: #3c5233;
-  border-radius: 7px;
-  padding: 4px 6px 4px 9px;
-  font-size: 0.84rem;
-  font-weight: 600;
-  line-height: 1.25;
+  color: var(--green-dark);
+  border-radius: var(--radius-xs);
+  padding: var(--space-4) var(--space-6) var(--space-4) var(--space-10);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
 }
 
 .plan-entry-main {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-6);
 }
 
 .plan-entry a { flex: 1; }
@@ -708,10 +839,10 @@ input:focus, select:focus, textarea:focus {
 .serv {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: #6c8260;
+  gap: var(--space-6);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--green-muted);
 }
 
 .serv .overridden { color: var(--accent-dark); }
@@ -720,38 +851,38 @@ input:focus, select:focus, textarea:focus {
   width: 16px;
   height: 16px;
   line-height: 1;
-  border-radius: 5px;
+  border-radius: var(--radius-2xs);
   display: grid;
   place-items: center;
-  color: #6c8260;
-  font-size: 0.85rem;
+  color: var(--green-muted);
+  font-size: var(--text-sm);
 }
 
 .serv button:hover {
-  background: rgba(60, 82, 51, 0.12);
-  color: #3c5233;
+  background: var(--green-wash);
+  color: var(--green-dark);
 }
 .plan-entry a:hover { text-decoration: underline; }
 
 .plan-entry .remove {
-  color: #6c8260;
-  font-size: 0.95rem;
+  color: var(--green-muted);
+  font-size: var(--text-base);
   line-height: 1;
-  padding: 2px 4px;
-  border-radius: 5px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-2xs);
 }
 
-.plan-entry .remove:hover { background: rgba(60, 82, 51, 0.12); color: #3c5233; }
+.plan-entry .remove:hover { background: var(--green-wash); color: var(--green-dark); }
 
 .plan-add {
   margin-top: auto;
   align-self: stretch;
   border: 1px dashed var(--line);
-  border-radius: 7px;
+  border-radius: var(--radius-xs);
   color: var(--muted);
-  font-size: 0.85rem;
-  padding: 4px;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  font-size: var(--text-sm);
+  padding: var(--space-4);
+  transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 
 .plan-cell:hover .plan-add,
@@ -766,16 +897,16 @@ input:focus, select:focus, textarea:focus {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(51, 48, 43, 0.45);
+  background: var(--scrim);
   display: grid;
   place-items: center;
-  z-index: 50;
-  padding: 20px;
+  z-index: var(--z-modal);
+  padding: var(--space-20);
 }
 
 .modal {
   background: var(--surface);
-  border-radius: var(--radius);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-lift);
   width: min(460px, 100%);
   max-height: 76vh;
@@ -785,39 +916,39 @@ input:focus, select:focus, textarea:focus {
 }
 
 .modal header {
-  padding: 18px 20px 12px;
+  padding: var(--space-20) var(--space-20) var(--space-12);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
 }
 
 .modal header h3 { flex: 1; }
 
 .modal .modal-search {
-  padding: 0 20px 12px;
+  padding: 0 var(--space-20) var(--space-12);
 }
 
 .modal .modal-search input { width: 100%; }
 
 .modal .modal-list {
   overflow-y: auto;
-  padding: 0 12px 14px;
+  padding: 0 var(--space-12) var(--space-16);
 }
 
 .modal-recipe {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
   width: 100%;
   text-align: left;
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   border-radius: var(--radius-sm);
 }
 
 .modal-note {
-  padding: 8px 10px;
+  padding: var(--space-8) var(--space-10);
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .modal-recipe:hover { background: var(--surface-2); }
@@ -826,7 +957,7 @@ input:focus, select:focus, textarea:focus {
 .modal-recipe .thumb-placeholder {
   width: 52px;
   height: 40px;
-  border-radius: 7px;
+  border-radius: var(--radius-xs);
   object-fit: cover;
   background: var(--surface-2);
   display: grid;
@@ -837,45 +968,45 @@ input:focus, select:focus, textarea:focus {
 /* ---------- Grocery list ---------- */
 
 .grocery-layout {
-  max-width: 640px;
+  max-width: var(--width-narrow);
 }
 
 .grocery-range {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-10);
   flex-wrap: wrap;
-  margin-bottom: 22px;
+  margin-bottom: var(--space-24);
 }
 
 .grocery-section {
-  margin-bottom: 26px;
+  margin-bottom: var(--space-24);
 }
 
 .grocery-section h2 {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--space-10);
 }
 
 .grocery-section h2 .count,
 .stocked-section summary .count {
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--muted);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 
 /* A <details>, so the summary has to carry the h2 look itself. */
 .stocked-section summary {
   font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
   display: flex;
   align-items: baseline;
-  gap: 10px;
+  gap: var(--space-10);
   cursor: pointer;
   color: var(--muted);
   list-style: none;
@@ -894,12 +1025,12 @@ input:focus, select:focus, textarea:focus {
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: translateY(-2px) rotate(45deg);
-  transition: transform 0.15s;
+  transition: transform var(--transition);
 }
 
 .stocked-section[open] summary {
   color: inherit;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .stocked-section[open] summary::after {
@@ -907,22 +1038,22 @@ input:focus, select:focus, textarea:focus {
 }
 
 .section-note {
-  margin: 0 0 12px;
+  margin: 0 0 var(--space-12);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   max-width: 46ch;
 }
 
 .grocery-item {
   display: flex;
   align-items: flex-start;
-  gap: 13px;
-  padding: 11px 16px;
+  gap: var(--space-12);
+  padding: var(--space-12) var(--space-16);
   background: var(--surface);
-  border: 1px solid rgba(229, 220, 204, 0.7);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  margin-bottom: 7px;
-  transition: opacity 0.15s;
+  margin-bottom: var(--space-8);
+  transition: opacity var(--transition);
 }
 
 .grocery-item.checked { opacity: 0.55; }
@@ -936,52 +1067,52 @@ input:focus, select:focus, textarea:focus {
   border-style: dashed;
 }
 
-.grocery-item.stocked .name { font-weight: 500; color: var(--muted); }
+.grocery-item.stocked .name { font-weight: var(--weight-medium); color: var(--muted); }
 
-.grocery-item.stocked .amounts { color: var(--muted); font-weight: 600; }
+.grocery-item.stocked .amounts { color: var(--muted); font-weight: var(--weight-semibold); }
 
 .grocery-item.stocked .btn { flex: none; }
 
 .grocery-item input[type="checkbox"] {
   width: 19px;
   height: 19px;
-  margin-top: 2px;
+  margin-top: var(--space-2);
   accent-color: var(--green);
   flex: none;
 }
 
-.grocery-item .name { font-weight: 600; }
+.grocery-item .name { font-weight: var(--weight-semibold); }
 
 .grocery-item .amounts {
   color: var(--accent-dark);
-  font-weight: 650;
-  font-size: 0.9rem;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-md);
 }
 
 .grocery-item .uses {
   color: var(--muted);
-  font-size: 0.83rem;
+  font-size: var(--text-sm);
 }
 
 .grocery-item .pantry-tag {
   margin-left: auto;
-  font-size: 0.75rem;
-  font-weight: 700;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   color: var(--green);
   background: var(--green-soft);
-  padding: 3px 9px;
-  border-radius: 999px;
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 
 /* ---------- Pantry ---------- */
 
-.pantry-layout { max-width: 560px; }
+.pantry-layout { max-width: var(--width-compact); }
 
 .pantry-add {
   display: flex;
-  gap: 10px;
-  margin-bottom: 22px;
+  gap: var(--space-10);
+  margin-bottom: var(--space-24);
 }
 
 .pantry-add input { flex: 1; }
@@ -989,24 +1120,24 @@ input:focus, select:focus, textarea:focus {
 .pantry-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 11px 16px;
+  gap: var(--space-16);
+  padding: var(--space-12) var(--space-16);
   background: var(--surface);
-  border: 1px solid rgba(229, 220, 204, 0.7);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius-sm);
-  margin-bottom: 7px;
+  margin-bottom: var(--space-8);
 }
 
-.pantry-item .name { flex: 1; font-weight: 600; }
+.pantry-item .name { flex: 1; font-weight: var(--weight-semibold); }
 
 .pantry-item.out .name { color: var(--muted); }
 
 .stock-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  gap: var(--space-8);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
   color: var(--muted);
 }
 
@@ -1014,9 +1145,9 @@ input:focus, select:focus, textarea:focus {
   position: relative;
   width: 40px;
   height: 23px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--line);
-  transition: background 0.15s;
+  transition: background var(--transition);
   flex: none;
 }
 
@@ -1028,9 +1159,9 @@ input:focus, select:focus, textarea:focus {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-  transition: transform 0.15s;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-knob);
+  transition: transform var(--transition);
 }
 
 .switch.on { background: var(--green); }
@@ -1040,13 +1171,14 @@ input:focus, select:focus, textarea:focus {
 
 .empty-state {
   text-align: center;
-  padding: 64px 24px;
+  padding: var(--space-64) var(--space-24);
   color: var(--muted);
 }
 
-.empty-state .glyph { font-size: 3rem; margin-bottom: 12px; }
+/* Decorative, like .photo-placeholder: an illustration, not text. */
+.empty-state .glyph { font-size: 3rem; margin-bottom: var(--space-12); }
 
-.empty-state h2 { color: var(--ink-soft); margin-bottom: 6px; }
+.empty-state h2 { color: var(--ink-soft); margin-bottom: var(--space-6); }
 
 .searchbar {
   /* Wide enough for the placeholder, which was clipping mid-word at 240px. */
@@ -1055,7 +1187,7 @@ input:focus, select:focus, textarea:focus {
 
 .toolbar {
   display: flex;
-  gap: 12px;
+  gap: var(--space-12);
   align-items: center;
   flex-wrap: wrap;
 }
@@ -1068,15 +1200,15 @@ input:focus, select:focus, textarea:focus {
 }
 
 .result-tabs-header {
-  margin-bottom: 18px;
+  margin-bottom: var(--space-20);
   border-bottom: 1px solid var(--line);
 }
 
 .result-tabs-header .count {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-8);
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 
 /* Fades mark tabs scrolled out of view, so a long result set does not just
@@ -1090,12 +1222,12 @@ input:focus, select:focus, textarea:focus {
   content: "";
   position: absolute;
   top: 0;
-  bottom: 10px;
+  bottom: var(--space-10);
   width: 40px;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 0.15s;
-  z-index: 1;
+  transition: opacity var(--transition);
+  z-index: var(--z-raised);
 }
 
 .result-tabs-wrap::before {
@@ -1117,9 +1249,9 @@ input:focus, select:focus, textarea:focus {
    of tabs that pushes the recipe itself off screen. */
 .result-tabs {
   display: flex;
-  gap: 8px;
+  gap: var(--space-8);
   overflow-x: auto;
-  padding-bottom: 10px;
+  padding-bottom: var(--space-10);
   scrollbar-width: thin;
   scroll-behavior: smooth;
 }
@@ -1128,28 +1260,28 @@ input:focus, select:focus, textarea:focus {
   flex: 0 0 auto;
   max-width: 210px;
   text-align: left;
-  padding: 9px 13px;
+  padding: var(--space-10) var(--space-12);
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: var(--surface);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  transition: background 0.12s, border-color 0.12s;
+  gap: var(--space-2);
+  transition: background var(--transition), border-color var(--transition);
 }
 
 .result-tab:hover { background: var(--surface-2); }
 
 .result-tab .site {
-  font-size: 0.72rem;
+  font-size: var(--text-2xs);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-caps);
   color: var(--muted);
 }
 
 .result-tab .name {
-  font-size: 0.9rem;
-  line-height: 1.3;
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
   /* Long titles truncate so every tab stays the same height. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -1167,15 +1299,15 @@ input:focus, select:focus, textarea:focus {
 .preview-banner {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-12);
   flex-wrap: wrap;
-  padding: 12px 16px;
-  margin-bottom: 22px;
-  border-radius: var(--radius);
+  padding: var(--space-12) var(--space-16);
+  margin-bottom: var(--space-24);
+  border-radius: var(--radius-md);
   background: var(--surface);
   border: 1px dashed var(--line);
   color: var(--ink-soft);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 
 .preview-banner a {
@@ -1185,9 +1317,9 @@ input:focus, select:focus, textarea:focus {
 
 .compare-row {
   display: flex;
-  gap: 26px;
+  gap: var(--space-24);
   flex-wrap: wrap;
-  margin-top: 16px;
+  margin-top: var(--space-16);
 }
 
 .compare-stat {
@@ -1197,23 +1329,25 @@ input:focus, select:focus, textarea:focus {
 
 .compare-stat .value {
   font-family: var(--font-display);
-  font-size: 1.5rem;
-  line-height: 1.15;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-tight);
 }
 
 .compare-stat .label {
-  font-size: 0.78rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--tracking-caps);
   color: var(--muted);
 }
 
+/* Custom properties cannot be used in a media query, so this breakpoint is
+   the one width in the file that has to be written out. */
 @media (max-width: 720px) {
   .detail-hero, .detail-cols { grid-template-columns: 1fr; }
-  .compare-row { gap: 18px; }
+  .compare-row { gap: var(--space-20); }
   .preview-banner .spacer { display: none; }
-  .topbar-inner { padding: 12px 16px; gap: 14px; }
-  .page { padding: 22px 16px 60px; }
-  .nav a { padding: 6px 10px; font-size: 0.92rem; }
+  .topbar-inner { padding: var(--space-12) var(--space-16); gap: var(--space-16); }
+  .page { padding: var(--space-24) var(--space-16) var(--space-64); }
+  .nav a { padding: var(--space-6) var(--space-10); font-size: var(--text-md); }
   .brand .word { display: none; }
 }
