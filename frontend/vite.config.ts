@@ -11,6 +11,8 @@ const TOKENS = resolve("./src/styles.css");
 const MANIFEST_SOURCE = resolve("./manifest.source.json");
 const MANIFEST_PATH = "manifest.webmanifest";
 
+const stylesheet = () => readFileSync(TOKENS, "utf8");
+
 /**
  * The one colour the browser chrome sees, read from the stylesheet that
  * defines it.
@@ -21,8 +23,7 @@ const MANIFEST_PATH = "manifest.webmanifest";
  * the design token, and everything else is generated from it at build time.
  */
 function themeColor(): string {
-  const css = readFileSync(TOKENS, "utf8");
-  const match = /--bg:\s*([^;]+);/.exec(css);
+  const match = /--bg:\s*([^;]+);/.exec(stylesheet());
   if (!match) {
     throw new Error(
       `Could not find --bg in ${TOKENS}. It is the source for the PWA theme ` +
@@ -80,8 +81,72 @@ function brandMetadata(): Plugin {
   };
 }
 
+const HEADING = /\/\*\s*-+\s*(.+?)\s*-+\s*\*\//;
+const DECLARATION = /^\s*(--[\w-]+):\s*(.+?);\s*$/;
+
+/** The :root block, as the groups its section comments already divide it into. */
+function parseTokens(css: string) {
+  const root = /:root\s*\{([\s\S]*?)\n\}/.exec(css);
+  if (!root) return [];
+
+  const groups: { name: string; tokens: { name: string; value: string }[] }[] = [];
+  let current = { name: "Tokens", tokens: [] as { name: string; value: string }[] };
+
+  for (const line of root[1].split("\n")) {
+    const heading = HEADING.exec(line);
+    if (heading) {
+      if (current.tokens.length > 0) groups.push(current);
+      current = { name: heading[1], tokens: [] };
+      continue;
+    }
+    const declaration = DECLARATION.exec(line);
+    if (declaration) {
+      current.tokens.push({ name: declaration[1], value: declaration[2] });
+    }
+  }
+  if (current.tokens.length > 0) groups.push(current);
+  return groups;
+}
+
+/**
+ * Exposes the token block to the styleguide as `virtual:design-tokens`.
+ *
+ * The page could import the stylesheet with ?raw and parse it in the browser,
+ * but that ships 23kB of CSS text to do work that only ever has one answer -
+ * and vitest stubs CSS modules, so ?raw arrives empty under test. Parsing here
+ * gives the page plain data, keeps the styleguide honest (it renders whatever
+ * the stylesheet actually declares), and works the same in dev, build and test.
+ */
+const VIRTUAL_ID = "virtual:design-tokens";
+const RESOLVED_ID = `\0${VIRTUAL_ID}`;
+
+function designTokens(): Plugin {
+  return {
+    name: "design-tokens",
+
+    resolveId(id) {
+      return id === VIRTUAL_ID ? RESOLVED_ID : undefined;
+    },
+
+    load(id) {
+      if (id !== RESOLVED_ID) return undefined;
+      return `export default ${JSON.stringify(parseTokens(stylesheet()))};`;
+    },
+
+    // Editing a token should move the styleguide on the next reload, the same
+    // as editing any other part of the stylesheet does.
+    handleHotUpdate({ file, server, modules }) {
+      if (file !== TOKENS) return undefined;
+      const virtual = server.moduleGraph.getModuleById(RESOLVED_ID);
+      if (!virtual) return undefined;
+      server.moduleGraph.invalidateModule(virtual);
+      return [...modules, virtual];
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), brandMetadata()],
+  plugins: [react(), brandMetadata(), designTokens()],
   server: {
     proxy: {
       // In dev the backend runs separately on :8000.

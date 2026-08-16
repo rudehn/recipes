@@ -105,6 +105,7 @@
   /* ---------- Type ---------- */
   --font-display: "Iowan Old Style", "Palatino", "Book Antiqua", Georgia, serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   /* rem here is relative to the document root (16px), not to --text-body. */
   --text-2xs: 0.75rem;
@@ -1386,4 +1387,131 @@ input:focus, select:focus, textarea:focus {
   .page { padding: var(--space-24) var(--space-16) var(--space-64); }
   .nav a { padding: var(--space-6) var(--space-10); font-size: var(--text-md); }
   .brand .word { display: none; }
+}
+
+/* ---------- Styleguide ---------- */
+
+/*
+ * The page at /styleguide. It reads the token block out of this file at build
+ * time and renders whatever it finds, so it cannot fall behind the tokens the
+ * way a hand-written swatch list would.
+ */
+
+.sg-section {
+  margin-bottom: var(--space-32);
+}
+
+.sg-section > h2 {
+  margin-bottom: var(--space-4);
+}
+
+.sg-note {
+  margin: 0 0 var(--space-12);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  max-width: 62ch;
+}
+
+.sg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--space-12);
+}
+
+.sg-token {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  min-width: 0;
+}
+
+.sg-token-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sg-token-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sg-token-value {
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The previews. Each is a neutral frame the token itself fills in. */
+
+.sg-swatch,
+.sg-radius,
+.sg-shadow,
+.sg-sample {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.sg-swatch {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+}
+
+.sg-radius {
+  width: 42px;
+  height: 42px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+}
+
+.sg-shadow {
+  width: 56px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.sg-sample {
+  width: 42px;
+  height: 42px;
+  overflow: hidden;
+}
+
+.sg-bar {
+  height: var(--space-12);
+  border-radius: var(--radius-2xs);
+  background: var(--accent);
+  flex: none;
+}
+
+/* A row of live components, wrapping rather than overflowing. */
+.sg-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  margin-bottom: var(--space-12);
+}
+
+.sg-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  max-width: var(--width-prose);
+}
+
+/* Puts a boundary round a component that is otherwise the same colour as the
+   page, so its edges are visible on the gallery. */
+.sg-frame {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--space-12);
 }

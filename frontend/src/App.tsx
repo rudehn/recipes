@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import GroceryPage from "./pages/GroceryPage";
@@ -7,6 +8,15 @@ import RecipeDetailPage from "./pages/RecipeDetailPage";
 import RecipeFormPage from "./pages/RecipeFormPage";
 import RecipeSearchPage from "./pages/RecipeSearchPage";
 import RecipesPage from "./pages/RecipesPage";
+
+/**
+ * A development tool that still ships, so the system can be checked on the
+ * phone it has to look right on rather than only on a laptop. Split into its
+ * own chunk, since it costs the cook nothing until someone asks for it, and
+ * deliberately absent from the nav: it is a workbench, not a fifth section of
+ * the app.
+ */
+const StyleguidePage = lazy(() => import("./pages/StyleguidePage"));
 
 export default function App() {
   return (
@@ -36,6 +46,14 @@ export default function App() {
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/groceries" element={<GroceryPage />} />
           <Route path="/pantry" element={<PantryPage />} />
+          <Route
+            path="/styleguide"
+            element={
+              <Suspense fallback={<p className="list-status">Loading…</p>}>
+                <StyleguidePage />
+              </Suspense>
+            }
+          />
         </Routes>
       </main>
     </div>
