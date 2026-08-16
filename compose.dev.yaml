@@ -20,6 +20,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://recipes:recipes@postgres:5432/recipes
       DATA_DIR: /data
+      # Optional. Pricing switches itself off when these are empty, so the
+      # stack runs unchanged without a Kroger account. Compose reads them
+      # from a .env file beside this one, which is gitignored.
+      KROGER_CLIENT_ID: ${KROGER_CLIENT_ID:-}
+      KROGER_CLIENT_SECRET: ${KROGER_CLIENT_SECRET:-}
     volumes:
       - recipe_images:/data
     depends_on:

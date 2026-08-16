@@ -6,6 +6,16 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
+class PricingStatus(BaseModel):
+    """Whether the Kroger integration is configured.
+
+    `enabled` being false is a normal state, not a failure: pricing is opt-in
+    and the rest of the app does not depend on it.
+    """
+
+    enabled: bool
+
+
 class IngredientIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     quantity: float | None = Field(default=None, ge=0)
