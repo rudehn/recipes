@@ -141,6 +141,40 @@ class PantryItem(Base):
     in_stock: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
+class IngredientProductMatch(Base):
+    """Which Kroger product an ingredient means, at one store.
+
+    Not a cache, and not an optimization. Kroger's product search is fuzzy and
+    returns results in a different order for identical requests, so without a
+    pinned choice the same ingredient resolves to a different product - and a
+    different price - on every page load.
+
+    Deliberately minimal. This records a *preference*, not a copy of Kroger's
+    catalog: the description, size and price are theirs, are needed only for
+    display, and come back with the price on the same call. The acceptable-use
+    policy forbids gathering response data into a database, and the line
+    between a stored preference and a stored catalog is only ever how many
+    columns are here.
+
+    A null `product_id` is a real answer rather than a missing row: it records
+    that a search ran and found nothing confident, so the search is not paid
+    for again on every render. Correcting one by hand (see the match UI) is
+    what sets `user_confirmed`, and a confirmed row is never overwritten.
+    """
+
+    __tablename__ = "ingredient_product_matches"
+
+    # services.canonical.canonical_key, the same identity the grocery list
+    # merges on and checked-off state is stored under.
+    canonical_key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    location_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    product_id: Mapped[str | None] = mapped_column(String(32))
+    user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class GroceryCheck(Base):
     """Checked-off state for generated grocery list items, keyed by the
     normalized item key so checks survive regenerating the list."""
