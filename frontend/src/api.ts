@@ -1,5 +1,26 @@
 export type Meal = "breakfast" | "lunch" | "dinner" | "snack";
 
+/** A Kroger store, exactly as Kroger describes it. Never reworded for display. */
+export interface Store {
+  location_id: string;
+  name: string;
+  address: string;
+  chain: string;
+}
+
+/**
+ * Whether pricing is available, and against which store.
+ *
+ * Three states, and they need telling apart: `enabled` false means no
+ * credentials and the feature does not exist; `enabled` true with a null
+ * `store` means credentials but nowhere to price against, since Kroger
+ * returns no price without a store; both set means prices can be shown.
+ */
+export interface PricingStatus {
+  enabled: boolean;
+  store: Store | null;
+}
+
 export interface Ingredient {
   id?: number;
   name: string;
@@ -256,4 +277,14 @@ export const api = {
     }),
   clearGroceryChecks: () =>
     request<void>("/api/grocery-list/clear-checks", { method: "POST" }),
+
+  pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
+  searchStores: (zip: string) =>
+    request<Store[]>(`/api/pricing/stores?zip=${encodeURIComponent(zip)}`),
+  selectStore: (location_id: string) =>
+    request<Store>("/api/pricing/store", {
+      method: "PUT",
+      body: JSON.stringify({ location_id }),
+    }),
+  clearStore: () => request<void>("/api/pricing/store", { method: "DELETE" }),
 };

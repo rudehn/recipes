@@ -21,6 +21,12 @@ from app.migrations import _upgrade, alembic_config
 
 INITIAL_SCHEMA = "9c1a7f4b2e05"
 
+# The furthest a create_all-era database can have got. Nothing past this
+# revision was ever built by anything but Alembic, so this - not head - is the
+# shape the adoption path has to recognise, and head moves away from it every
+# time a migration lands.
+SERVINGS_ADDED = "b3d6e82a41f7"
+
 
 @pytest.fixture
 def db_url(tmp_path) -> str:
@@ -69,6 +75,10 @@ def columns_of(table: str) -> Callable[[Connection], set[str]]:
     return lambda conn: {c["name"] for c in inspect(conn).get_columns(table)}
 
 
+def table_names(conn: Connection) -> set[str]:
+    return set(inspect(conn).get_table_names())
+
+
 def seed_recipe(conn: Connection) -> None:
     conn.execute(
         text(
@@ -114,8 +124,16 @@ async def test_upgrade_is_idempotent(db_url):
 
 
 async def test_pre_alembic_database_keeps_its_data(db_url):
-    """The production case: current schema, real rows, no alembic_version."""
-    await run(db_url, upgrade_to("head"))
+    """The production case: a create_all-era schema, real rows, no
+    alembic_version.
+
+    Built to `SERVINGS_ADDED` rather than to head on purpose. A real
+    pre-Alembic database stops there, because every later table exists only
+    because a migration made it, so adopting one means stamping *and* then
+    migrating forward. Building this to head would stamp a database that is
+    already current and then try to create tables it already has.
+    """
+    await run(db_url, upgrade_to(SERVINGS_ADDED))
     await run(db_url, forget_alembic)
     await run(db_url, seed_recipe)
 
@@ -123,6 +141,9 @@ async def test_pre_alembic_database_keeps_its_data(db_url):
 
     assert await run(db_url, recipe_titles) == ["Carbonara"]
     assert await run(db_url, current_revision) == await run(db_url, head_revision)
+    # The forward migration really ran, rather than the database merely being
+    # stamped and left where it was.
+    assert "app_settings" in await run(db_url, table_names)
 
 
 async def test_pre_alembic_database_without_servings_is_upgraded(db_url):

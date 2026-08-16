@@ -1240,6 +1240,55 @@ input:focus, select:focus, textarea:focus {
 
 /* ---------- Pantry ---------- */
 
+.settings-layout { max-width: var(--width-compact); }
+
+.store-search {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-10);
+  margin-bottom: var(--space-16);
+}
+
+/* The field grows; the button keeps its own width beside it. */
+.store-search .field { flex: 1; margin-bottom: 0; }
+
+.store-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding: var(--space-12) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.store-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-width: 0;
+}
+
+.store-current {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Store names run long ("Kroger Marketplace - Beavercreek") and are shown
+   exactly as Kroger returns them, so they wrap rather than being clipped. */
+.store-result .name,
+.store-current .name {
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.store-result .address,
+.store-current .address {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 .pantry-layout { max-width: var(--width-compact); }
 
 .pantry-add {

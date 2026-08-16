@@ -1,19 +1,78 @@
-"""Whether the Kroger integration is switched on.
+"""The pricing integration's status and its store selection.
 
-The client has to know before it can decide whether to show any pricing at
-all, and "not configured" is a normal answer rather than an error: this app
-is expected to run without a Kroger account, and did so exclusively until
-pricing arrived.
+The client asks `/status` before it shows anything: pricing is opt-in, and
+"not configured" is a normal answer rather than an error. This app ran
+without a Kroger account for its whole life before pricing arrived and has to
+keep being able to.
+
+Store selection lives here rather than in a general settings surface because
+it is not really a preference. The Products API returns no price at all
+without a locationId, so choosing a store is the step that makes pricing work
+at all.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..schemas import PricingStatus
+from ..db import get_session
+from ..schemas import PricingStatus, StoreOut, StoreSelection
+from ..services import settings as settings_service
 from ..services.kroger import client as kroger
+from ..services.kroger import locations
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
 
 
+def _require_configured() -> None:
+    if not kroger.enabled():
+        raise HTTPException(status_code=503, detail="Kroger pricing is not configured")
+
+
 @router.get("/status", response_model=PricingStatus)
-async def status() -> PricingStatus:
-    return PricingStatus(enabled=kroger.enabled())
+async def status(session: AsyncSession = Depends(get_session)):
+    store = await settings_service.selected_store(session)
+    return PricingStatus(enabled=kroger.enabled(), store=store)
+
+
+@router.get("/stores", response_model=list[StoreOut])
+async def search_stores(
+    zip_code: str = Query(alias="zip", pattern=r"^\d{5}$"),
+):
+    """Shoppable stores near a zip code.
+
+    Only ever called while someone is choosing, never on a page that shows
+    prices: the Locations API's daily allowance is a fraction of the Products
+    API's.
+    """
+    _require_configured()
+    try:
+        return await locations.search(zip_code)
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+
+
+@router.put("/store", response_model=StoreOut)
+async def select_store(
+    data: StoreSelection, session: AsyncSession = Depends(get_session)
+):
+    """Choose the store to price against.
+
+    The store is looked up again here rather than taken from the request, so
+    the name and address that get stored are Kroger's own words and cannot be
+    edited in transit. The acceptable-use policy requires location data be
+    displayed as returned, and this is where that is enforced.
+    """
+    _require_configured()
+    try:
+        store = await locations.get(data.location_id)
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+    if store is None:
+        raise HTTPException(status_code=404, detail="No such Kroger store")
+    await settings_service.set_store(session, store)
+    return store
+
+
+@router.delete("/store", status_code=204)
+async def clear_store(session: AsyncSession = Depends(get_session)):
+    await settings_service.clear_store(session)

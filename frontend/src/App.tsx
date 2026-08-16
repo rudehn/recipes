@@ -1,6 +1,7 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useCallback } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
+import { api } from "./api";
 import GroceryPage from "./pages/GroceryPage";
 import PantryPage from "./pages/PantryPage";
 import PlannerPage from "./pages/PlannerPage";
@@ -8,6 +9,8 @@ import RecipeDetailPage from "./pages/RecipeDetailPage";
 import RecipeFormPage from "./pages/RecipeFormPage";
 import RecipeSearchPage from "./pages/RecipeSearchPage";
 import RecipesPage from "./pages/RecipesPage";
+import SettingsPage from "./pages/SettingsPage";
+import { useLoad } from "./useLoad";
 
 /**
  * A development tool that still ships, so the system can be checked on the
@@ -19,6 +22,11 @@ import RecipesPage from "./pages/RecipesPage";
 const StyleguidePage = lazy(() => import("./pages/StyleguidePage"));
 
 export default function App() {
+  // Pricing is opt-in and often absent, so the nav does not advertise it
+  // until it is actually configured. A failure here just means no link,
+  // which is the same as the far more common case of it being switched off.
+  const { data: pricing } = useLoad(useCallback(() => api.pricingStatus(), []));
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -32,6 +40,7 @@ export default function App() {
             <NavLink to="/planner">Planner</NavLink>
             <NavLink to="/groceries">Groceries</NavLink>
             <NavLink to="/pantry">Pantry</NavLink>
+            {pricing?.enabled && <NavLink to="/settings">Settings</NavLink>}
           </nav>
         </div>
       </header>
@@ -46,6 +55,9 @@ export default function App() {
           <Route path="/planner" element={<PlannerPage />} />
           <Route path="/groceries" element={<GroceryPage />} />
           <Route path="/pantry" element={<PantryPage />} />
+          {/* Registered whether or not pricing is on, so the page can explain
+              itself to anyone who follows a link to it. */}
+          <Route path="/settings" element={<SettingsPage />} />
           <Route
             path="/styleguide"
             element={

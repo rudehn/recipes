@@ -62,6 +62,15 @@ class KrogerDisabled(KrogerError):
     """No credentials are configured, so there is nothing to talk to."""
 
 
+class KrogerNotFound(KrogerError):
+    """Kroger has no such resource.
+
+    Separated from the general failure because it is an answer rather than a
+    breakdown: an id that does not resolve is something the caller decides
+    what to do about, not something to report as a bad gateway.
+    """
+
+
 @dataclass(frozen=True)
 class _Token:
     value: str
@@ -151,6 +160,8 @@ async def get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]
                 log.info("Kroger refused a token before its stated expiry, renewing")
                 token = await _access_token(client, stale=token)
                 resp = await client.get(path, params=params, headers=_bearer(token))
+            if resp.status_code == httpx.codes.NOT_FOUND:
+                raise KrogerNotFound(f"GET {path} found nothing")
             resp.raise_for_status()
             return resp.json()
         except (httpx.HTTPError, ValueError) as exc:

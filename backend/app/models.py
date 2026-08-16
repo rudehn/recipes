@@ -20,6 +20,41 @@ def utcnow() -> datetime:
     return datetime.now(UTC)
 
 
+# The only row app_settings ever holds. See AppSettings.
+SETTINGS_ID = 1
+
+
+class AppSettings(Base):
+    """Application-wide settings, of which there is exactly one row.
+
+    This app is single-tenant and has no users, so there is nothing to hang a
+    preference off. The id is pinned to a constant rather than left to
+    autoincrement, which makes "the settings" a plain `session.get` and stops
+    a second row appearing to compete with the first.
+    """
+
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=SETTINGS_ID)
+
+    # The Kroger store prices are quoted against. The Products API returns no
+    # price at all without a locationId, so this is what moves pricing from
+    # configured to usable, and everything downstream reads it.
+    #
+    # The name and address are kept beside it only so the chosen store can be
+    # shown without spending a Locations call, which is capped at 1,600 a day
+    # against the Products API's 10,000. They are Kroger's data and are stored
+    # and displayed exactly as returned.
+    kroger_location_id: Mapped[str | None] = mapped_column(String(32))
+    kroger_location_name: Mapped[str | None] = mapped_column(String(200))
+    kroger_location_address: Mapped[str | None] = mapped_column(String(300))
+    kroger_location_chain: Mapped[str | None] = mapped_column(String(100))
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 class Recipe(Base):
     __tablename__ = "recipes"
 

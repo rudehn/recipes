@@ -162,7 +162,7 @@ async def test_pricing_reports_itself_off_without_credentials(client, monkeypatc
     resp = await client.get("/api/pricing/status")
 
     assert resp.status_code == 200
-    assert resp.json() == {"enabled": False}
+    assert resp.json() == {"enabled": False, "store": None}
 
 
 async def test_pricing_reports_itself_on_once_configured(client, monkeypatch):
@@ -171,4 +171,4 @@ async def test_pricing_reports_itself_on_once_configured(client, monkeypatch):
 
     resp = await client.get("/api/pricing/status")
 
-    assert resp.json() == {"enabled": True}
+    assert resp.json() == {"enabled": True, "store": None}

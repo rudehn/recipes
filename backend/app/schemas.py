@@ -6,14 +6,32 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
+class StoreOut(BaseModel):
+    """A Kroger store, carried exactly as Kroger describes it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    location_id: str
+    name: str
+    address: str
+    chain: str
+
+
+class StoreSelection(BaseModel):
+    location_id: str = Field(min_length=1, max_length=32)
+
+
 class PricingStatus(BaseModel):
-    """Whether the Kroger integration is configured.
+    """Whether the Kroger integration is configured, and against which store.
 
     `enabled` being false is a normal state, not a failure: pricing is opt-in
-    and the rest of the app does not depend on it.
+    and the rest of the app does not depend on it. `enabled` with no `store`
+    is the half-configured state - credentials present, nowhere to price
+    against - and prices cannot be shown until a store is chosen.
     """
 
     enabled: bool
+    store: StoreOut | None = None
 
 
 class IngredientIn(BaseModel):
