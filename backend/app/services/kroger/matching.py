@@ -10,14 +10,10 @@ match is visible - the line says it could not be priced - while "kosher salt"
 matching a decorative salt lamp silently adds forty dollars to a total that
 still looks perfectly plausible. So the bar to record a match at all is
 deliberately high, and no confident answer is stored as no answer.
-
-Resolution is lazy and never bulk. Ingredients are looked up when someone
-opens a list containing them; there is no job that walks the recipe box
-resolving everything, which would look a great deal like the systematic
-gathering the acceptable-use policy prohibits.
 """
 
 import logging
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,8 +22,9 @@ from ...models import IngredientProductMatch
 from ..grocery import UNIT_ALIASES
 from . import products
 from .client import KrogerError
+from .density import grams_per_cup
 from .products import Product
-from .units import WEIGHT, Measure, cost_to_cover, parse_size
+from .units import Measure, as_weight, cost_to_cover, parse_size
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +69,42 @@ def _coverage(tokens: list[str], description: str) -> float:
     return sum(1 for t in tokens if t in haystack) / len(tokens)
 
 
-def _fit(product: Product, need: Measure | None) -> tuple[int, float, float]:
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+# Extra words are bucketed rather than compared one by one, because brand
+# names vary in length for reasons that say nothing about the product. Three
+# is wide enough to put "Kroger® 75/25 Ground Beef Tray" and "Kroger® 73/27
+# Ground Beef Roll 1 LB" in the same bucket, so price decides between them,
+# and narrow enough to keep a bag of brown sugar out of the same bucket as
+# "Less Sugar Maple & Brown Sugar Instant Oatmeal".
+_SLACK = 3
+
+
+def _slack(product: Product, tokens: list[str]) -> int:
+    """How much of the description the ingredient does *not* account for.
+
+    Coverage asks whether the name appears; this asks how much else is there.
+    Both were needed once price led the ranking: cheapest-that-matches happily
+    bought oatmeal, because "brown sugar" appears in its name and it is
+    cheaper than brown sugar. A product whose description is mostly the
+    ingredient is far likelier to be the ingredient.
+    """
+    words = _WORD_RE.findall(product.description.casefold())
+    extra = sum(
+        1
+        for w in words
+        # Numbers and measures are not description. Counting them punished
+        # exactly the products that state a fat ratio or a pack size - "75/25
+        # Ground Beef Tray" against "73/27 Ground Beef Roll 1 LB" - and that
+        # put the ground beef bug straight back.
+        if not w.isdigit() and w not in _UNIT_WORDS and not any(t in w for t in tokens)
+    )
+    return extra // _SLACK
+
+
+def _fit(
+    product: Product, need: Measure | None, canonical_key: str
+) -> tuple[int, float, float]:
     """How well a package suits the amount the week's meals actually call for.
 
     Description length is a poor stand-in for "the obvious one to buy" once
@@ -80,53 +112,71 @@ def _fit(product: Product, need: Measure | None) -> tuple[int, float, float]:
     $12.00 over a 1 lb roll at $6.49, because the tray's name is shorter -
     two and a quarter times the meat at nearly twice the price.
 
-    So: least left over after covering the requirement, then cheapest. A
-    package too small comes next, since it has to be bought more than once.
-    Anything whose size does not parse, or is measured in another dimension,
-    sorts last and keeps the older behaviour rather than being guessed at - a
-    pound of flour cannot be compared with two cups of it without a density.
+    So: whatever covers the requirement most cheaply, and only then the least
+    left over. Cost has to lead. Ordering on waste first sounds tidier and is
+    actively wrong for a store cupboard - half a teaspoon of salt is dwarfed
+    by every packet on the shelf, so "least left over" picks the smallest and
+    dearest one. It moved salt from a 26 oz drum at $0.99 to a 2.12 oz grinder
+    at $2.99, and let a $10.99 pack of brown-sugar-cured bacon beat a $2.29
+    bag of brown sugar, because the bacon happened to be nearer a teaspoon in
+    weight. What is left over is not waste; it is the cupboard.
+
+    Both sides are converted to weight through the same density, so a recipe's
+    two cups of flour and a five pound bag of it become comparable. Where
+    there is no density, or the size cannot be read, the older ranking stands
+    rather than a guess being made.
     """
     # Neutral, so an unreadable size leaves the older ranking exactly as it
     # was rather than quietly introducing a preference of its own.
     unknown = (2, 0.0, 0.0)
-    if need is None or need.dimension != WEIGHT:
-        # Only weights. A recipe's volumes and counts look comparable to a
-        # package's and are not: "1 tsp brown sugar" is a volume of a solid,
-        # and matching it against things sold by volume preferred a bottle of
-        # brown sugar *syrup* to a bag of brown sugar. "9 garlic cloves"
-        # against a "5 ct" bag of bulbs is the same mistake in counts. Grams
-        # are always grams, so weight is the one dimension that is safe.
+    if need is None:
         return unknown
-    size = parse_size(product.size)
-    if size is None or size.dimension != need.dimension:
+
+    # Everything is compared as weight, both sides converted through the same
+    # density. Counts are excluded and cannot be converted: a recipe's nine
+    # garlic cloves and a "5 ct" bag of bulbs are counts of different things,
+    # and comparing them bought five bulbs for nine cloves.
+    grams = grams_per_cup(canonical_key)
+    wanted = as_weight(need, grams)
+    size = as_weight(parse_size(product.size), grams)
+    if wanted is None or size is None:
+        # No density for this ingredient, or a size that cannot be read. Both
+        # leave the older ranking exactly as it was rather than guessing.
         return unknown
 
     price = product.regular or 0.0
-    cost = cost_to_cover(price, size, product.sold_by, need)
+    cost = cost_to_cover(price, size, product.sold_by, wanted)
 
     # Sold by weight, the price is a rate and any amount can be bought, so it
     # fits the requirement exactly rather than over- or under-shooting it.
     if product.sold_by == "WEIGHT":
-        return (0, 0.0, cost)
-    if size.base >= need.base:
-        return (0, size.base - need.base, cost)
-    # Too small: it has to be bought more than once, which `cost` accounts
-    # for. Ordered by how little is left over after the last one.
-    return (1, -size.base, cost)
+        return (0, cost, 0.0)
+    if size.base >= wanted.base:
+        return (0, cost, size.base - wanted.base)
+    # Too small: it has to be bought more than once, which `cost` already
+    # accounts for, so the cheapest way to get there still wins.
+    return (1, cost, -size.base)
 
 
-def _rank(product: Product, tokens: list[str], need: Measure | None = None) -> tuple:
+def _rank(
+    product: Product,
+    tokens: list[str],
+    need: Measure | None = None,
+    canonical_key: str = "",
+) -> tuple:
     """Sort key, best first, and total so the order cannot wobble.
 
-    Coverage of the ingredient's name first, then how well the package fits
-    the amount needed, and only then the shorter description - which remains
+    Coverage of the ingredient's name first, then how much else the
+    description carries, then how well the package fits the amount needed,
+    and only then the shorter description - which remains
     the tiebreak when nothing else separates two candidates, because a short
     description is usually the plain version of the thing. The id breaks any
     remaining tie so two equally good candidates cannot swap between calls.
     """
     return (
         -_coverage(tokens, product.description),
-        _fit(product, need),
+        _slack(product, tokens),
+        _fit(product, need, canonical_key),
         len(product.description),
         product.product_id,
     )
@@ -144,11 +194,14 @@ def ranked(
     tokens = _tokens(canonical_key)
     if not tokens:
         return list(candidates)
-    return sorted(candidates, key=lambda p: _rank(p, tokens, need))
+    return sorted(candidates, key=lambda p: _rank(p, tokens, need, canonical_key))
 
 
 def _best(
-    candidates: list[Product], tokens: list[str], need: Measure | None
+    candidates: list[Product],
+    tokens: list[str],
+    need: Measure | None,
+    canonical_key: str,
 ) -> Product | None:
     # A product with no price is no use even when it is the right thing, and
     # one that does not account for the whole ingredient name is a guess.
@@ -159,7 +212,7 @@ def _best(
     ]
     if not usable:
         return None
-    return min(usable, key=lambda p: _rank(p, tokens, need))
+    return min(usable, key=lambda p: _rank(p, tokens, need, canonical_key))
 
 
 def choose(
@@ -174,11 +227,11 @@ def choose(
     tokens = _tokens(canonical_key)
     if not tokens:
         return None
-    chosen = _best(candidates, tokens, need)
+    chosen = _best(candidates, tokens, need, canonical_key)
     if chosen is not None:
         return chosen
     reduced = _without_unit_words(tokens)
-    return _best(candidates, reduced, need) if reduced else None
+    return _best(candidates, reduced, need, canonical_key) if reduced else None
 
 
 async def _stored(

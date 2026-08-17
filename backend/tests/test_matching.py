@@ -129,8 +129,7 @@ async def test_a_pinned_match_is_never_searched_for_again(catalog):
 
 
 async def test_only_the_ingredients_asked_for_are_resolved(catalog):
-    """Resolution is lazy by design. A pass that walked the whole recipe box
-    is what the acceptable-use policy calls systematic gathering."""
+    """Resolution is lazy by design."""
     catalog.results = FLOURS
     await resolve(["all-purpose-flour"])
 
@@ -205,14 +204,29 @@ def test_a_package_too_small_loses_to_one_that_covers():
     assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
 
 
-def test_the_biggest_of_a_bad_lot_wins_when_nothing_covers_the_need():
-    """These are the ones you have to buy two of, so the fewest is best."""
+def test_the_cheapest_way_to_cover_it_wins_even_when_nothing_does_alone():
+    """Nothing here holds a pound, so both have to be bought more than once.
+    Four small packs at $2.00 beat two middling ones at $5.00, and the count
+    is already in the cost."""
     candidates = [
         _product_from(beef("0001", "Ground Beef Tiny", "4 oz", 2.00)),
         _product_from(beef("0002", "Ground Beef Small", "12 oz", 5.00)),
     ]
 
-    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
+    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0001"
+
+
+def test_a_tiny_requirement_does_not_buy_the_tiniest_packet():
+    """Half a teaspoon of salt is dwarfed by everything on the shelf, so
+    ordering on least-left-over picks the smallest and dearest. It moved salt
+    from a 26 oz drum at $0.99 to a 2.12 oz grinder at $2.99."""
+    candidates = [
+        _product_from(beef("0001", "McCormick Sea Salt Grinder", "2.12 oz", 2.99)),
+        _product_from(beef("0002", "Kroger® Salt", "26 oz", 0.99)),
+    ]
+
+    chosen = matching.choose(candidates, "salt", measure(0.5, "tsp"))
+    assert chosen.product_id == "0002"
 
 
 def test_a_weight_sold_item_is_costed_at_its_rate_not_its_label():
@@ -309,3 +323,48 @@ async def test_a_match_is_scoped_to_its_store(catalog):
 
     rows = await stored_rows()
     assert {row.location_id for row in rows} == {LOCATION, "01400811"}
+
+
+def sugar(product_id: str, description: str, size: str, regular: float):
+    return _product_from({
+        "productId": product_id,
+        "description": description,
+        "items": [{"size": size, "soldBy": "UNIT", "price": {"regular": regular}}],
+    })
+
+
+def test_a_cheaper_product_that_merely_mentions_the_name_does_not_win():
+    """Once price led the ranking, cheapest-that-matches bought oatmeal: the
+    words "brown sugar" are in its name and it undercuts brown sugar. A
+    description that is mostly the ingredient wins before price is asked."""
+    candidates = [
+        sugar("0001", "Less Sugar Maple & Brown Sugar Instant Oatmeal", "9.5 oz", 1.79),
+        sugar("0002", "Kroger® Dark Brown Sugar", "32 oz", 2.29),
+    ]
+
+    chosen = matching.choose(candidates, "brown-sugar", measure(1, "tsp"))
+    assert chosen.description == "Kroger® Dark Brown Sugar"
+
+
+def test_numbers_and_measures_are_not_counted_against_a_description():
+    """Counting them punished the products that state a fat ratio, which put
+    the ground beef bug straight back: the 36 oz tray looked tidier than the
+    1 lb roll purely because "73/27" and "1 LB" were read as clutter."""
+    candidates = [
+        _product_from(beef("0001", "Kroger® 75/25 Ground Beef Tray", "36 oz", 12.00)),
+        _product_from(beef("0002", "Kroger® 73/27 Ground Beef Roll 1 LB", "1 lb", 6.49)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
+
+
+def test_a_volume_of_a_solid_is_weighed_before_it_is_compared():
+    """Two cups of flour is 250 g, which is what makes a five pound bag and a
+    ten pound bag comparable at all."""
+    candidates = [
+        sugar("0001", "Kroger® All Purpose Flour", "10 lb", 6.99),
+        sugar("0002", "Kroger® All Purpose Flour Bag", "5 lb", 2.59),
+    ]
+
+    chosen = matching.choose(candidates, "all-purpose-flour", measure(2, "cup"))
+    assert chosen.product_id == "0002"

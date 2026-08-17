@@ -8,7 +8,16 @@ to the older ranking.
 
 import pytest
 
-from app.services.kroger.units import COUNT, VOLUME, WEIGHT, measure, parse_size
+from app.services.kroger.density import grams_per_cup
+from app.services.kroger.units import (
+    COUNT,
+    VOLUME,
+    WEIGHT,
+    as_weight,
+    cost_to_cover,
+    measure,
+    parse_size,
+)
 
 
 @pytest.mark.parametrize(
@@ -77,3 +86,63 @@ def test_an_unrecognised_unit_is_no_amount():
     would choose a product on a made-up number."""
     assert measure(1, "pinch") is None
     assert measure(2, "sprig") is None
+
+
+def test_a_volume_becomes_a_weight_when_the_density_is_known():
+    """The bridge recipes need and shops do not have: two cups of flour is
+    250 g, which a five pound bag can be compared with."""
+    two_cups = measure(2, "cup")
+    flour = as_weight(two_cups, grams_per_cup("all-purpose-flour"))
+    assert flour.base == pytest.approx(250, rel=1e-3)
+    # Sugar is heavier than flour by half again, which is the whole reason a
+    # single conversion factor cannot work.
+    sugar = as_weight(two_cups, grams_per_cup("granulated-sugar"))
+    assert sugar.base == pytest.approx(400, rel=1e-3)
+
+
+def test_a_weight_passes_through_unchanged():
+    assert as_weight(measure(1, "lb"), 125.0).base == pytest.approx(453.592, rel=1e-3)
+
+
+def test_a_volume_without_a_density_stays_unconvertible():
+    """Assuming an unknown ingredient weighs the same as water is exactly the
+    guess this is here to avoid."""
+    assert as_weight(measure(2, "cup"), None) is None
+
+
+def test_a_count_never_becomes_a_weight():
+    """A dozen eggs weighs nothing in particular."""
+    assert as_weight(measure(12, None), 125.0) is None
+
+
+def test_a_density_is_found_by_walking_the_name_down():
+    assert grams_per_cup("all-purpose-flour") == 125.0
+    # Falls back through its family rather than failing.
+    assert grams_per_cup("unbleached-bread-flour") == 127.0
+    assert grams_per_cup("organic-whole-wheat-flour") == 120.0
+    # The specific entry beats the general one it would otherwise fall back to.
+    assert grams_per_cup("brown-sugar") != grams_per_cup("sugar")
+
+
+def test_an_unlisted_ingredient_has_no_density():
+    """Better no answer than a made-up one: without it the caller falls back
+    to ranking that does not need a density."""
+    assert grams_per_cup("saffron") is None
+    assert grams_per_cup("") is None
+
+
+def test_a_rate_is_never_charged_below_one_of_its_own_unit():
+    """A teaspoon of a $10.99/lb item costs eleven cents by arithmetic, and
+    you cannot buy five grams of bacon. Unfloored, that made brown-sugar-cured
+    bacon the cheapest way to buy a teaspoon of brown sugar."""
+    pound = parse_size("1 lb")
+    teaspoon = as_weight(measure(1, "tsp"), grams_per_cup("brown-sugar"))
+
+    assert cost_to_cover(10.99, pound, "WEIGHT", teaspoon) == pytest.approx(10.99)
+
+
+def test_a_rate_still_scales_up_past_its_unit():
+    pound = parse_size("1 lb")
+    three_pounds = measure(3, "lb")
+
+    assert cost_to_cover(4.49, pound, "WEIGHT", three_pounds) == pytest.approx(13.47)

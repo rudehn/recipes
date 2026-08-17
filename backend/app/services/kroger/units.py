@@ -91,6 +91,30 @@ def measure(quantity: float | None, unit: str | None) -> Measure | None:
     return Measure(dimension, quantity * factor)
 
 
+_ML_PER_CUP = _UNITS["cup"][1]
+
+
+def as_weight(amount: Measure | None, grams_per_cup: float | None) -> Measure | None:
+    """An amount in grams, converting from volume when a density is known.
+
+    This is the bridge recipes need and shops do not have: a recipe asks for
+    two cups of flour and the shelf offers a five pound bag. Both sides go
+    through here, so a gallon of milk and a cup and a half of it end up
+    comparable in the same unit.
+
+    Counts never convert - a dozen eggs weighs nothing in particular - and
+    without a density a volume stays unconvertible rather than being assumed
+    to be water.
+    """
+    if amount is None:
+        return None
+    if amount.dimension == WEIGHT:
+        return amount
+    if amount.dimension == VOLUME and grams_per_cup is not None:
+        return Measure(WEIGHT, amount.base * grams_per_cup / _ML_PER_CUP)
+    return None
+
+
 def cost_to_cover(
     price: float, size: Measure | None, sold_by: str, need: Measure | None
 ) -> float:
@@ -113,7 +137,12 @@ def cost_to_cover(
     if need.dimension != WEIGHT or size.dimension != WEIGHT or size.base <= 0:
         return price
     if sold_by == "WEIGHT":
-        return price * (need.base / size.base)
+        # Never less than one of whatever unit the rate is quoted in. The
+        # arithmetic alone says a teaspoon of a $10.99/lb item costs eleven
+        # cents, which is true and useless: you cannot buy five grams of
+        # bacon. Unfloored, that made brown-sugar-cured bacon the cheapest
+        # way to buy a teaspoon of brown sugar.
+        return price * max(1.0, need.base / size.base)
     return price * math.ceil(need.base / size.base)
 
 
