@@ -289,6 +289,12 @@ class CartStatus(BaseModel):
     connected: bool
     connected_at: datetime | None = None
     last_sent_at: datetime | None = None
+    # The callback this server will hand Kroger, so the settings page can show
+    # the one string that has to be registered on the Kroger app. A mismatch
+    # is refused by Kroger before the browser ever comes back, so the app
+    # cannot detect it and can only make it easy to check. Not a secret: it is
+    # a public URL that appears in the address bar during the sign-in.
+    redirect_uri: str = ""
 
 
 class CartLine(BaseModel):

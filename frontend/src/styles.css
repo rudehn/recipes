@@ -1538,6 +1538,32 @@ body.has-install-hint .page {
   color: var(--muted);
 }
 
+/* An address that has to match another one exactly, so it gets a line of its
+   own rather than sitting inside a sentence. It scrolls rather than wrapping:
+   a URL broken across two lines reads as though the break were part of it,
+   which is the one misreading this block exists to prevent. */
+.callback-address {
+  margin-top: var(--space-12);
+}
+
+.callback-address .section-note {
+  margin-bottom: var(--space-8);
+}
+
+.callback-address code {
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding: var(--space-8) var(--space-10);
+  /* --bg against the panel's --surface, so it reads as inset. */
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  -webkit-user-select: all;
+  user-select: all;
+}
+
 .cart-connection {
   display: flex;
   flex-direction: column;

@@ -209,6 +209,16 @@ export interface CartStatus {
   connected: boolean;
   connected_at: string | null;
   last_sent_at: string | null;
+  /**
+   * The callback the server will hand Kroger, and the exact string that has to
+   * be registered on the Kroger app. Empty when unconfigured.
+   *
+   * Shown rather than guessed from `window.location.origin`, because it is the
+   * server's setting that Kroger checks, and the two disagreeing is precisely
+   * the case worth seeing. A mismatch is refused at Kroger before the browser
+   * comes back, so the app can never detect it - only make it easy to check.
+   */
+  redirect_uri: string;
 }
 
 /** One line as it would be ordered: your word for it, Kroger's, and how many. */

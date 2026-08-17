@@ -131,6 +131,7 @@ export function cartStatus(overrides: Partial<CartStatus> = {}): CartStatus {
     connected: false,
     connected_at: null,
     last_sent_at: null,
+    redirect_uri: "https://recipes.test/api/cart/callback",
     ...overrides,
   };
 }

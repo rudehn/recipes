@@ -67,6 +67,44 @@ describe("connecting a Kroger cart", () => {
     expect(screen.getByText(/a cart belongs to a person/i)).toBeInTheDocument();
   });
 
+  it("shows the address Kroger has to have registered, before it is needed", async () => {
+    mockBackend({
+      "GET /api/pricing/status": PRICING,
+      "GET /api/cart/status": cartStatus({
+        redirect_uri: "https://recipes.werewolf-orfe.ts.net/api/cart/callback",
+      }),
+    });
+
+    renderApp("/settings");
+
+    // A mismatch is refused on Kroger's own error page before the browser
+    // ever comes back, so nothing here can detect it. The address can only be
+    // put where it is easy to check against.
+    expect(
+      await screen.findByText("https://recipes.werewolf-orfe.ts.net/api/cart/callback"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the server's own value rather than guessing from the address bar", async () => {
+    // The two disagreeing is exactly the case worth seeing: it is the
+    // server's setting that Kroger is handed and checks.
+    mockBackend({
+      "GET /api/pricing/status": PRICING,
+      "GET /api/cart/status": cartStatus({
+        redirect_uri: "https://elsewhere.example/api/cart/callback",
+      }),
+    });
+
+    renderApp("/settings");
+
+    expect(
+      await screen.findByText("https://elsewhere.example/api/cart/callback"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(`${window.location.origin}/api/cart/callback`),
+    ).not.toBeInTheDocument();
+  });
+
   it("hands the browser to Kroger rather than asking for a password here", async () => {
     const assign = vi.fn();
     vi.spyOn(window, "location", "get").mockReturnValue({

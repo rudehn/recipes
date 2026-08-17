@@ -209,6 +209,24 @@ const SIGN_IN_OUTCOME: Record<string, { tone: BannerTone; text: string }> = {
  * only the account holder can revoke. Implying otherwise would be the more
  * comfortable lie.
  */
+/**
+ * The callback address, laid out to be compared character by character.
+ *
+ * Kroger matches it exactly, and the differences that break it are the ones
+ * that are hardest to see in running prose: a trailing slash, http for https,
+ * a hostname that is nearly right. So it gets its own line, in monospace, with
+ * nothing wrapped around it that could be mistaken for part of the string.
+ */
+function CallbackAddress({ uri, lede }: { uri: string; lede?: string }) {
+  if (!uri) return null;
+  return (
+    <div className="callback-address">
+      {lede && <p className="section-note">{lede}</p>}
+      <code>{uri}</code>
+    </div>
+  );
+}
+
 function CartPanel() {
   const [params, setParams] = useSearchParams();
   const { data: cart, reload } = useLoad(useCallback(() => api.cartStatus(), []));
@@ -284,10 +302,12 @@ function CartPanel() {
         <EmptyState glyph="🛒" title="Sending to a cart is switched off">
           <p>
             Prices work, but ordering needs one more setting. Set{" "}
-            <code>KROGER_REDIRECT_URI</code> to this app&rsquo;s callback address -{" "}
-            <code>{`${window.location.origin}/api/cart/callback`}</code> - register the
-            same address on your Kroger app, then restart.
+            <code>KROGER_REDIRECT_URI</code> to this app&rsquo;s callback address, and
+            register the same address on your Kroger app, then restart.
           </p>
+          {/* Guessed from the address bar here, because the server has no
+              value to report - that is what "not configured" means. */}
+          <CallbackAddress uri={`${window.location.origin}/api/cart/callback`} />
         </EmptyState>
       )}
 
@@ -301,6 +321,15 @@ function CartPanel() {
           <Button variant="primary" onClick={connect} disabled={connecting}>
             {connecting ? "Taking you to Kroger…" : "Connect Kroger account"}
           </Button>
+          {/* The one thing that goes wrong before the sign-in even starts.
+              Kroger compares this against the app's registered redirect URI
+              and refuses on its own page, so the browser never comes back and
+              nothing here can detect it - the address can only be put where
+              it is easy to check against. */}
+          <CallbackAddress
+            uri={cart.redirect_uri}
+            lede="Kroger refuses the sign-in on its own error page unless your Kroger app has this exact address registered as a redirect URI:"
+          />
         </>
       )}
 

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .. import config
 from ..db import get_session
 from ..schemas import CartPlan, CartRequest, CartResult, CartSignIn, CartStatus
 from ..services import settings as settings_service
@@ -52,6 +53,7 @@ async def status(session: AsyncSession = Depends(get_session)):
         connected=connection is not None,
         connected_at=connection.connected_at if connection else None,
         last_sent_at=connection.last_sent_at if connection else None,
+        redirect_uri=config.KROGER_REDIRECT_URI,
     )
 
 

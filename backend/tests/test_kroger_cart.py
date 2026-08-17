@@ -189,6 +189,7 @@ async def test_the_feature_is_off_without_a_redirect_uri(client, fake, monkeypat
         "connected": False,
         "connected_at": None,
         "last_sent_at": None,
+        "redirect_uri": "",
     }
     assert (await client.get("/api/cart/sign-in")).status_code == 503
     assert (await send(client)).status_code == 503
@@ -203,6 +204,10 @@ async def test_status_separates_not_set_up_from_not_signed_in(client, fake):
 
     assert body["configured"] is True
     assert body["connected"] is False
+    # Reported so the settings page can show the one string that has to be
+    # registered on the Kroger app. A mismatch is refused by Kroger before the
+    # browser comes back, so nothing here can detect it.
+    assert body["redirect_uri"] == "https://recipes.test/api/cart/callback"
 
 
 # --------------------------------------------------------------- sign-in ---
