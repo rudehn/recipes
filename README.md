@@ -16,6 +16,10 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 * Pantry staples: items you always keep in stock.
   Out-of-stock staples are added to the grocery list, and checking a pantry item off the list marks it back in stock.
   When a planned recipe calls for a staple you already have, it is set aside under "already in your pantry" rather than put on the list - listed with the amount the week's meals need, so you can buy more anyway if the jar won't cover it.
+* Optional grocery pricing from Kroger, off unless you supply an API key.
+  Each line on the list carries a price and the product it came from, with a total that says how much of the list it actually covers - "est. $84.39, 26 of 26 priced" - because a total that quietly drops what it could not match reads exactly like a complete one.
+  Items on offer show the saving, and a folded panel lists the things you cook with that are discounted this week.
+  Tap any price to see the alternatives and pick a different product; a hand-picked choice is never overwritten.
 
 ## Architecture
 
@@ -31,6 +35,38 @@ Recipe search needs no API key or account.
 Instead of a search engine, it queries the public WordPress search API (`/wp-json/wp/v2/search`) of each site on the allowlist in `backend/app/services/recipe_search.py`, then runs the results through the same parser the URL importer uses.
 That keeps us on documented, publicly exposed endpoints of sites that have been vetted by hand rather than crawling the open web.
 To add a site, confirm it publishes schema.org/Recipe JSON-LD - one that does not can be searched but never parsed, so it would only ever contribute failures.
+
+## Grocery pricing
+
+The one feature that needs an account, and the only one that is optional.
+With no credentials set it does not exist: no Settings entry, no prices, and every other page behaves exactly as it did before it was written.
+
+Create an app at [developer.kroger.com](https://developer.kroger.com) and put the pair in a `.env` beside `compose.dev.yaml` - see `.env.example`:
+
+```sh
+KROGER_CLIENT_ID=...
+KROGER_CLIENT_SECRET=...
+```
+
+Then pick a store under **Settings**.
+This is not a preference: Kroger returns no price at all without a store, so nothing can be priced until one is chosen.
+Prices, offers and availability are all set store by store.
+
+The bare hot-reload loop does not read that file, since the app has no `python-dotenv` dependency, so load it into the shell first:
+
+```sh
+cd backend && set -a && source ../.env && set +a
+uv run uvicorn app.main:app --reload
+```
+
+A few things worth knowing about the numbers:
+
+* They are estimates, and Kroger's data will not always agree with the register.
+* A line's figure is what covering the week's requirement costs, which is not always the shelf price.
+  Chicken sold at $4.49 a pound costs $6.74 for the pound and a half a recipe asks for, so the row shows both.
+* Recipes measure by volume and shops sell by weight, so `backend/app/services/kroger/density.py` holds a hand-curated gram-per-cup table.
+  An ingredient not in it still gets a price; it just cannot be size-matched to a package.
+* The Products API allows 10,000 calls a day and Locations 1,600, which is ample: product matches are pinned once and re-priced in batches of up to 50, so a whole list costs one call.
 
 ## Local development
 
@@ -77,3 +113,6 @@ Rather than rebuild them, startup stamps them at the revision whose schema they 
 
 Pushes to `main` (and `v*` tags) run tests, then build and push multi-arch images to GHCR via `.github/workflows/build-images.yml`.
 The home server deploys them with the stack in the sister repo: `home-server/stacks/recipes/compose.yaml`, reachable over the tailnet at `https://recipes.<tailnet>.ts.net`.
+
+`KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET` have to reach the backend service in that stack for pricing to appear in production.
+Absent, the deploy is healthy and pricing is simply switched off, which is the same state the app shipped in before it existed - so a missing key is a quiet outcome rather than a loud one, and worth checking for deliberately.
