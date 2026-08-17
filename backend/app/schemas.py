@@ -182,6 +182,18 @@ class ItemPrice(BaseModel):
     aisle: str = ""
 
 
+class MatchSelection(BaseModel):
+    """A hand-picked product for one ingredient.
+
+    A null `product_id` means "do not price this line", for the ingredients no
+    product answers - "salt to taste", a garnish - so they stop counting
+    against coverage instead of sitting there as a permanent near-miss.
+    """
+
+    canonical_key: str = Field(min_length=1, max_length=300)
+    product_id: str | None = Field(default=None, max_length=32)
+
+
 class GroceryPricing(BaseModel):
     """The trip's total, and how much of the list it actually covers.
 

@@ -15,10 +15,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..schemas import PricingStatus, StoreOut, StoreSelection
+from ..schemas import ItemPrice, MatchSelection, PricingStatus, StoreOut, StoreSelection
 from ..services import settings as settings_service
 from ..services.kroger import client as kroger
-from ..services.kroger import locations
+from ..services.kroger import locations, matching, pricing, products
+
+# Enough to choose from without turning the panel into a catalogue. The call
+# costs the same whatever this is, so it is a reading limit, not a budget one.
+ALTERNATIVES = 12
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
 
@@ -76,3 +80,44 @@ async def select_store(
 @router.delete("/store", status_code=204)
 async def clear_store(session: AsyncSession = Depends(get_session)):
     await settings_service.clear_store(session)
+
+
+async def _require_store(session: AsyncSession) -> StoreOut:
+    _require_configured()
+    store = await settings_service.selected_store(session)
+    if store is None:
+        raise HTTPException(status_code=409, detail="No Kroger store chosen yet")
+    return StoreOut.model_validate(store)
+
+
+@router.get("/alternatives", response_model=list[ItemPrice])
+async def alternatives(
+    key: str = Query(min_length=1, max_length=300),
+    session: AsyncSession = Depends(get_session),
+):
+    """Other products that could answer an ingredient, best fit first.
+
+    Nothing is filtered on how well it matches. Someone opening this has
+    already been told the automatic pick, so the one they want is quite likely
+    to be one the matcher rejected.
+    """
+    store = await _require_store(session)
+    try:
+        found = await products.search(key.replace("-", " "), store.location_id, ALTERNATIVES)
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+    priced = [p for p in matching.ranked(found, key) if p.regular is not None]
+    return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
+
+
+@router.put("/match", status_code=204)
+async def set_match(
+    data: MatchSelection, session: AsyncSession = Depends(get_session)
+):
+    """Pin a product to an ingredient by hand, or mark it as not to be priced.
+
+    A hand-picked match is the last word: nothing re-derives it afterwards,
+    which is the whole point of being able to correct one.
+    """
+    store = await _require_store(session)
+    await matching.confirm(session, data.canonical_key, store.location_id, data.product_id)

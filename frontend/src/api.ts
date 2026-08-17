@@ -308,6 +308,14 @@ export const api = {
     request<void>("/api/grocery-list/clear-checks", { method: "POST" }),
 
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
+  matchAlternatives: (key: string) =>
+    request<ItemPrice[]>(`/api/pricing/alternatives?key=${encodeURIComponent(key)}`),
+  /** `product_id` null marks the line as one not to price. */
+  setMatch: (canonical_key: string, product_id: string | null) =>
+    request<void>("/api/pricing/match", {
+      method: "PUT",
+      body: JSON.stringify({ canonical_key, product_id }),
+    }),
   searchStores: (zip: string) =>
     request<Store[]>(`/api/pricing/stores?zip=${encodeURIComponent(zip)}`),
   selectStore: (location_id: string) =>

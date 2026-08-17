@@ -88,6 +88,19 @@ def _rank(product: Product, tokens: list[str]) -> tuple:
     )
 
 
+def ranked(candidates: list[Product], canonical_key: str) -> list[Product]:
+    """Every candidate in best-fit order, for a person to choose from.
+
+    Unlike `choose`, nothing is filtered on coverage. The whole point of
+    offering alternatives is that the automatic pick was wrong, so the product
+    the cook actually wants may well be one this module rejected.
+    """
+    tokens = _tokens(canonical_key)
+    if not tokens:
+        return list(candidates)
+    return sorted(candidates, key=lambda p: _rank(p, tokens))
+
+
 def _best(candidates: list[Product], tokens: list[str]) -> Product | None:
     # A product with no price is no use even when it is the right thing, and
     # one that does not account for the whole ingredient name is a guess.
@@ -190,9 +203,14 @@ async def product_ids(
 
 
 async def confirm(
-    session: AsyncSession, canonical_key: str, location_id: str, product_id: str
+    session: AsyncSession, canonical_key: str, location_id: str, product_id: str | None
 ) -> None:
-    """Pin a hand-picked product, which re-resolution then leaves alone."""
+    """Pin a hand-picked product, which re-resolution then leaves alone.
+
+    A null `product_id` is a deliberate "do not price this", for the lines no
+    product answers - "salt to taste", or a garnish. It is stored the same way
+    as a search that found nothing, but confirmed, so it is never revisited.
+    """
     row = await session.get(IngredientProductMatch, (canonical_key, location_id))
     if row is None:
         row = IngredientProductMatch(canonical_key=canonical_key, location_id=location_id)

@@ -25,8 +25,25 @@ from ...schemas import GroceryItem, GroceryList, GroceryPricing, ItemPrice
 from .. import settings as settings_service
 from . import matching, products
 from .client import KrogerError, enabled
+from .products import Product
 
 log = logging.getLogger(__name__)
+
+
+def as_item_price(product: Product) -> ItemPrice:
+    """A product as the client shows it.
+
+    `promo` is carried only when the item is genuinely cheaper for it, so the
+    client can render a strike-through without re-deciding what a sale is.
+    """
+    return ItemPrice(
+        product_id=product.product_id,
+        description=product.description,
+        size=product.size,
+        regular=product.regular or 0.0,
+        promo=product.promo if product.on_sale else None,
+        aisle=product.aisle,
+    )
 
 
 def _priceable(grocery_list: GroceryList) -> list[GroceryItem]:
@@ -75,14 +92,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         product = found.get(matched.get(line.key, ""))
         if product is None or product.price is None:
             continue
-        line.price = ItemPrice(
-            product_id=product.product_id,
-            description=product.description,
-            size=product.size,
-            regular=product.regular,
-            promo=product.promo if product.on_sale else None,
-            aisle=product.aisle,
-        )
+        line.price = as_item_price(product)
         total += product.price
         priced += 1
 

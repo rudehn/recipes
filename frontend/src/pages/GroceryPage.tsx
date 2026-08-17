@@ -47,6 +47,13 @@ export default function GroceryPage() {
     reload,
   } = useLoad(useCallback(() => api.groceryList(start, end), [start, end]));
 
+  // Asked separately rather than read off list.pricing, which is absent when
+  // nothing could be matched - exactly the case where the alternatives are
+  // most needed. What matters here is only whether a store is set to choose
+  // products at.
+  const { data: pricingStatus } = useLoad(useCallback(() => api.pricingStatus(), []));
+  const canPrice = Boolean(pricingStatus?.enabled && pricingStatus.store);
+
   const [unsaved, setUnsaved] = useState<Unsaved>(new Map());
   const [saving, setSaving] = useState(false);
   const action = useAction();
@@ -209,7 +216,13 @@ export default function GroceryPage() {
             To buy <span className="count">{itemCount(list.items.length)}</span>
           </h2>
           {list.items.map((item) => (
-            <GroceryRow key={item.key} item={item} onToggle={toggle} />
+            <GroceryRow
+              key={item.key}
+              item={item}
+              onToggle={toggle}
+              canPrice={canPrice}
+              onMatched={reload}
+            />
           ))}
         </section>
       )}
@@ -241,7 +254,13 @@ export default function GroceryPage() {
             <span className="count">{itemCount(list.pantry_restock.length)}</span>
           </h2>
           {list.pantry_restock.map((item) => (
-            <GroceryRow key={item.key} item={item} onToggle={toggle} />
+            <GroceryRow
+              key={item.key}
+              item={item}
+              onToggle={toggle}
+              canPrice={canPrice}
+              onMatched={reload}
+            />
           ))}
         </section>
       )}
@@ -306,24 +325,136 @@ function ItemText({ item }: { item: GroceryItem }) {
   );
 }
 
+/**
+ * The alternatives for one ingredient, fetched only when asked for.
+ *
+ * Nothing here is filtered the way the automatic pick is: whoever opened this
+ * has already seen that pick and disagreed, so the product they want is quite
+ * likely one the matcher ruled out.
+ */
+function Alternatives({
+  item,
+  onPick,
+}: {
+  item: GroceryItem;
+  onPick: (productId: string | null) => void;
+}) {
+  const { data, error, loading } = useLoad(
+    useCallback(() => api.matchAlternatives(item.key), [item.key]),
+  );
+
+  /**
+   * The product in force is always listed, even when this search did not turn
+   * it up.
+   *
+   * Kroger's search is fuzzy and returns a different set for a different
+   * limit, so the automatic pick genuinely can be missing from the list of
+   * alternatives to itself - black pepper matched whole peppercorns, which a
+   * narrower search for the same term does not return. Leaving it out would
+   * show a panel where nothing is marked as chosen. It is prepended from what
+   * the row already carries rather than fetched again.
+   */
+  const options = useMemo(() => {
+    if (!data || !item.price) return data ?? [];
+    const current = item.price;
+    return data.some((o) => o.product_id === current.product_id)
+      ? data
+      : [current, ...data];
+  }, [data, item.price]);
+
+  if (loading) return <p className="alternatives-status">Looking…</p>;
+  if (error) return <p className="alternatives-status">{error}</p>;
+
+  return (
+    <div className="alternatives" role="group" aria-label={`Products for ${item.name}`}>
+      {options.length === 0 && (
+        <p className="alternatives-status">Nothing at this store matches that.</p>
+      )}
+      {options.map((option) => {
+        const chosen = option.product_id === item.price?.product_id;
+        return (
+          <button
+            key={option.product_id}
+            type="button"
+            className={`alternative${chosen ? " chosen" : ""}`}
+            aria-pressed={chosen}
+            onClick={() => onPick(option.product_id)}
+          >
+            <span className="product">
+              {option.description}
+              {option.size && ` · ${option.size}`}
+            </span>
+            <span className="amount">
+              {option.promo !== null && <s>{money(option.regular)}</s>}{" "}
+              {money(option.promo ?? option.regular)}
+            </span>
+          </button>
+        );
+      })}
+      <button type="button" className="alternative skip" onClick={() => onPick(null)}>
+        Don&rsquo;t price this
+      </button>
+    </div>
+  );
+}
+
 function GroceryRow({
   item,
   onToggle,
+  canPrice,
+  onMatched,
 }: {
   item: GroceryItem;
   onToggle: (item: GroceryItem) => void;
+  /** Whether a store is set, so there is anything to choose between. */
+  canPrice: boolean;
+  onMatched: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+
+  async function pick(productId: string | null) {
+    await api.setMatch(item.key, productId);
+    setOpen(false);
+    onMatched();
+  }
+
   return (
-    <label className={`grocery-item${item.checked ? " checked" : ""}`}>
-      <input
-        type="checkbox"
-        checked={item.checked}
-        onChange={() => onToggle(item)}
-      />
-      <ItemText item={item} />
-      {item.from_pantry && <span className="pantry-tag">pantry</span>}
-      <ItemPriceTag item={item} />
-    </label>
+    <div className="grocery-entry">
+      <div className={`grocery-item${item.checked ? " checked" : ""}`}>
+        {/* The label wraps only the checkbox and the name. It used to wrap the
+            whole row, which would make a click on the price toggle tick the
+            item off as well. */}
+        <label className="grocery-check">
+          <input
+            type="checkbox"
+            checked={item.checked}
+            onChange={() => onToggle(item)}
+          />
+          <ItemText item={item} />
+        </label>
+        {item.from_pantry && <span className="pantry-tag">pantry</span>}
+        {canPrice && (
+          <button
+            type="button"
+            className="price-toggle"
+            aria-expanded={open}
+            aria-label={
+              item.price
+                ? `${item.name}: ${item.price.description}. Choose a different product`
+                : `${item.name}: not priced. Choose a product`
+            }
+            onClick={() => setOpen((wasOpen) => !wasOpen)}
+          >
+            {item.price ? (
+              <ItemPriceTag item={item} />
+            ) : (
+              <span className="unmatched">no match</span>
+            )}
+          </button>
+        )}
+      </div>
+      {open && <Alternatives item={item} onPick={pick} />}
+    </div>
   );
 }
 

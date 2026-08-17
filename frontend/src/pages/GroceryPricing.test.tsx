@@ -8,7 +8,7 @@
  * a Kroger account is permanently in.
  */
 
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mockBackend } from "../test/backend";
@@ -52,6 +52,39 @@ const sugar = groceryItem({
 });
 
 const saffron = groceryItem({ key: "saffron", name: "saffron" });
+
+const onion = groceryItem({
+  key: "onion",
+  name: "onion",
+  price: {
+    product_id: "0001",
+    description: "Green Onions",
+    size: "1 bunch",
+    regular: 1.19,
+    promo: null,
+    aisle: "PRODUCE",
+  },
+});
+
+/** Best fit first, and deliberately unfiltered: the automatic pick was wrong. */
+const ALTERNATIVES = [
+  {
+    product_id: "0001",
+    description: "Green Onions",
+    size: "1 bunch",
+    regular: 1.19,
+    promo: null,
+    aisle: "PRODUCE",
+  },
+  {
+    product_id: "0002",
+    description: "Jumbo Yellow Onions",
+    size: "1 lb",
+    regular: 1.29,
+    promo: null,
+    aisle: "PRODUCE TABLE 6",
+  },
+];
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -121,6 +154,150 @@ describe("grocery list pricing", () => {
 
     const row = (await screen.findByText("saffron")).closest(".grocery-item")!;
     expect(within(row as HTMLElement).queryByText(/\$/)).not.toBeInTheDocument();
+  });
+
+  it("offers alternatives when the price is tapped, and pins the one chosen", async () => {
+    const backend = mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [onion],
+        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+      "PUT /api/pricing/match": undefined,
+    });
+
+    const { user } = renderApp(WEEK);
+
+    // Nothing is fetched until asked for: the panel costs a search.
+    await screen.findByText("onion");
+    expect(backend.requestsTo("GET /api/pricing/alternatives")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: /Choose a different product/ }));
+
+    const panel = await screen.findByRole("group", { name: "Products for onion" });
+    await user.click(within(panel).getByRole("button", { name: /Jumbo Yellow Onions/ }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PUT /api/pricing/match")).toHaveLength(1),
+    );
+    expect(backend.requestsTo("PUT /api/pricing/match")[0].body).toEqual({
+      canonical_key: "onion",
+      product_id: "0002",
+    });
+  });
+
+  it("marks the product in force among the alternatives", async () => {
+    mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [onion],
+        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+    });
+
+    const { user } = renderApp(WEEK);
+    await user.click(
+      await screen.findByRole("button", { name: /Choose a different product/ }),
+    );
+
+    // Scoped to the panel: the toggle's own label names the product too.
+    const panel = await screen.findByRole("group", { name: "Products for onion" });
+    expect(within(panel).getByRole("button", { name: /Green Onions/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      within(panel).getByRole("button", { name: /Jumbo Yellow Onions/ }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("still lists the product in force when the search misses it", async () => {
+    /*
+     * Kroger's search is fuzzy and answers a different limit with a different
+     * set, so the automatic pick can genuinely be absent from the
+     * alternatives to itself - black pepper matched whole peppercorns, which
+     * a narrower search for the same term does not return. Without this the
+     * panel shows nothing marked as chosen.
+     */
+    mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [onion],
+        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+      }),
+      // The onion the row is actually priced at is not among these.
+      "GET /api/pricing/alternatives": [ALTERNATIVES[1]],
+    });
+
+    const { user } = renderApp(WEEK);
+    await user.click(
+      await screen.findByRole("button", { name: /Choose a different product/ }),
+    );
+
+    const panel = await screen.findByRole("group", { name: "Products for onion" });
+    expect(within(panel).getByRole("button", { name: /Green Onions/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("lets a line with no match be given one", async () => {
+    mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [saffron],
+        pricing: { store: STORE, total: 2.59, priced: 0, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+    });
+
+    const { user } = renderApp(WEEK);
+
+    // The affordance is there precisely because the automatic pass failed.
+    const toggle = await screen.findByRole("button", { name: /not priced/ });
+    expect(within(toggle).getByText("no match")).toBeInTheDocument();
+
+    await user.click(toggle);
+    const panel = await screen.findByRole("group", { name: "Products for saffron" });
+    expect(within(panel).getByRole("button", { name: /Green Onions/ })).toBeInTheDocument();
+  });
+
+  it("can mark a line as one not to price", async () => {
+    const backend = mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [saffron],
+        pricing: { store: STORE, total: 2.59, priced: 0, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+      "PUT /api/pricing/match": undefined,
+    });
+
+    const { user } = renderApp(WEEK);
+    await user.click(await screen.findByRole("button", { name: /not priced/ }));
+    const panel = await screen.findByRole("group", { name: "Products for saffron" });
+    await user.click(within(panel).getByRole("button", { name: /Don.t price this/ }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PUT /api/pricing/match")[0].body).toEqual({
+        canonical_key: "saffron",
+        product_id: null,
+      }),
+    );
+  });
+
+  it("offers no product choice when no store is set", async () => {
+    mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: null },
+      "GET /api/grocery-list": groceryList({ items: [saffron], pricing: null }),
+    });
+
+    renderApp(WEEK);
+
+    await screen.findByText("saffron");
+    expect(screen.queryByRole("button", { name: /Choose a product/ })).not.toBeInTheDocument();
   });
 
   it("looks like an ordinary list when there is no pricing at all", async () => {

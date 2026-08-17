@@ -1216,6 +1216,97 @@ input:focus, select:focus, textarea:focus {
   color: var(--muted);
 }
 
+/* Row plus, when opened, its alternatives - one unit, so the panel keeps the
+   row's margin instead of doubling it. */
+.grocery-entry { margin-bottom: var(--space-8); }
+
+.grocery-entry .grocery-item { margin-bottom: 0; }
+
+/* Takes the row's spare width, so the checkbox and name stay one target and
+   the price sits at the far end. */
+.grocery-check {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-12);
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+/* The price is the control: tapping it is how you disagree with the match. */
+.price-toggle {
+  display: flex;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-4) var(--space-8);
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-8));
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: right;
+}
+
+.price-toggle:hover { border-color: var(--line); background: var(--surface-2); }
+
+.price-toggle[aria-expanded="true"] { border-color: var(--line); }
+
+.price-toggle .unmatched { font-size: var(--text-sm); color: var(--muted); }
+
+.alternatives {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.alternatives-status {
+  padding: var(--space-12) var(--space-16);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  border: 1px solid var(--line-soft);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: var(--surface-2);
+  margin: 0;
+}
+
+.alternative {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  width: 100%;
+  padding: var(--space-10) var(--space-16);
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line-soft);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+
+.alternative:hover { background: var(--surface); }
+
+.alternative .product { min-width: 0; overflow-wrap: anywhere; }
+
+.alternative .amount { font-weight: var(--weight-semibold); white-space: nowrap; }
+
+.alternative .amount s { color: var(--muted); font-weight: normal; }
+
+/* The one in force. Marked by weight and a rule rather than a tick, so it
+   reads as "this is the answer" beside the others. */
+.alternative.chosen {
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.alternative.skip { color: var(--muted); font-size: var(--text-sm); }
+
 /* Right-aligned and narrow, so the prices form a column the eye can add up
    rather than sitting wherever each name happens to end. */
 .item-price {
