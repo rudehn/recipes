@@ -7,6 +7,9 @@
  */
 
 import type {
+  CartLine,
+  CartPlan,
+  CartStatus,
   GroceryItem,
   GroceryList,
   Meal,
@@ -116,4 +119,34 @@ export function groceryList(overrides: Partial<GroceryList> = {}): GroceryList {
     pricing: null,
     ...overrides,
   };
+}
+
+/**
+ * Set up but not signed in - the state a button fixes, and the one worth
+ * defaulting to, since the other two are the ends of the range.
+ */
+export function cartStatus(overrides: Partial<CartStatus> = {}): CartStatus {
+  return {
+    configured: true,
+    connected: false,
+    connected_at: null,
+    last_sent_at: null,
+    ...overrides,
+  };
+}
+
+export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
+  return {
+    key: `line-${id()}`,
+    name: "flour",
+    upc: "0001111041700",
+    description: "Kroger® All Purpose Flour",
+    size: "5 lb",
+    quantity: 1,
+    ...overrides,
+  };
+}
+
+export function cartPlan(overrides: Partial<CartPlan> = {}): CartPlan {
+  return { lines: [], skipped: [], ...overrides };
 }

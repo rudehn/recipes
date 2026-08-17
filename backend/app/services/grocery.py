@@ -147,6 +147,7 @@ async def build_grocery_list(
                 GroceryRecipeUse(
                     recipe_id=entry.recipe.id,
                     recipe_title=entry.recipe.title,
+                    ingredient_id=ing.id,
                     quantity=round(scaled, 2) if scaled is not None else None,
                     unit=unit,
                 )

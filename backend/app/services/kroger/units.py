@@ -147,6 +147,30 @@ def cost_to_cover(
     return price * math.ceil(need.base / size.base)
 
 
+def packages_to_cover(size: Measure | None, need: Measure | None) -> int:
+    """How many of a product to order to cover `need`.
+
+    The counting half of `cost_to_cover`, and deliberately the same arithmetic
+    on the same conditions: the quantity that reaches the cart has to be the
+    quantity that was priced, or the estimate on screen describes a different
+    trolley than the one being filled. Only weights scale, for the reason
+    given there - a recipe's six garlic cloves and Kroger's "1 ct" bulb are
+    both counts, of different things, and multiplying would buy six bulbs.
+
+    Always rounded up, where `cost_to_cover` leaves a weight-sold item
+    unrounded. A rate can honestly be charged in fractions and an order cannot:
+    there is no way to ask this API for 1.4 lb of loose chicken, and rounding
+    the other way means arriving home short of the ingredient the meal is
+    named after. The two therefore disagree by up to one unit on weight-sold
+    lines, which is why the quantity is shown before anything is sent.
+    """
+    if need is None or size is None:
+        return 1
+    if need.dimension != WEIGHT or size.dimension != WEIGHT or size.base <= 0:
+        return 1
+    return max(1, math.ceil(need.base / size.base))
+
+
 def parse_size(size: str) -> Measure | None:
     """The size Kroger printed on a product, or None if it is not readable.
 

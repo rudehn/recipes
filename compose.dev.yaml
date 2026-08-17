@@ -25,6 +25,11 @@ services:
       # from a .env file beside this one, which is gitignored.
       KROGER_CLIENT_ID: ${KROGER_CLIENT_ID:-}
       KROGER_CLIENT_SECRET: ${KROGER_CLIENT_SECRET:-}
+      # Only needed to add a list to a real Kroger cart, which needs a sign-in
+      # and therefore somewhere for the browser to come back to. Must match a
+      # redirect URI registered on the Kroger app; for this stack that is
+      # http://localhost:8085/api/cart/callback.
+      KROGER_REDIRECT_URI: ${KROGER_REDIRECT_URI:-}
     volumes:
       - recipe_images:/data
     depends_on:

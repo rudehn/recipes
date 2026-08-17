@@ -75,6 +75,40 @@ async def test_grocery_aggregates_across_recipes(client):
     assert len(by_name["flour"]["uses"]) == 3
 
 
+async def test_grocery_use_names_the_recipe_row_it_came_from(client):
+    """A use carries the ingredient it was, not just the recipe.
+
+    The line's own name is a pick among the variants, and the merge is by
+    canonical name, so nothing on a grocery line can be matched back to a
+    recipe's wording. The id is what lets the app open a recipe on the
+    ingredient a shopper was reading - including both rows when one recipe
+    calls for the same thing twice.
+    """
+    stew = await make_recipe(
+        client,
+        "Stew",
+        [
+            {"name": "salt", "quantity": 1, "unit": "tsp"},
+            {"name": "salt, to taste", "quantity": None, "unit": None},
+            {"name": "beef chuck", "quantity": 2, "unit": "lb"},
+        ],
+    )
+    await plan(client, "2026-07-20", "dinner", stew["id"])
+
+    data = await grocery(client)
+    by_name = {i["name"].lower(): i for i in data["items"]}
+    ids = {ing["name"]: ing["id"] for ing in stew["ingredients"]}
+
+    # Both salt rows are one line, and the line names each of them.
+    assert [u["ingredient_id"] for u in by_name["salt"]["uses"]] == [
+        ids["salt"],
+        ids["salt, to taste"],
+    ]
+    assert [u["ingredient_id"] for u in by_name["beef chuck"]["uses"]] == [
+        ids["beef chuck"]
+    ]
+
+
 async def test_grocery_merges_descriptive_ingredient_variants(client):
     casserole = await make_recipe(
         client,

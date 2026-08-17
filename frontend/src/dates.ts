@@ -47,3 +47,17 @@ export function formatDate(d: Date): string {
 export function formatRange(start: Date, end: Date): string {
   return `${DATE_FMT.format(start)} – ${RANGE_FMT.format(end)}`;
 }
+
+const TIME_FMT = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
+
+/**
+ * A moment that has passed, said the way someone would say it.
+ *
+ * The day is dropped when it is today's. These read as answers to "have I
+ * already done this?", and "3:42 PM" answers it where "Aug 17 at 3:42 PM"
+ * makes the reader work out whether Aug 17 is today.
+ */
+export function formatWhen(d: Date): string {
+  const time = TIME_FMT.format(d);
+  return isToday(d) ? `today at ${time}` : `${DATE_FMT.format(d)} at ${time}`;
+}

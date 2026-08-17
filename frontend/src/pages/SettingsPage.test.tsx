@@ -12,6 +12,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { HttpError, mockBackend } from "../test/backend";
+import { cartStatus } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 const riverside = {
@@ -53,6 +54,7 @@ describe("SettingsPage", () => {
 
   it("offers the settings link once pricing is configured", async () => {
     mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/recipes": { items: [], total: 0, page: 1, per_page: 24 },
       "GET /api/recipes/tags": [],
@@ -65,6 +67,7 @@ describe("SettingsPage", () => {
 
   it("searches by ZIP and saves the store that is picked", async () => {
     const backend = mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/pricing/stores": [riverside, beavercreek],
       "PUT /api/pricing/store": riverside,
@@ -97,6 +100,7 @@ describe("SettingsPage", () => {
 
   it("does not call the server for something that is not a ZIP code", async () => {
     const backend = mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/pricing/stores": [],
     });
@@ -111,7 +115,10 @@ describe("SettingsPage", () => {
   });
 
   it("shows the chosen store rather than the search form", async () => {
-    mockBackend({ "GET /api/pricing/status": { enabled: true, store: riverside } });
+    mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
+      "GET /api/pricing/status": { enabled: true, store: riverside },
+    });
 
     renderApp("/settings");
 
@@ -123,6 +130,7 @@ describe("SettingsPage", () => {
   it("puts the search back when the store is changed", async () => {
     let store: unknown = riverside;
     mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": () => ({ enabled: true, store }),
       "DELETE /api/pricing/store": () => {
         store = null;
@@ -139,6 +147,7 @@ describe("SettingsPage", () => {
 
   it("reports a failed lookup instead of showing an empty result list", async () => {
     mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/pricing/stores": new HttpError(502, "Could not reach Kroger"),
     });
@@ -154,6 +163,7 @@ describe("SettingsPage", () => {
 
   it("says so when a ZIP code has no stores near it", async () => {
     mockBackend({
+      "GET /api/cart/status": cartStatus({ configured: false }),
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/pricing/stores": [],
     });

@@ -107,9 +107,18 @@ export interface PantryItem {
   in_stock: boolean;
 }
 
+/**
+ * One recipe's call for an ingredient a grocery line stands for.
+ *
+ * `ingredient_id` is the row in that recipe rather than the merged line, so a
+ * grocery row can open the recipe on the ingredient it came from. Matching by
+ * name could not: the line's name is a pick among the variants the recipes
+ * used, and the merge is by canonical name, which is the server's rule.
+ */
 export interface GroceryRecipeUse {
   recipe_id: number;
   recipe_title: string;
+  ingredient_id: number;
   quantity: number | null;
   unit: string | null;
 }
@@ -177,6 +186,64 @@ export interface GroceryList {
   in_pantry: GroceryItem[];
   pantry_restock: GroceryItem[];
   pricing: GroceryPricing | null;
+}
+
+/** How a Kroger order is to be collected. */
+export type Modality = "PICKUP" | "DELIVERY";
+
+/**
+ * Whether the grocery list can be sent to a real Kroger cart.
+ *
+ * Three states, as with pricing, and again they need telling apart.
+ * `configured` false means the app was never set up for it - that needs a
+ * redirect URI as well as credentials, because the sign-in is a browser round
+ * trip. Configured but not `connected` is the state a button fixes.
+ *
+ * `last_sent_at` is load bearing rather than informational. Kroger's cart
+ * cannot be read back and nothing can be removed from it, so sending twice
+ * orders twice, and knowing the first one went is the only thing that
+ * prevents it.
+ */
+export interface CartStatus {
+  configured: boolean;
+  connected: boolean;
+  connected_at: string | null;
+  last_sent_at: string | null;
+}
+
+/** One line as it would be ordered: your word for it, Kroger's, and how many. */
+export interface CartLine {
+  key: string;
+  name: string;
+  upc: string;
+  description: string;
+  size: string;
+  quantity: number;
+}
+
+/**
+ * What sending the list would order, and what it would leave behind.
+ *
+ * `skipped` names the lines rather than counting them, because a count is not
+ * something you can shop from.
+ */
+export interface CartPlan {
+  lines: CartLine[];
+  skipped: string[];
+}
+
+/**
+ * What actually went to Kroger.
+ *
+ * `sent_at` is null when nothing did. The server re-plans as it sends, so a
+ * line that has gone since the review can leave this at zero, and a time
+ * stamped on a send of nothing would make the page warn about a duplicate
+ * order that was never placed.
+ */
+export interface CartResult {
+  added: number;
+  skipped: string[];
+  sent_at: string | null;
 }
 
 /**
@@ -342,4 +409,23 @@ export const api = {
       body: JSON.stringify({ location_id }),
     }),
   clearStore: () => request<void>("/api/pricing/store", { method: "DELETE" }),
+
+  cartStatus: () => request<CartStatus>("/api/cart/status"),
+  /** Where to send the browser so Kroger can ask about granting cart access. */
+  cartSignInUrl: () => request<{ url: string }>("/api/cart/sign-in"),
+  disconnectCart: () => request<void>("/api/cart/connection", { method: "DELETE" }),
+  /** What sending this range would order. A read: nothing reaches the cart. */
+  cartPreview: (start: string, end: string) =>
+    request<CartPlan>(`/api/cart/preview${queryString({ start, end })}`),
+  /**
+   * Send the list for a date range.
+   *
+   * A range rather than the lines on screen: the server rebuilds the list and
+   * re-picks the products, so what is ordered is what it would have priced.
+   */
+  addToCart: (start: string, end: string, modality: Modality) =>
+    request<CartResult>("/api/cart/add", {
+      method: "POST",
+      body: JSON.stringify({ start, end, modality }),
+    }),
 };

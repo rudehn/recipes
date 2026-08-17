@@ -16,6 +16,16 @@ if (!URL.createObjectURL) {
   URL.revokeObjectURL = () => {};
 }
 
+// jsdom has no layout, so it implements no scrolling either and leaves
+// scrollIntoView off Element entirely - calling it throws. The recipe page
+// scrolls the ingredient a grocery line pointed at into view, so without this
+// that page could not be mounted with such a link at all. A no-op is the whole
+// of the contract here: tests assert that the right row was asked for, never
+// where it ended up on a screen jsdom does not have.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 /**
  * jsdom exposes the Storage class but leaves window.localStorage a bare object
  * carrying none of its methods, so every call on it throws TypeError here and

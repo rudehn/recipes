@@ -50,6 +50,32 @@ class AppSettings(Base):
     kroger_location_address: Mapped[str | None] = mapped_column(String(300))
     kroger_location_chain: Mapped[str | None] = mapped_column(String(100))
 
+    # The shopper's standing permission to add to their Kroger cart.
+    #
+    # This is a credential, and the only one the app holds rather than reads
+    # from the environment - it cannot live in config because it is granted at
+    # runtime by a person clicking through a sign-in. It is stored as Kroger
+    # issued it, on the same footing as the database's other contents: this is
+    # a single-tenant app on a private host, and encrypting it with a key kept
+    # on the same host would move the secret rather than protect it. What that
+    # buys is that a leaked backup is a leaked cart, which is why
+    # `services.kroger.cart` can forget it on request and does so by itself the
+    # moment Kroger says it is dead.
+    #
+    # Kroger rotates it on every refresh, so the column is written far more
+    # often than a settings column suggests.
+    kroger_refresh_token: Mapped[str | None] = mapped_column(String(500))
+    kroger_connected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    # When a list was last sent. The Cart API is write-only - it cannot be
+    # read back, and nothing can be removed from it - so this is the only way
+    # the app can warn that sending again adds a second copy rather than
+    # replacing the first.
+    kroger_cart_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

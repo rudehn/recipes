@@ -1,18 +1,22 @@
-import { useCallback, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Fragment, useCallback, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   api,
+  type CartResult,
   type GroceryItem,
   type GroceryList,
   type GroceryPricing,
+  type GroceryRecipeUse,
+  type Modality,
   type SaleItem,
 } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
-import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
+import { addDays, formatWhen, fromISODate, startOfWeek, toISODate } from "../dates";
+import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
-import { useLoad } from "../useLoad";
+import { errorMessage, useLoad } from "../useLoad";
 
 /**
  * Checkmarks the server has not accepted, by item key.
@@ -207,6 +211,8 @@ export default function GroceryPage() {
 
       {list?.pricing && <PricingSummary pricing={list.pricing} />}
 
+      {list && !empty && <SendToCart start={start} end={end} list={list} />}
+
       {canPrice && <Offers />}
 
       {!error && empty && (
@@ -301,6 +307,256 @@ function PricingSummary({ pricing }: { pricing: GroceryPricing }) {
   );
 }
 
+const KROGER_CART_URL = "https://www.kroger.com/cart";
+
+/**
+ * Which lines the shopping still covers, as a value that changes when they do.
+ *
+ * The review below is built by the server from the same checkmarks, so ticking
+ * something off while the review is open would leave it describing a trip that
+ * is no longer the one about to be ordered. This is what tells it to look
+ * again, and it is the checked keys rather than the whole list because they
+ * are the only thing the answer depends on.
+ */
+function checkedSignature(list: GroceryList): string {
+  return [...list.items, ...list.pantry_restock]
+    .filter((item) => item.checked)
+    .map((item) => item.key)
+    .sort()
+    .join(",");
+}
+
+/**
+ * Ordering the list from Kroger.
+ *
+ * Everything here is shaped by one property of Kroger's cart: it can be
+ * written and never read. Nothing can be checked afterwards and nothing can be
+ * taken back out, so the app cannot offer a "sent" state it has verified, and
+ * a mis-send is permanent. What it can do is show exactly what is about to go
+ * - products and quantities both - and never send anything without that being
+ * on screen first. Hence a review step rather than a button that fires.
+ *
+ * Absent entirely when the server is not set up for it, rather than present
+ * and disabled: a control that can never work is not information, and the
+ * settings page is where the setup is explained.
+ */
+function SendToCart({
+  start,
+  end,
+  list,
+}: {
+  start: string;
+  end: string;
+  list: GroceryList;
+}) {
+  const { data: status, reload: reloadStatus } = useLoad(
+    useCallback(() => api.cartStatus(), []),
+  );
+  const [open, setOpen] = useState(false);
+  const [sent, setSent] = useState<CartResult | null>(null);
+
+  const signature = checkedSignature(list);
+
+  if (!status?.configured) return null;
+
+  if (!status.connected) {
+    return (
+      <div className="cart-invite">
+        <span>Order this list from Kroger.</span>
+        <Link to="/settings">Connect your account</Link>
+      </div>
+    );
+  }
+
+  if (sent) {
+    const dismiss = (
+      <Button
+        size="small"
+        onClick={() => {
+          setSent(null);
+          reloadStatus();
+        }}
+      >
+        Done
+      </Button>
+    );
+
+    // The server re-plans as it sends, so a line that has gone since the
+    // review can leave this at nothing. Saying "0 items added" would read as a
+    // success and leave the shopper waiting at a collection point for an empty
+    // order.
+    if (sent.added === 0) {
+      return (
+        <Banner tone="error" spaced role="status">
+          <span>
+            Nothing was added to your Kroger cart - none of these lines could be
+            matched to a product at your store. Buy them the usual way.
+          </span>
+          {dismiss}
+        </Banner>
+      );
+    }
+
+    return (
+      <Banner tone="notice" spaced role="status">
+        <span>
+          {itemCount(sent.added)} added to your Kroger cart
+          {sent.skipped.length > 0 && `, ${sent.skipped.length} left off`}.
+          {/* The app cannot read the cart back, so it does not claim to know
+              what is in there - it points at the place that does. */}{" "}
+          <a href={KROGER_CART_URL} target="_blank" rel="noreferrer">
+            Open your cart
+          </a>{" "}
+          to check it over and pick a time.
+        </span>
+        {dismiss}
+      </Banner>
+    );
+  }
+
+  return (
+    <section className="cart-section">
+      <div className="cart-head">
+        <div className="cart-lede">
+          <h2>Kroger cart</h2>
+          {status.last_sent_at && (
+            <p className="section-note">
+              A list was last sent {formatWhen(new Date(status.last_sent_at))}. Sending
+              again adds to that cart rather than replacing it.
+            </p>
+          )}
+        </div>
+        <Button onClick={() => setOpen((wasOpen) => !wasOpen)} aria-expanded={open}>
+          {open ? "Cancel" : "Send to cart"}
+        </Button>
+      </div>
+
+      {open && (
+        // Keyed on the checkmarks, so ticking something off while the review
+        // is open starts it again rather than leaving it describing a trip
+        // that is no longer the one about to be ordered.
+        <CartReview
+          key={signature}
+          start={start}
+          end={end}
+          onSent={(result) => {
+            setOpen(false);
+            setSent(result);
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/**
+ * What is about to be ordered, and the button that orders it.
+ *
+ * The quantities are the reason this is a list rather than a count. They come
+ * from what the week's meals add up to and are not always one - three bags of
+ * flour for a week of bread is right, and is also the kind of thing worth
+ * seeing before it is bought rather than after.
+ */
+function CartReview({
+  start,
+  end,
+  onSent,
+}: {
+  start: string;
+  end: string;
+  onSent: (result: CartResult) => void;
+}) {
+  const {
+    data: plan,
+    error,
+    loading,
+    reload,
+  } = useLoad(useCallback(() => api.cartPreview(start, end), [start, end]));
+  const [modality, setModality] = useState<Modality>("PICKUP");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  /**
+   * Not routed through `useAction`, which reports a failed write and answers
+   * only whether it went through. What came back matters here: the server
+   * re-plans as it sends, so how many actually reached the cart is its answer
+   * rather than the count on screen.
+   */
+  async function send() {
+    setSending(true);
+    setSendError(null);
+    try {
+      onSent(await api.addToCart(start, end, modality));
+    } catch (cause) {
+      setSendError(errorMessage(cause, "Nothing was sent to your Kroger cart."));
+      setSending(false);
+    }
+  }
+
+  if (loading) return <p className="list-status">Working out what to order…</p>;
+  if (error) {
+    return (
+      <LoadFailure what="what to order" message={error} onRetry={reload} showing={false} />
+    );
+  }
+  if (!plan) return null;
+
+  return (
+    <div className="cart-review">
+      {sendError && <Banner tone="error">{sendError}</Banner>}
+
+      {plan.lines.length === 0 ? (
+        <p className="list-status">
+          Nothing here can be ordered from Kroger yet. Pick a product for these lines
+          from the price beside them, and they will be ready to send.
+        </p>
+      ) : (
+        <>
+          <ul className="cart-lines">
+            {plan.lines.map((line) => (
+              <li key={line.key}>
+                <span className="quantity" aria-label={`${line.quantity} of`}>
+                  {line.quantity}×
+                </span>
+                <span className="item-name">
+                  <span className="name">{line.name}</span>
+                </span>
+                <span className="product" title={line.description}>
+                  {line.description}
+                  {line.size && ` · ${line.size}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {plan.skipped.length > 0 && (
+            <p className="section-note">
+              Not sent, because nothing at your store is matched to them:{" "}
+              {plan.skipped.join(", ")}. Buy these the usual way.
+            </p>
+          )}
+
+          <div className="cart-send">
+            <label>
+              Collect by{" "}
+              <select
+                value={modality}
+                onChange={(e) => setModality(e.target.value as Modality)}
+              >
+                <option value="PICKUP">Pickup</option>
+                <option value="DELIVERY">Delivery</option>
+              </select>
+            </label>
+            <Button variant="primary" onClick={send} disabled={sending}>
+              {sending ? "Sending…" : `Send ${itemCount(plan.lines.length)} to Kroger`}
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /**
  * Ingredients you cook with that are discounted this week.
  *
@@ -359,11 +615,10 @@ function ItemPriceTag({ item }: { item: GroceryItem }) {
   );
 }
 
-/** Name, totals, and the recipes asking for it - the same in every section. */
-function ItemText({ item }: { item: GroceryItem }) {
-  const recipeTitles = [...new Set(item.uses.map((u) => u.recipe_title))];
+/** What the line is: its name and the totals the week's meals add up to. */
+function ItemName({ item }: { item: GroceryItem }) {
   return (
-    <span className="item-text">
+    <span className="item-name">
       <span className="name">{item.name}</span>
       {item.amounts.length > 0 && (
         <>
@@ -371,8 +626,61 @@ function ItemText({ item }: { item: GroceryItem }) {
           <span className="amounts">· {item.amounts.join(" + ")}</span>
         </>
       )}
-      {recipeTitles.length > 0 && <div className="uses">for {recipeTitles.join(", ")}</div>}
     </span>
+  );
+}
+
+/**
+ * The recipes asking for a line, one entry each.
+ *
+ * Grouped by recipe id rather than by title: two recipes can share a name, and
+ * merging them would send both links to whichever one came first. The ids of
+ * every ingredient row this recipe contributed travel with the link, because a
+ * recipe can call for the same canonical ingredient more than once - "kosher
+ * salt" and "salt" are one grocery line - and the cook wants to see both.
+ */
+function usedBy(uses: readonly GroceryRecipeUse[]) {
+  const byRecipe = new Map<number, { title: string; ingredientIds: number[] }>();
+  for (const use of uses) {
+    const recipe = byRecipe.get(use.recipe_id);
+    if (recipe) recipe.ingredientIds.push(use.ingredient_id);
+    else
+      byRecipe.set(use.recipe_id, {
+        title: use.recipe_title,
+        ingredientIds: [use.ingredient_id],
+      });
+  }
+  return [...byRecipe].map(([id, recipe]) => ({ id, ...recipe }));
+}
+
+/**
+ * "for Curry, Tacos" - each recipe a link to itself, opened on this ingredient.
+ *
+ * Deliberately not inside the row's label. A label hands clicks on its text to
+ * its checkbox, and following one of these is not ticking the item off.
+ */
+function ItemUses({ item }: { item: GroceryItem }) {
+  const recipes = usedBy(item.uses);
+  if (recipes.length === 0) return null;
+  return (
+    <div className="uses">
+      for{" "}
+      {recipes.map((recipe, i) => (
+        <Fragment key={recipe.id}>
+          {i > 0 && ", "}
+          <Link
+            className="use-link"
+            to={recipeIngredientPath(recipe.id, recipe.ingredientIds)}
+            // The title alone is ambiguous read out of the row: a list of a
+            // dozen "Curry" links, each opening the recipe somewhere else. It
+            // stays the start of the name so saying "Curry" still picks it.
+            aria-label={`${recipe.title}, at ${item.name}`}
+          >
+            {recipe.title}
+          </Link>
+        </Fragment>
+      ))}
+    </div>
   );
 }
 
@@ -472,17 +780,21 @@ function GroceryRow({
   return (
     <div className="grocery-entry">
       <div className={`grocery-item${item.checked ? " checked" : ""}`}>
-        {/* The label wraps only the checkbox and the name. It used to wrap the
-            whole row, which would make a click on the price toggle tick the
-            item off as well. */}
-        <label className="grocery-check">
-          <input
-            type="checkbox"
-            checked={item.checked}
-            onChange={() => onToggle(item)}
-          />
-          <ItemText item={item} />
-        </label>
+        <div className="item-text">
+          {/* The label wraps only the checkbox and the name. It used to wrap
+              the whole row, which would make a click on the price toggle tick
+              the item off as well - and the recipe links below would be the
+              same trap. */}
+          <label className="grocery-check">
+            <input
+              type="checkbox"
+              checked={item.checked}
+              onChange={() => onToggle(item)}
+            />
+            <ItemName item={item} />
+          </label>
+          <ItemUses item={item} />
+        </div>
         {item.from_pantry && <span className="pantry-tag">pantry</span>}
         {canPrice && (
           <button
@@ -523,7 +835,10 @@ function StockedRow({
 }) {
   return (
     <div className="grocery-item stocked">
-      <ItemText item={item} />
+      <div className="item-text">
+        <ItemName item={item} />
+        <ItemUses item={item} />
+      </div>
       <Button size="small" onClick={() => onBuyAnyway(item)}>
         Buy anyway
       </Button>

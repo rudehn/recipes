@@ -21,6 +21,21 @@ IMAGES_DIR = DATA_DIR / "images"
 KROGER_CLIENT_ID = os.environ.get("KROGER_CLIENT_ID", "")
 KROGER_CLIENT_SECRET = os.environ.get("KROGER_CLIENT_SECRET", "")
 
+# Where Kroger sends the browser back to after someone signs in to grant this
+# app access to their cart. Separate from the credentials above because it is
+# a separate capability: pricing reads the catalog on the app's own token,
+# while writing to a cart is done on a real shopper's, and only the second
+# needs a redirect.
+#
+# It must match a redirect URI registered on the Kroger app exactly, so it
+# cannot be derived from the incoming request - a reverse proxy would give a
+# different host than the one registered. Left empty, adding to a cart
+# switches itself off the way pricing does without credentials.
+#
+# The path is this app's callback route: e.g.
+# https://recipes.your-tailnet.ts.net/api/cart/callback
+KROGER_REDIRECT_URI = os.environ.get("KROGER_REDIRECT_URI", "")
+
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": ".jpg",

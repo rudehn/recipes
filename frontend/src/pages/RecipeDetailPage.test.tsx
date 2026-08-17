@@ -21,10 +21,35 @@ const curry = recipe({
   ],
 });
 
+/** The ingredient list row for an ingredient. */
+function rowFor(name: string): HTMLElement {
+  return screen.getByText(name).closest<HTMLElement>("li")!;
+}
+
+/**
+ * Put the ingredient rows `top` pixels down the viewport.
+ *
+ * jsdom lays nothing out: every element reports a zero-sized box at the origin,
+ * and every computed length comes back empty. Whether the page scrolls to a
+ * marked ingredient is entirely a question about where that row is and how much
+ * of the header covers it, so a test about scrolling has to supply both. The
+ * scroll margin matches the stylesheet's, which is what the page reads.
+ */
+function layoutRowsAt(top: number) {
+  const HEADER = 88;
+  const ROW_HEIGHT = 40;
+  vi.spyOn(window, "getComputedStyle").mockReturnValue({
+    scrollMarginTop: `${HEADER}px`,
+  } as CSSStyleDeclaration);
+  vi.spyOn(HTMLLIElement.prototype, "getBoundingClientRect").mockReturnValue({
+    top,
+    bottom: top + ROW_HEIGHT,
+  } as DOMRect);
+}
+
 /** The amount shown next to an ingredient, as a cook reads it. */
 function amountFor(name: string): string {
-  const row = screen.getByText(name).closest("li")!;
-  return row.querySelector(".qty")!.textContent ?? "";
+  return rowFor(name).querySelector(".qty")!.textContent ?? "";
 }
 
 describe("RecipeDetailPage", () => {
@@ -201,6 +226,81 @@ describe("RecipeDetailPage", () => {
       "href",
       "/recipes",
     );
+  });
+
+  it("marks the ingredient a grocery line was followed here for", async () => {
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=11");
+    await screen.findByText("coconut milk");
+
+    expect(rowFor("coconut milk")).toHaveClass("highlighted");
+    expect(rowFor("coconut milk")).toHaveAttribute("aria-current", "true");
+    // Marked, not merely different: the rest of the list is left alone.
+    expect(rowFor("chicken thighs")).not.toHaveAttribute("aria-current");
+    expect(rowFor("salt")).not.toHaveAttribute("aria-current");
+  });
+
+  it("scrolls the marked ingredient into view and gives it focus", async () => {
+    // The ingredients sit below the photo, so on a phone a highlight on its own
+    // lands off screen: arriving from the grocery list would look like nothing
+    // happened at all.
+    layoutRowsAt(2_000);
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=11");
+    await screen.findByText("coconut milk");
+
+    expect(scrollIntoView.mock.instances).toEqual([rowFor("coconut milk")]);
+    expect(rowFor("coconut milk")).toHaveFocus();
+  });
+
+  it("leaves the page where it is when the ingredient is already in view", async () => {
+    // Scrolling to a row the cook can already see gains nothing, and takes the
+    // recipe's title under the sticky header on the way.
+    layoutRowsAt(300);
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=11");
+    await screen.findByText("coconut milk");
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    expect(rowFor("coconut milk")).toHaveFocus();
+  });
+
+  it("scrolls when the ingredient is hidden behind the sticky header", async () => {
+    // In view by the viewport's reckoning, under the topbar by the cook's.
+    layoutRowsAt(20);
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=11");
+    await screen.findByText("coconut milk");
+
+    expect(scrollIntoView.mock.instances).toEqual([rowFor("coconut milk")]);
+  });
+
+  it("marks every row one grocery line stood for, scrolling to the first", async () => {
+    // One canonical ingredient, two lines of the recipe: the merged amount on
+    // the grocery list came from both, so both are the answer.
+    layoutRowsAt(2_000);
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=12&ingredient=10");
+    await screen.findByText("chicken thighs");
+
+    expect(rowFor("chicken thighs")).toHaveClass("highlighted");
+    expect(rowFor("salt")).toHaveClass("highlighted");
+    expect(rowFor("coconut milk")).not.toHaveClass("highlighted");
+    expect(scrollIntoView.mock.instances).toEqual([rowFor("chicken thighs")]);
+  });
+
+  it("opens as usual when the marked ingredient is no longer in the recipe", async () => {
+    // An edit between reading the grocery list and following it. The recipe is
+    // still the right page, so nothing is marked and nothing is broken.
+    mockBackend({ "GET /api/recipes/:id": curry });
+    renderApp("/recipes/1?ingredient=999");
+
+    expect(await screen.findByText("chicken thighs")).toBeVisible();
+    expect(document.querySelector(".highlighted")).toBeNull();
   });
 
   it("links to the edit form for this recipe", async () => {

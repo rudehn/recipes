@@ -54,7 +54,7 @@ def as_item_price(product: Product) -> ItemPrice:
     )
 
 
-def _needed(line: GroceryItem) -> Measure | None:
+def needed(line: GroceryItem) -> Measure | None:
     """How much of an ingredient the week's meals call for, if it is countable.
 
     Summed from the individual uses rather than read off the rendered amounts,
@@ -137,7 +137,7 @@ async def _ingredient_names(session: AsyncSession) -> dict[str, str]:
     return {key: best_display(names) for key, names in variants.items()}
 
 
-def _priceable(grocery_list: GroceryList) -> list[GroceryItem]:
+def to_buy(grocery_list: GroceryList) -> list[GroceryItem]:
     """The lines this trip actually pays for.
 
     In-pantry items are left out: they are set aside precisely because they
@@ -145,6 +145,35 @@ def _priceable(grocery_list: GroceryList) -> list[GroceryItem]:
     what the trip costs.
     """
     return [*grocery_list.items, *grocery_list.pantry_restock]
+
+
+async def chosen_products(
+    session: AsyncSession, lines: list[GroceryItem], location_id: str
+) -> dict[str, Product]:
+    """The product each line means, keyed by the line's key.
+
+    The single place that answers "which thing on the shelf is this". Pricing
+    reads it to say what the trip costs and `cart` reads it to order the same
+    things, and they must not be able to disagree: a total quoted against one
+    product while another goes into the cart is wrong in the way that is only
+    discovered at collection.
+
+    Lines with no confident match are simply absent, which is the same answer
+    both callers already give them - unpriced, and not ordered.
+    """
+    matched = await matching.product_ids(
+        session,
+        [line.key for line in lines],
+        location_id,
+        needs={line.key: need for line in lines if (need := needed(line))},
+    )
+    found = await products.by_ids(sorted(set(matched.values())), location_id)
+    chosen: dict[str, Product] = {}
+    for line in lines:
+        product = found.get(matched.get(line.key, ""))
+        if product is not None:
+            chosen[line.key] = product
+    return chosen
 
 
 async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> GroceryList:
@@ -162,18 +191,12 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         # apart from "switched off" through /pricing/status and can prompt.
         return grocery_list
 
-    lines = _priceable(grocery_list)
+    lines = to_buy(grocery_list)
     if not lines:
         return grocery_list
 
     try:
-        matched = await matching.product_ids(
-            session,
-            [line.key for line in lines],
-            store.location_id,
-            needs={line.key: need for line in lines if (need := _needed(line))},
-        )
-        found = await products.by_ids(sorted(set(matched.values())), store.location_id)
+        chosen = await chosen_products(session, lines, store.location_id)
     except KrogerError as exc:
         # One warning, and the list goes out unpriced. Same principle as a
         # failing site in recipe_search: a thinner answer beats no answer.
@@ -184,11 +207,11 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
     saved = 0.0
     priced = 0
     for line in lines:
-        product = found.get(matched.get(line.key, ""))
+        product = chosen.get(line.key)
         if product is None or product.price is None:
             continue
         cost = cost_to_cover(
-            product.price, parse_size(product.size), product.sold_by, _needed(line)
+            product.price, parse_size(product.size), product.sold_by, needed(line)
         )
         line.price = as_item_price(product)
         line.price.estimated = to_cents(cost)
@@ -199,7 +222,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             # the same way, so a saving on a weight-sold item is not quoted
             # per pound while its cost is quoted for three of them.
             was = cost_to_cover(
-                product.regular, parse_size(product.size), product.sold_by, _needed(line)
+                product.regular, parse_size(product.size), product.sold_by, needed(line)
             )
             saved += was - cost
 

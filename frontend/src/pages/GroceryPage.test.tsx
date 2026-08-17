@@ -7,7 +7,7 @@ import {
   type MockBackend,
   type MockRequest,
 } from "../test/backend";
-import { groceryItem, groceryList } from "../test/fixtures";
+import { groceryItem, groceryList, recipe } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 // A Wednesday, so the default range is Mon 27 Jul - Sun 2 Aug 2026.
@@ -32,6 +32,11 @@ function loadedRange(backend: MockBackend): [string, string] {
 /** The row for an item, as a shopper sees it: checkbox, name, amounts. */
 function row(name: string): HTMLElement {
   return screen.getByText(name).closest<HTMLElement>(".grocery-item")!;
+}
+
+/** The "for Curry, Tacos" links on an item's row, in the order they read. */
+function recipeLinks(name: string): HTMLAnchorElement[] {
+  return [...row(name).querySelectorAll<HTMLAnchorElement>(".uses a")];
 }
 
 describe("GroceryPage", () => {
@@ -92,8 +97,8 @@ describe("GroceryPage", () => {
             name: "chicken thighs",
             amounts: ["2 lb", "1½ lb"],
             uses: [
-              { recipe_id: 1, recipe_title: "Curry", quantity: 2, unit: "lb" },
-              { recipe_id: 2, recipe_title: "Tacos", quantity: 1.5, unit: "lb" },
+              { recipe_id: 1, recipe_title: "Curry", ingredient_id: 10, quantity: 2, unit: "lb" },
+              { recipe_id: 2, recipe_title: "Tacos", ingredient_id: 20, quantity: 1.5, unit: "lb" },
             ],
           }),
         ],
@@ -116,8 +121,8 @@ describe("GroceryPage", () => {
             name: "olive oil",
             amounts: ["2 tbsp", "1 tbsp"],
             uses: [
-              { recipe_id: 1, recipe_title: "Curry", quantity: 2, unit: "tbsp" },
-              { recipe_id: 1, recipe_title: "Curry", quantity: 1, unit: "tbsp" },
+              { recipe_id: 1, recipe_title: "Curry", ingredient_id: 11, quantity: 2, unit: "tbsp" },
+              { recipe_id: 1, recipe_title: "Curry", ingredient_id: 12, quantity: 1, unit: "tbsp" },
             ],
           }),
         ],
@@ -125,7 +130,75 @@ describe("GroceryPage", () => {
     });
     renderApp(WEEK);
 
-    expect(await screen.findByText("for Curry")).toBeInTheDocument();
+    await screen.findByText("olive oil");
+    expect(row("olive oil")).toHaveTextContent("for Curry");
+    // One link, naming both rows of that recipe: following it shows the cook
+    // every line the merged amount was added up from.
+    expect(recipeLinks("olive oil").map((a) => a.getAttribute("href"))).toEqual([
+      "/recipes/1?ingredient=11&ingredient=12",
+    ]);
+  });
+
+  it("links each recipe to the ingredient it asked for", async () => {
+    mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [
+          groceryItem({
+            name: "chicken thighs",
+            uses: [
+              { recipe_id: 1, recipe_title: "Curry", ingredient_id: 10, quantity: 2, unit: "lb" },
+              { recipe_id: 2, recipe_title: "Tacos", ingredient_id: 20, quantity: 1.5, unit: "lb" },
+            ],
+          }),
+        ],
+      }),
+    });
+    renderApp(WEEK);
+
+    await screen.findByText("chicken thighs");
+    expect(
+      recipeLinks("chicken thighs").map((a) => [a.textContent, a.getAttribute("href")]),
+    ).toEqual([
+      ["Curry", "/recipes/1?ingredient=10"],
+      ["Tacos", "/recipes/2?ingredient=20"],
+    ]);
+  });
+
+  it("opens the recipe on that ingredient without ticking the item off", async () => {
+    // The links sit beside a checkbox whose label used to swallow clicks on
+    // anything inside it, so a tap meant for the recipe crossed the line out.
+    const backend = mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [
+          groceryItem({
+            name: "chicken thighs",
+            uses: [
+              { recipe_id: 1, recipe_title: "Curry", ingredient_id: 10, quantity: 2, unit: "lb" },
+            ],
+          }),
+        ],
+      }),
+      "GET /api/recipes/:id": recipe({
+        id: 1,
+        title: "Curry",
+        ingredients: [{ id: 10, name: "chicken thighs", quantity: 2, unit: "lb" }],
+      }),
+      // Routed so a stray toggle is recorded and asserted on. An unmocked call
+      // is answered 501 and never reaches the request log, so leaving it out
+      // would make the assertion below pass whatever the click did.
+      "POST /api/grocery-list/toggle": undefined,
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("chicken thighs");
+
+    await user.click(recipeLinks("chicken thighs")[0]);
+
+    expect(await screen.findByRole("heading", { name: "Curry" })).toBeVisible();
+    expect(screen.getByText("chicken thighs").closest("li")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(backend.requestsTo("POST /api/grocery-list/toggle")).toHaveLength(0);
   });
 
   it("shows an unquantified item without a trailing separator", async () => {
@@ -168,7 +241,9 @@ describe("GroceryPage", () => {
           groceryItem({
             name: "rice",
             amounts: ["3 cups"],
-            uses: [{ recipe_id: 1, recipe_title: "Biryani", quantity: 3, unit: "cup" }],
+            uses: [
+              { recipe_id: 1, recipe_title: "Biryani", ingredient_id: 30, quantity: 3, unit: "cup" },
+            ],
             from_pantry: true,
             pantry_item_id: 7,
           }),

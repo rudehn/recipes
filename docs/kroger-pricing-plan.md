@@ -10,9 +10,11 @@ Tracked in #1, broken into issues #2 through #14.
 
 Two sections below no longer describe what is being built, and are kept because the reasoning is still worth having.
 
-- **Add to cart is out of scope.**
-  Section 5 discusses it as a later stage.
-  It is not being pursued.
+- **Add to cart was out of scope, and has since been built.**
+  Section 5 discusses it as a later stage, and this note used to say it was not being pursued.
+  It shipped in August 2026, roughly in the shape section 5 sketches: the `authorization_code` grant, a registered redirect URI, and a refresh token in `app_settings`.
+  Two things the plan did not anticipate are worth reading before changing it - see `docs/adr/0003` and `docs/adr/0004`.
+  The Cart API is write-only, which is what forces a review step rather than a button; and the quantity to order is a second, separate answer from the cost to cover, because a rate can honestly be charged in fractions and an order cannot.
 - **Price caching is out of scope.**
   Section 3 proposes a `product_price` cache with TTL and a `kroger_api_usage` budget counter.
   Neither is being built, because at single-user scale a 50 item grocery list costs about 3 batched Products calls per render against a 10,000 per day budget.
@@ -370,9 +372,14 @@ Worth deciding which is meant before building.
 
 ### Later, separate: add to Kroger cart
 
+*Built, August 2026. See `docs/adr/0003` and `docs/adr/0004`.*
+
 Genuinely useful, one tap from grocery list to a real Kroger order.
 It is a distinct project because it needs the `authorization_code` flow, a real Kroger account login, a registered redirect URI, and an HTTPS callback.
 The Tailscale hostname makes the callback feasible, but it is a second auth mode with its own storage and failure modes.
+
+All of that held.
+What the estimate missed is that "one tap" was the wrong target: the Cart API cannot be read back or emptied, so the flow is deliberately two steps, with a review of the exact products and quantities in between.
 
 ## 6. Other ideas worth considering
 

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
@@ -160,8 +160,19 @@ class PantryItemOut(BaseModel):
 
 
 class GroceryRecipeUse(BaseModel):
+    """One recipe's call for an ingredient a grocery line stands for.
+
+    `ingredient_id` names the row in that recipe, not the merged line: a
+    grocery item is several recipes' ingredients aggregated by canonical name,
+    and only the id says which of them this use was. It is what lets the app
+    open the recipe on the ingredient the shopper was reading, since the
+    displayed grocery name is a pick among the variants and need not match any
+    recipe's own wording.
+    """
+
     recipe_id: int
     recipe_title: str
+    ingredient_id: int
     quantity: float | None
     unit: str | None
 
@@ -253,6 +264,100 @@ class GroceryList(BaseModel):
 class GroceryToggle(BaseModel):
     key: str
     checked: bool
+
+
+# How the order is to be collected. Kroger's own two values, sent per item.
+Modality = Literal["PICKUP", "DELIVERY"]
+
+
+class CartStatus(BaseModel):
+    """Whether a grocery list can be sent to a real Kroger cart.
+
+    Three states again, and the client needs all three. `configured` false
+    means the app was not set up for it - credentials, or the redirect URI the
+    sign-in needs - and there is nothing to offer. Configured but not
+    `connected` means nobody has signed in yet, which is the state a button
+    can fix. Both true is the working state.
+
+    `last_sent_at` is not decoration either. The Cart API cannot be read back
+    and nothing can be removed from it, so sending twice orders twice, and the
+    only thing standing between the shopper and that is knowing it already
+    went.
+    """
+
+    configured: bool
+    connected: bool
+    connected_at: datetime | None = None
+    last_sent_at: datetime | None = None
+
+
+class CartLine(BaseModel):
+    """One line as it would be ordered.
+
+    Carries what the shopper needs to check it before it is sent: their own
+    word for the ingredient, Kroger's for the product, and how many. The
+    quantity is worked out from the week's meals and is not always one.
+    """
+
+    key: str
+    name: str
+    upc: str
+    description: str
+    size: str
+    quantity: int
+
+
+class CartPlan(BaseModel):
+    """What sending the list would order, and what it would leave behind.
+
+    `skipped` holds names rather than a count, because a number is not
+    something a shopper can do anything about and a list of names is.
+    """
+
+    lines: list[CartLine]
+    skipped: list[str]
+
+
+class CartRequest(BaseModel):
+    """Send the list for a date range, rather than a list of products.
+
+    The server rebuilds the list and re-picks the products, so what is ordered
+    is what the app itself would have priced. Taking UPCs and quantities from
+    the client would make the cart something the page could be persuaded to
+    fill with anything.
+    """
+
+    start: date
+    end: date
+    modality: Modality = "PICKUP"
+
+    @model_validator(mode="after")
+    def _range_runs_forwards(self) -> "CartRequest":
+        # Checked here rather than in the route so it cannot end up behind
+        # another precondition. A malformed request is a malformed request
+        # whether or not an account happens to be connected.
+        if self.end < self.start:
+            raise ValueError("end must be on or after start")
+        return self
+
+
+class CartResult(BaseModel):
+    """What actually went to Kroger.
+
+    `sent_at` is absent when nothing did. A time stamped on a send of nothing
+    would make the page warn that a list is already in the cart when none is,
+    and that warning is the only guard against ordering twice.
+    """
+
+    added: int
+    skipped: list[str]
+    sent_at: datetime | None = None
+
+
+class CartSignIn(BaseModel):
+    """Where to send the browser to grant cart access."""
+
+    url: str
 
 
 class ImportRequest(BaseModel):

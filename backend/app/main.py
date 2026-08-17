@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import IMAGES_DIR
 from .db import engine
 from .migrations import run_migrations
-from .routes import grocery, import_recipe, meal_plan, pantry, pricing, recipes
+from .routes import cart, grocery, import_recipe, meal_plan, pantry, pricing, recipes
 
 # Uvicorn only installs handlers on its own loggers, so without this the app's
 # own records - including what the migration step did - go nowhere.
@@ -33,6 +33,7 @@ api.include_router(pantry.router)
 api.include_router(grocery.router)
 api.include_router(import_recipe.router)
 api.include_router(pricing.router)
+api.include_router(cart.router)
 
 
 @api.get("/health")

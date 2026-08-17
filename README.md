@@ -20,6 +20,8 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   Each line on the list carries a price and the product it came from, with a total that says how much of the list it actually covers - "est. $84.39, 26 of 26 priced" - because a total that quietly drops what it could not match reads exactly like a complete one.
   Items on offer show the saving, and a folded panel lists the things you cook with that are discounted this week.
   Tap any price to see the alternatives and pick a different product; a hand-picked choice is never overwritten.
+* Send the list to a real Kroger cart, once you connect your Kroger account.
+  You see exactly what will be ordered first - products and quantities both - because Kroger's cart cannot be read back or emptied by this app, so nothing goes without being reviewed.
 
 ## Architecture
 
@@ -67,6 +69,34 @@ A few things worth knowing about the numbers:
 * Recipes measure by volume and shops sell by weight, so `backend/app/services/kroger/density.py` holds a hand-curated gram-per-cup table.
   An ingredient not in it still gets a price; it just cannot be size-matched to a package.
 * The Products API allows 10,000 calls a day and Locations 1,600, which is ample: product matches are pinned once and re-priced in batches of up to 50, so a whole list costs one call.
+
+## Sending the list to a Kroger cart
+
+Optional again, and separate from pricing.
+Prices are read with the server's own API key; a cart belongs to a person, so ordering needs you to sign in to Kroger once and allow it.
+
+Two things have to line up, and Kroger compares them character for character.
+
+1. Register a redirect URI on your app at [developer.kroger.com](https://developer.kroger.com).
+   It is this app's callback path on the address you actually reach it at - `https://recipes.<tailnet>.ts.net/api/cart/callback` in production, or `http://localhost:8085/api/cart/callback` for the dev stack.
+2. Set the same value as `KROGER_REDIRECT_URI`, then restart.
+
+Then open **Settings** and connect your Kroger account.
+You will be handed to Kroger's own sign-in and returned here afterwards.
+Nothing is stored but the token Kroger issues, and **Disconnect** forgets it; the grant itself is on file at Kroger, and only you can withdraw it from your Kroger account.
+
+With that done, the grocery list grows a **Send to cart** button.
+It opens a review first, and that is deliberate: `PUT /v1/cart/add` is the whole of Kroger's Cart API.
+
+* Nothing can be read back, so the app never claims to know what is in your cart - it links you to it.
+* Nothing can be removed, so sending twice orders twice.
+  The page says when a list last went, and says plainly that sending again adds to that cart rather than replacing it.
+* Quantities are worked out from the week's meals and are not always one.
+  Twelve pounds of flour against a five pound bag is three bags, which is right and is also worth seeing before it is bought.
+* Ticked-off lines are left out, and anything with no matched product is named rather than counted, so you know what to buy the usual way.
+
+Items land in whatever cart your Kroger account is pointed at, which is not necessarily the store this app prices against - the two are chosen in different places.
+Check the cart on Kroger before you pick a time.
 
 ## Local development
 
@@ -116,3 +146,8 @@ The home server deploys them with the stack in the sister repo: `home-server/sta
 
 `KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET` have to reach the backend service in that stack for pricing to appear in production.
 Absent, the deploy is healthy and pricing is simply switched off, which is the same state the app shipped in before it existed - so a missing key is a quiet outcome rather than a loud one, and worth checking for deliberately.
+
+`KROGER_REDIRECT_URI` is the third, and only sending a list to a Kroger cart needs it.
+In production it is `https://recipes.<tailnet>.ts.net/api/cart/callback`, and the same string has to be registered on the Kroger app.
+It cannot be derived from the request: nginx and TSDProxy both sit in front of the backend, so the host it sees is not the host Kroger was told about.
+Absent, the sign-in is switched off and pricing carries on as usual - quiet in the same way, and worth the same deliberate check.

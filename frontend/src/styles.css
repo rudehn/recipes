@@ -715,6 +715,36 @@ input:focus, select:focus, textarea:focus {
 
 .ingredient-list li:last-child { border-bottom: none; }
 
+/* The ingredient a grocery line was followed here for. Tinted and marked down
+   the edge rather than recoloured, so it is findable at a glance in a long list
+   while still reading as an ingredient like the rest. The negative margin pays
+   the padding back, so the amounts stay in one column. */
+.ingredient-list li.highlighted {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-radius: var(--radius-sm);
+  padding-left: var(--space-10);
+  margin-left: calc(-1 * var(--space-10));
+  /* Clear of the sticky topbar - 73px at its tallest - plus room to breathe.
+     RecipeDetailPage reads this back to decide whether a row needs scrolling to
+     at all, so it is the one place the height that hides the top of the page is
+     written down. Not a spacing token for the same reason the checkbox above is
+     not one: it is one thing's measurement, not a rhythm the app shares. */
+  scroll-margin-top: 88px;
+}
+
+/* The tinted pill is its own edge, so the dashed rules that would run into it
+   are dropped - the row's own, and the one above it. Browsers without :has keep
+   that upper line, which is the same list with one faint rule more. */
+.ingredient-list li.highlighted,
+.ingredient-list li:has(+ li.highlighted) {
+  border-bottom-color: transparent;
+}
+
+/* Focused only because the app moved the cook here, never by tabbing. The
+   highlight is already the marker; a ring on top of it would be noise. */
+.ingredient-list li.highlighted:focus { outline: none; }
+
 .ingredient-list .qty {
   font-weight: var(--weight-bold);
   color: var(--accent-ink);
@@ -1252,6 +1282,9 @@ body.has-install-hint .page {
 }
 
 .grocery-item {
+  /* The checkbox's own size, which the recipe line under the name is indented
+     by so it starts where the name does. */
+  --check-size: 19px;
   display: flex;
   align-items: flex-start;
   gap: var(--space-12);
@@ -1306,13 +1339,12 @@ body.has-install-hint .page {
 
 .grocery-entry .grocery-item { margin-bottom: 0; }
 
-/* Takes the row's spare width, so the checkbox and name stay one target and
-   the price sits at the far end. */
+/* The checkbox and the name, one target. Fills .item-text, so the price sits at
+   the far end of the row. */
 .grocery-check {
   display: flex;
   align-items: flex-start;
   gap: var(--space-12);
-  flex: 1;
   min-width: 0;
   cursor: pointer;
 }
@@ -1399,6 +1431,126 @@ body.has-install-hint .page {
 
 .alternative.skip { color: var(--muted); font-size: var(--text-sm); }
 
+/* ---------------------------------------------------- sending to Kroger --- */
+
+/* The offer to connect an account, for a list that cannot be ordered yet.
+   A single quiet line: it is an invitation, and it sits above a list someone
+   came here to read. */
+.cart-invite {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-10);
+  margin-bottom: var(--space-16);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.cart-section {
+  margin-bottom: var(--space-24);
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+
+.cart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-16);
+  flex-wrap: wrap;
+}
+
+.cart-lede { min-width: 0; }
+
+.cart-lede h2 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+}
+
+/* The note under the heading closes up against it; the standalone version
+   keeps its own gap. */
+.cart-lede .section-note { margin: var(--space-4) 0 0; }
+
+.cart-review {
+  margin-top: var(--space-16);
+  padding-top: var(--space-16);
+  border-top: 1px solid var(--line-soft);
+}
+
+.cart-lines {
+  list-style: none;
+  margin: 0 0 var(--space-12);
+  padding: 0;
+}
+
+.cart-lines li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-10);
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.cart-lines li:first-child { border-top: none; }
+
+/* Fixed width so the quantities line up as a column. They are the number
+   worth checking here - three bags of flour is right and is also worth
+   noticing - and a ragged left edge makes them something to hunt for. */
+.cart-lines .quantity {
+  flex: none;
+  min-width: 2.5ch;
+  text-align: right;
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-lines .item-name { flex: none; font-weight: var(--weight-semibold); }
+
+/* Kroger's own wording for what will actually be bought. Takes the spare
+   width and wraps: it is the half of the row that says whether the match is
+   right, so clipping it defeats the review. */
+.cart-lines .product {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.cart-send {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-10) var(--space-16);
+}
+
+.cart-send label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.cart-connection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cart-connection .connected {
+  margin: 0;
+  font-weight: var(--weight-semibold);
+}
+
+.cart-connection .page-note { margin: 0; }
+
 .offer {
   display: flex;
   align-items: flex-start;
@@ -1458,9 +1610,11 @@ body.has-install-hint .page {
 .grocery-item.stocked .btn { flex: none; }
 
 .grocery-item input[type="checkbox"] {
-  width: 19px;
-  height: 19px;
-  margin-top: var(--space-2);
+  width: var(--check-size);
+  height: var(--check-size);
+  /* The browser's own side margins zeroed, so the box is exactly --check-size
+     and the recipe line under the name can be indented past it to the pixel. */
+  margin: var(--space-2) 0 0;
   accent-color: var(--green);
   flex: none;
 }
@@ -1476,6 +1630,24 @@ body.has-install-hint .page {
 .grocery-item .uses {
   color: var(--muted);
   font-size: var(--text-sm);
+}
+
+/* Indented past the checkbox, so it lines up under the name rather than under
+   the tick. Only where there is a checkbox: a stocked row has none. */
+.grocery-check + .uses { padding-left: calc(var(--check-size) + var(--space-12)); }
+
+/* Underlined, because "for Curry, Tacos" is a sentence and colour alone would
+   not say which words in it can be followed. */
+.grocery-item .use-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+
+.grocery-item .use-link:hover {
+  color: var(--accent-ink);
+  text-decoration-color: currentColor;
 }
 
 .grocery-item .pantry-tag {

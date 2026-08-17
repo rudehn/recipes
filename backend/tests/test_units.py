@@ -16,6 +16,7 @@ from app.services.kroger.units import (
     as_weight,
     cost_to_cover,
     measure,
+    packages_to_cover,
     parse_size,
     to_cents,
 )
@@ -147,6 +148,31 @@ def test_a_rate_still_scales_up_past_its_unit():
     three_pounds = measure(3, "lb")
 
     assert cost_to_cover(4.49, pound, "WEIGHT", three_pounds) == pytest.approx(13.47)
+
+
+@pytest.mark.parametrize(
+    ("need", "size", "expected"),
+    [
+        # Twelve pounds against a five pound bag is three bags.
+        (measure(12, "lb"), parse_size("5 lb"), 3),
+        (measure(5, "lb"), parse_size("5 lb"), 1),
+        # Less than a package is still a package.
+        (measure(2, "cup"), parse_size("5 lb"), 1),
+        # Counts of different things. Six cloves against a "1 ct" bulb is one
+        # bulb; multiplying would buy six.
+        (measure(6, None), parse_size("1 ct"), 1),
+        # A weight-sold rate rounds up where the price does not: there is no
+        # way to order 1.4 lb through this API.
+        (measure(1.4, "lb"), parse_size("1 lb"), 2),
+        # Nothing readable to divide by.
+        (None, parse_size("5 lb"), 1),
+        (measure(12, "lb"), parse_size("3 ct / 1 lb"), 1),
+    ],
+)
+def test_how_many_packages_cover_the_week(need, size, expected):
+    """The counting half of `cost_to_cover`, on the same conditions: the
+    quantity ordered has to be the quantity that was priced."""
+    assert packages_to_cover(size, need) == expected
 
 
 @pytest.mark.parametrize(
