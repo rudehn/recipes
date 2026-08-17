@@ -151,10 +151,7 @@ class IngredientProductMatch(Base):
 
     Deliberately minimal. This records a *preference*, not a copy of Kroger's
     catalog: the description, size and price are theirs, are needed only for
-    display, and come back with the price on the same call. The acceptable-use
-    policy forbids gathering response data into a database, and the line
-    between a stored preference and a stored catalog is only ever how many
-    columns are here.
+    display, and come back with the price on the same call. 
 
     A null `product_id` is a real answer rather than a missing row: it records
     that a search ran and found nothing confident, so the search is not paid

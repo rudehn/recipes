@@ -27,9 +27,6 @@ MAX_LIMIT = 50
 @dataclass(frozen=True)
 class Product:
     """A product at one store, carried as Kroger describes it.
-
-    The acceptable-use policy requires product data be displayed exactly as
-    returned, so the description is never shortened or retitled for display.
     """
 
     product_id: str

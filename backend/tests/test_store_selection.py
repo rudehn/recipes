@@ -4,7 +4,7 @@ The two things worth proving are that unshoppable locations never reach the
 picker, and that what gets stored is Kroger's description of the store rather
 than whatever the client sent back. Both are quiet failures otherwise: the
 first surfaces much later as a store that prices nothing, the second as
-location data we altered, which the acceptable-use policy forbids.
+location data we altered.
 """
 
 import httpx
@@ -95,8 +95,7 @@ async def test_locations_with_no_departments_are_left_out(client, fake_locations
 
 
 async def test_store_names_are_carried_through_unaltered(client, fake_locations):
-    """The acceptable-use policy requires location data be displayed exactly
-    as returned, so the doubled dash and the banner prefix stay."""
+    """The data is displayed exactly as returned, so the doubled dash and the banner prefix stay."""
     fake_locations.search_result = [store("01400811", "Kroger Marketplace - Beavercreek")]
 
     body = (await client.get("/api/pricing/stores?zip=45431")).json()

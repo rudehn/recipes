@@ -14,8 +14,7 @@ many banners, so Harris Teeter and the rest are legitimate results, but the
 response also carries internal locations - "Dayton Spoke", "Unused Spoke" -
 which have no departments and can price nothing. They are filtered on the
 empty department list rather than on their names: it is structural rather
-than lexical, and the acceptable-use policy allows omitting results while
-forbidding any rewrite of the names themselves.
+than lexical.
 """
 
 from dataclasses import dataclass
@@ -34,9 +33,6 @@ SEARCH_LIMIT = 15
 @dataclass(frozen=True)
 class Store:
     """A store as Kroger describes it, carried verbatim.
-
-    The acceptable-use policy requires location data be displayed exactly as
-    returned, so nothing here is cleaned up, abbreviated, or title-cased.
     """
 
     location_id: str

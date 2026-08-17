@@ -24,24 +24,6 @@ Two sections below no longer describe what is being built, and are kept because 
   Without it, only the cross-recipe reading is available.
   See #13.
 
-## The Acceptable Use Policy has now been read
-
-The full text is in the appendix, since it cannot be reached by any non-browser client.
-Findings are recorded on #2.
-
-The decisive point is that **the Products section grants no caching permission at all**.
-The Cart section explicitly allows temporary caching and requires that data be terminated when the user closes the application.
-Products and Locations get no equivalent allowance, and both prohibit systematically gathering response data to create a database.
-
-The no-caching decision above, taken for simplicity, is therefore also the compliant one.
-Three further changes follow, and they are reflected in the issues rather than rewritten into the sections below:
-
-- The match table is minimized to a user preference rather than a copy of Kroger's product data, and matches resolve lazily.
-  The backfill proposed in section 4 is **retracted**.
-- Price history is prohibited outright, so the "cheaper than usual" reading of below-average pricing and the price trend idea in section 6 are both off the table.
-- Derived figures such as cost per recipe must be presented as our own estimates, with Kroger's actual price shown verbatim alongside.
-- Comparing prices against other retailers is prohibited, which closes one of the open questions in section 7.
-
 ## 1. What the API actually gives us
 
 Verified against the Kroger Public API reference and the source of the `kroger-api` client library.
@@ -330,10 +312,7 @@ A week's meal plan touches roughly 50 distinct canonical ingredients, plus aroun
 - Daily price refresh of 80 products, batched at 20 per call: **4 calls per day.**
 - The same refresh completely unbatched: 80 calls per day.
 - Match resolution: one search per newly seen ingredient, only on first sight.
-- ~~One-time backfill of a 200 recipe box: perhaps 400 distinct canonical keys after merging, so roughly 400 search calls.~~
-  **Retracted.**
-  It fits the rate limit comfortably, but a batch job walking the recipe box to resolve matches is close to what the Acceptable Use Policy describes as systematically gathering response data.
-  Matches resolve lazily, when a user opens a list containing an unmatched ingredient.
+
 
 Against 10,000 per day, this is comfortable with a wide margin.
 
@@ -403,17 +382,8 @@ The Tailscale hostname makes the callback feasible, but it is a second auth mode
   This may be the best value-per-effort item in the entire document.
 - **Unit price comparison** between package sizes of the same product, using `regularPerUnitEstimate`.
 - **Stock awareness**, using `inventory.stockLevel` to warn before a trip.
-- ~~**Price trend on a staple**, free once history accumulates.~~
-  **Prohibited.**
-  It requires accumulating prices over time, which the Acceptable Use Policy rules out.
 
 ## 7. Open questions and gates
-
-**Resolved:**
-
-- ~~The Acceptable Use Policy has not been read.~~
-  Read, recorded in the appendix, findings on #2.
-  It did restrict exactly what was feared, and the consequences are summarised near the top of this document.
 
 **Confirmed against the live API while verifying #3:**
 
@@ -468,42 +438,3 @@ The Tailscale hostname makes the callback feasible, but it is a second auth mode
   The match table is defensible as "this ingredient means this product", and indefensible as a copy of Kroger's catalog.
   The difference is only how many fields it holds and how they are refreshed, so it is easy to drift across the line during implementation without noticing.
   Keep the table minimal.
-
-## Appendix: Acceptable Use of Public APIs
-
-Recorded verbatim, because the developer portal cannot be read by any non-browser client and this text is otherwise unreachable.
-
-> **Acceptable Use of Public APIs**
->
-> This document covers what is considered acceptable and unacceptable use of our Public API.
->
-> **Identity API**
-> The Identity API provides clients access to the profile ID of an authenticated customer.
-> *Acceptable:* Accessing and displaying the customer's profile ID.
-> *Prohibited:* Using the profile ID to map or store data associated with a customer.
-> Sharing the profile ID with anyone other than the authenticated customer associated with the ID.
->
-> **Cart API**
-> The Cart API provides clients access to add items to an authenticated customer's cart.
-> *Acceptable:* Adding an item to a customer's cart.
-> Increasing the quantity of an item in a customer's cart.
-> Temporarily storing or caching data for displaying items added to a cart. All data should be terminated when a user closes the application, site, or browser.
-> *Prohibited:* Adding items to a customer's cart without their knowledge. Meaning, you should only add items to a customer's cart that they are explicitly requesting within your experience.
-> Tracking, sharing, or storing data derived from items added to a customer's cart.
->
-> **Products API**
-> The Products API allows clients to search the Kroger product catalog.
-> *Acceptable:* Displaying product data exactly as it is returned from the server. For example, don't shorten or alter product descriptions.
-> Omitting or filtering out parts of product response data that are not relevant to your use case.
-> *Prohibited:* Comparing products/prices among other retailers.
-> Tracking, sharing, or storing data derived from customer searches or frequently viewed products.
-> Manipulating product data in any way. Meaning you cannot change values such as the name, description, or price.
-> Systematically scraping or gathering response data to create a database. This includes using bots or crawlers to retrieve data from our APIs.
->
-> **Locations API**
-> The Locations API provides clients access to all locations, chains, and departments owned by The Kroger Co.
-> *Acceptable:* Displaying store, department, and chain data exactly as it is returned from the server. For example, don't shorten or alter the names of locations or departments.
-> Omitting or filtering out parts of location, department, or chain response data that are not relevant to your use case.
-> *Prohibited:* Tracking, sharing, or storing data about the location of a customer.
-> Manipulating location, department, or chain data in any way. Meaning you cannot change values such as the name, address, or hours.
-> Systematically scraping or gathering response data to create a database. This includes using bots or crawlers to retrieve data from our APIs.
