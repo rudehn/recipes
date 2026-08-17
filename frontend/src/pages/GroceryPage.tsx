@@ -1,7 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type GroceryItem, type GroceryList, type GroceryPricing } from "../api";
+import {
+  api,
+  type GroceryItem,
+  type GroceryList,
+  type GroceryPricing,
+  type SaleItem,
+} from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, fromISODate, startOfWeek, toISODate } from "../dates";
@@ -201,6 +207,8 @@ export default function GroceryPage() {
 
       {list?.pricing && <PricingSummary pricing={list.pricing} />}
 
+      {canPrice && <Offers />}
+
       {!error && empty && (
         <EmptyState glyph="🧺" title="Nothing to buy">
           <p>
@@ -285,8 +293,44 @@ function PricingSummary({ pricing }: { pricing: GroceryPricing }) {
         {pricing.priced} of {pricing.total_lines} priced
         {missing > 0 && ` · ${missing} not matched`}
       </span>
+      {pricing.saved > 0 && (
+        <span className="saved">{money(pricing.saved)} off with offers</span>
+      )}
       <span className="store">{pricing.store.name}</span>
     </div>
+  );
+}
+
+/**
+ * Ingredients you cook with that are discounted this week.
+ *
+ * Folded away, because the answer is usually "nothing much" and it must not
+ * push the list itself down the page. Built from products already chosen, so
+ * it costs one batched lookup and never a search.
+ */
+function Offers() {
+  const { data } = useLoad(useCallback(() => api.sales(), []));
+  if (!data || data.length === 0) return null;
+  return (
+    <details className="grocery-section offers-section">
+      <summary>
+        On sale <span className="count">{itemCount(data.length)}</span>
+      </summary>
+      {data.map((sale: SaleItem) => (
+        <div key={sale.key} className="offer">
+          <span className="name">{sale.name}</span>
+          <span className="item-price on-sale">
+            <span className="amount">
+              <s>{money(sale.price.regular)}</s> {money(sale.price.promo ?? sale.price.regular)}
+            </span>
+            <span className="product">
+              {sale.price.description}
+              {sale.price.size && ` · ${sale.price.size}`}
+            </span>
+          </span>
+        </div>
+      ))}
+    </details>
   );
 }
 

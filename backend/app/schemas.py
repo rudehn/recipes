@@ -183,10 +183,16 @@ class ItemPrice(BaseModel):
     # What covering the week's requirement costs, which is ours rather than
     # Kroger's: a weight-sold item's price is a rate, so three pounds of it is
     # three times the figure on the shelf, and a package smaller than the
-    # requirement has to be bought more than once. Kroger's own price stays in
-    # `regular` untouched - the acceptable-use policy forbids altering it, and
-    # this is an estimate standing beside it rather than a correction to it.
+    # requirement has to be bought more than once.
     estimated: float | None = None
+
+
+class SaleItem(BaseModel):
+    """An ingredient you cook with whose product is discounted this week."""
+
+    key: str
+    name: str
+    price: ItemPrice
 
 
 class MatchSelection(BaseModel):
@@ -211,6 +217,9 @@ class GroceryPricing(BaseModel):
 
     store: StoreOut
     total: float
+    # What the same trip would have cost without this week's offers. Zero is
+    # the ordinary answer, so the client shows it only when there is one.
+    saved: float = 0.0
     priced: int
     total_lines: int
 

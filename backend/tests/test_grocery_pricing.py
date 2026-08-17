@@ -210,3 +210,53 @@ async def test_a_second_load_does_not_search_again(client, catalog):
     # Two searches plus one batch on the first load; one batch on the second.
     assert after_first == 3
     assert catalog.calls - after_first == 1
+
+
+async def test_the_total_says_what_the_offers_took_off_it(client, catalog):
+    """Sugar is discounted from $3.99 to $2.99, so the trip saved a pound."""
+    await seed(["flour", "sugar"])
+
+    body = await fetch(client)
+
+    assert body["pricing"]["total"] == round(2.59 + 2.99, 2)
+    assert body["pricing"]["saved"] == 1.00
+
+
+async def test_a_trip_with_no_offers_saved_nothing(client, catalog):
+    await seed(["flour"])
+
+    assert (await fetch(client))["pricing"]["saved"] == 0.0
+
+
+async def test_offers_are_listed_for_things_already_matched(client, catalog):
+    """Built from matches that exist only because a list was opened. Nothing
+    is searched for, so this notices an offer rather than gathering a
+    catalogue."""
+    await seed(["flour", "sugar"])
+    await fetch(client)
+
+    resp = await client.get("/api/pricing/sales")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    # Flour is matched but not discounted, so only sugar is an offer.
+    assert [s["name"] for s in body] == ["sugar"]
+    assert body[0]["price"]["promo"] == 2.99
+    assert body[0]["price"]["regular"] == 3.99
+
+
+async def test_offers_are_empty_before_anything_has_been_matched(client, catalog):
+    """No searching happens here, so with nothing matched there is nothing to
+    re-price - not an error, just an empty shelf."""
+    await seed(["flour"], store=True)
+
+    assert (await client.get("/api/pricing/sales")).json() == []
+
+
+async def test_offers_are_empty_rather_than_an_error_without_a_store(client, catalog):
+    await seed(["flour"], store=False)
+
+    resp = await client.get("/api/pricing/sales")
+
+    assert resp.status_code == 200
+    assert resp.json() == []

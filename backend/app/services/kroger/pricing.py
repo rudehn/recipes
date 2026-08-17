@@ -23,10 +23,13 @@ is only discovered at the till.
 
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...schemas import GroceryItem, GroceryList, GroceryPricing, ItemPrice
+from ...models import Ingredient, IngredientProductMatch, PantryItem
+from ...schemas import GroceryItem, GroceryList, GroceryPricing, ItemPrice, SaleItem
 from .. import settings as settings_service
+from ..canonical import best_display, canonical_key
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -68,6 +71,70 @@ def _needed(line: GroceryItem) -> Measure | None:
         return None
     dimension, base = next(iter(totals.items()))
     return Measure(dimension, base)
+
+
+async def on_sale(session: AsyncSession) -> list[SaleItem]:
+    """Things you cook with that are discounted this week.
+
+    Built only from ingredients already matched to a product, and those rows
+    exist only because someone opened a list containing them. Nothing is
+    searched for here: this re-prices choices already made, which is the
+    difference between noticing an offer and gathering a catalogue.
+
+    The ingredient's own name comes from the recipes and pantry that use it,
+    through the same `best_display` the grocery list uses, so a sale reads as
+    "flour" rather than as a product code.
+    """
+    store = await settings_service.selected_store(session)
+    if not enabled() or store is None:
+        return []
+
+    rows = (
+        await session.execute(
+            select(IngredientProductMatch).where(
+                IngredientProductMatch.location_id == store.location_id,
+                IngredientProductMatch.product_id.is_not(None),
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return []
+
+    try:
+        found = await products.by_ids(
+            sorted({row.product_id for row in rows if row.product_id}), store.location_id
+        )
+    except KrogerError as exc:
+        log.warning("Could not check for offers: %s", exc)
+        return []
+
+    names = await _ingredient_names(session)
+    sales: list[SaleItem] = []
+    for row in rows:
+        product = found.get(row.product_id or "")
+        if product is None or not product.on_sale:
+            continue
+        sales.append(
+            SaleItem(
+                key=row.canonical_key,
+                name=names.get(row.canonical_key) or row.canonical_key.replace("-", " "),
+                price=as_item_price(product),
+            )
+        )
+    sales.sort(key=lambda s: s.name)
+    return sales
+
+
+async def _ingredient_names(session: AsyncSession) -> dict[str, str]:
+    """A readable name per canonical key, from the things that use it."""
+    variants: dict[str, list[str]] = {}
+    ingredients = (await session.execute(select(Ingredient.name))).scalars().all()
+    pantry = (await session.execute(select(PantryItem.name))).scalars().all()
+    for name in [*ingredients, *pantry]:
+        key = canonical_key(name)
+        if key:
+            variants.setdefault(key, []).append(name)
+    return {key: best_display(names) for key, names in variants.items()}
 
 
 def _priceable(grocery_list: GroceryList) -> list[GroceryItem]:
@@ -114,6 +181,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         return grocery_list
 
     total = 0.0
+    saved = 0.0
     priced = 0
     for line in lines:
         product = found.get(matched.get(line.key, ""))
@@ -126,6 +194,14 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         line.price.estimated = round(cost, 2)
         total += cost
         priced += 1
+        if product.on_sale and product.regular is not None:
+            # What the same trip would have cost at the regular price, scaled
+            # the same way, so a saving on a weight-sold item is not quoted
+            # per pound while its cost is quoted for three of them.
+            was = cost_to_cover(
+                product.regular, parse_size(product.size), product.sold_by, _needed(line)
+            )
+            saved += was - cost
 
     if not priced:
         # Nothing priced reads the same either way on screen, but "$0.00, 0 of
@@ -138,6 +214,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
     grocery_list.pricing = GroceryPricing(
         store=store,
         total=round(total, 2),
+        saved=round(saved, 2),
         priced=priced,
         total_lines=len(lines),
     )

@@ -15,7 +15,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..schemas import ItemPrice, MatchSelection, PricingStatus, StoreOut, StoreSelection
+from ..schemas import (
+    ItemPrice,
+    MatchSelection,
+    PricingStatus,
+    SaleItem,
+    StoreOut,
+    StoreSelection,
+)
 from ..services import settings as settings_service
 from ..services.kroger import client as kroger
 from ..services.kroger import locations, matching, pricing, products
@@ -63,8 +70,7 @@ async def select_store(
 
     The store is looked up again here rather than taken from the request, so
     the name and address that get stored are Kroger's own words and cannot be
-    edited in transit. The acceptable-use policy requires location data be
-    displayed as returned, and this is where that is enforced.
+    edited in transit.
     """
     _require_configured()
     try:
@@ -108,6 +114,18 @@ async def alternatives(
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
     priced = [p for p in matching.ranked(found, key) if p.regular is not None]
     return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
+
+
+@router.get("/sales", response_model=list[SaleItem])
+async def sales(session: AsyncSession = Depends(get_session)):
+    """Ingredients you cook with that are on offer.
+
+    Re-prices products already chosen rather than searching for anything, so
+    it costs one batched call and stays clear of gathering a catalogue.
+    Returns an empty list rather than an error when pricing is off or no
+    store is set, since an offers panel with nothing in it is a normal sight.
+    """
+    return await pricing.on_sale(session)
 
 
 @router.put("/match", status_code=204)

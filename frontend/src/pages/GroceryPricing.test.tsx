@@ -112,7 +112,7 @@ describe("grocery list pricing", () => {
     withList(
       groceryList({
         items: [flour, sugar, saffron],
-        pricing: { store: STORE, total: 5.58, priced: 2, total_lines: 3 },
+        pricing: { store: STORE, total: 5.58, saved: 0, priced: 2, total_lines: 3 },
       }),
     );
 
@@ -125,7 +125,7 @@ describe("grocery list pricing", () => {
   });
 
   it("puts the price and Kroger's own product name on each line", async () => {
-    withList(groceryList({ items: [flour], pricing: { store: STORE, total: 2.59, priced: 1, total_lines: 1 } }));
+    withList(groceryList({ items: [flour], pricing: { store: STORE, total: 2.59, saved: 0, priced: 1, total_lines: 1 } }));
 
     renderApp(WEEK);
 
@@ -138,7 +138,7 @@ describe("grocery list pricing", () => {
   });
 
   it("shows the sale price against the regular one", async () => {
-    withList(groceryList({ items: [sugar], pricing: { store: STORE, total: 2.99, priced: 1, total_lines: 1 } }));
+    withList(groceryList({ items: [sugar], pricing: { store: STORE, total: 2.99, saved: 0, priced: 1, total_lines: 1 } }));
 
     renderApp(WEEK);
 
@@ -172,7 +172,7 @@ describe("grocery list pricing", () => {
             },
           }),
         ],
-        pricing: { store: STORE, total: 13.47, priced: 1, total_lines: 1 },
+        pricing: { store: STORE, total: 13.47, saved: 0, priced: 1, total_lines: 1 },
       }),
     );
 
@@ -189,7 +189,7 @@ describe("grocery list pricing", () => {
     withList(
       groceryList({
         items: [saffron],
-        pricing: { store: STORE, total: 2.59, priced: 0, total_lines: 1 },
+        pricing: { store: STORE, total: 2.59, saved: 0, priced: 0, total_lines: 1 },
       }),
     );
 
@@ -204,7 +204,7 @@ describe("grocery list pricing", () => {
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
-        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+        pricing: { store: STORE, total: 1.19, saved: 0, priced: 1, total_lines: 1 },
       }),
       "GET /api/pricing/alternatives": ALTERNATIVES,
       "PUT /api/pricing/match": undefined,
@@ -235,7 +235,7 @@ describe("grocery list pricing", () => {
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
-        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+        pricing: { store: STORE, total: 1.19, saved: 0, priced: 1, total_lines: 1 },
       }),
       "GET /api/pricing/alternatives": ALTERNATIVES,
     });
@@ -268,7 +268,7 @@ describe("grocery list pricing", () => {
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
-        pricing: { store: STORE, total: 1.19, priced: 1, total_lines: 1 },
+        pricing: { store: STORE, total: 1.19, saved: 0, priced: 1, total_lines: 1 },
       }),
       // The onion the row is actually priced at is not among these.
       "GET /api/pricing/alternatives": [ALTERNATIVES[1]],
@@ -291,7 +291,7 @@ describe("grocery list pricing", () => {
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [saffron],
-        pricing: { store: STORE, total: 2.59, priced: 0, total_lines: 1 },
+        pricing: { store: STORE, total: 2.59, saved: 0, priced: 0, total_lines: 1 },
       }),
       "GET /api/pricing/alternatives": ALTERNATIVES,
     });
@@ -312,7 +312,7 @@ describe("grocery list pricing", () => {
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [saffron],
-        pricing: { store: STORE, total: 2.59, priced: 0, total_lines: 1 },
+        pricing: { store: STORE, total: 2.59, saved: 0, priced: 0, total_lines: 1 },
       }),
       "GET /api/pricing/alternatives": ALTERNATIVES,
       "PUT /api/pricing/match": undefined,
@@ -351,5 +351,75 @@ describe("grocery list pricing", () => {
     expect(await screen.findByText("saffron")).toBeInTheDocument();
     expect(screen.queryByText(/est\. \$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/priced/)).not.toBeInTheDocument();
+  });
+});
+
+describe("offers", () => {
+  const SALE = [
+    {
+      key: "granulated-sugar",
+      name: "sugar",
+      price: {
+        product_id: "0002",
+        description: "Kroger® Granulated Sugar",
+        size: "4 lb",
+        regular: 3.99,
+        promo: 2.99,
+        aisle: "AISLE 18",
+        estimated: null,
+      },
+    },
+  ];
+
+  function withSales(sales: unknown) {
+    return mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [sugar],
+        pricing: { store: STORE, total: 2.99, saved: 1.0, priced: 1, total_lines: 1 },
+      }),
+      "GET /api/pricing/sales": sales,
+    });
+  }
+
+  it("says what the offers took off the total", async () => {
+    withSales([]);
+
+    renderApp(WEEK);
+
+    expect(await screen.findByText("$1.00 off with offers")).toBeInTheDocument();
+  });
+
+  it("lists what you cook with that is discounted", async () => {
+    withSales(SALE);
+
+    renderApp(WEEK);
+
+    const offers = (await screen.findByText("sugar", { selector: ".offer .name" })).closest(
+      ".offer",
+    )!;
+    expect(within(offers as HTMLElement).getByText(/Kroger® Granulated Sugar/)).toBeInTheDocument();
+    expect(within(offers as HTMLElement).getByText("$3.99").tagName).toBe("S");
+  });
+
+  it("stays out of the way when nothing is discounted", async () => {
+    withSales([]);
+
+    renderApp(WEEK);
+
+    await screen.findByText("est. $2.99");
+    expect(screen.queryByText(/^On sale/)).not.toBeInTheDocument();
+  });
+
+  it("is not asked for at all without a store", async () => {
+    const backend = mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: null },
+      "GET /api/grocery-list": groceryList({ items: [saffron], pricing: null }),
+    });
+
+    renderApp(WEEK);
+
+    await screen.findByText("saffron");
+    expect(backend.requestsTo("GET /api/pricing/sales")).toHaveLength(0);
   });
 });

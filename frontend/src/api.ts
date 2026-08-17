@@ -144,8 +144,17 @@ export interface ItemPrice {
 export interface GroceryPricing {
   store: Store;
   total: number;
+  /** What this week's offers took off the total. Usually zero. */
+  saved: number;
   priced: number;
   total_lines: number;
+}
+
+/** An ingredient you cook with whose product is discounted this week. */
+export interface SaleItem {
+  key: string;
+  name: string;
+  price: ItemPrice;
 }
 
 export interface GroceryItem {
@@ -316,6 +325,7 @@ export const api = {
     request<void>("/api/grocery-list/clear-checks", { method: "POST" }),
 
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
+  sales: () => request<SaleItem[]>("/api/pricing/sales"),
   matchAlternatives: (key: string) =>
     request<ItemPrice[]>(`/api/pricing/alternatives?key=${encodeURIComponent(key)}`),
   /** `product_id` null marks the line as one not to price. */

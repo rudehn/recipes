@@ -161,6 +161,9 @@
   /* ---------- Layering ---------- */
   --z-raised: 1;
   --z-topbar: 20;
+  /* Above the topbar, because on a short phone screen the two can meet, and
+     below the modal, because a dialog is the thing being answered. */
+  --z-hint: 30;
   --z-modal: 50;
 
   /* ---------- Content measure ---------- */
@@ -864,6 +867,73 @@ input:focus, select:focus, textarea:focus {
   flex-shrink: 0;
 }
 
+/* ---------- Install hint ---------- */
+
+/*
+ * The one-time "add this to your home screen" card. See InstallHint.tsx for
+ * why it has to ask rather than let the browser offer.
+ *
+ * Pinned to the bottom because that is where it is pointing: Safari's toolbar,
+ * and the share button in it, sit at the bottom of an iPhone screen. Being the
+ * only element in the app anchored to that edge, it is also the only one that
+ * needs the safe-area inset - without it the card sits under the home
+ * indicator, which is both unreadable and untappable.
+ */
+.install-hint {
+  position: fixed;
+  left: var(--space-12);
+  right: var(--space-12);
+  z-index: var(--z-hint);
+  bottom: calc(var(--space-12) + env(safe-area-inset-bottom, 0px));
+  margin-inline: auto;
+  max-width: var(--width-compact);
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+  padding: var(--space-12) var(--space-16);
+}
+
+/* Set by the component while the card is up, and only then: it buys the page
+   enough bottom margin to scroll its last row clear of a card that floats. */
+body.has-install-hint .page {
+  padding-bottom: calc(var(--space-64) + var(--space-32));
+}
+
+.install-hint-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-md);
+  color: var(--muted);
+  line-height: var(--leading-snug);
+}
+
+.install-hint-text strong {
+  font-weight: var(--weight-semibold);
+  color: var(--ink);
+}
+
+/* The menu item to go looking for, kept whole: a label broken across two lines
+   is harder to match against the one on screen. It is short enough to fit the
+   card's text column on its own at every phone width. */
+.install-hint-label {
+  white-space: nowrap;
+}
+
+/* Sits in a run of text, so it rides the line rather than the box: sized to
+   the type around it and nudged onto the baseline the words sit on. */
+.install-hint-glyph {
+  width: 1.05em;
+  height: 1.05em;
+  vertical-align: -0.2em;
+  color: var(--accent-ink);
+}
+
 /* ---------- Planner ---------- */
 
 .planner-controls {
@@ -1210,6 +1280,13 @@ input:focus, select:focus, textarea:focus {
 
 .pricing-summary .coverage { font-size: var(--text-sm); color: var(--muted); }
 
+/* Green, like the sale prices it is the sum of. */
+.pricing-summary .saved {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--green-ink);
+}
+
 .pricing-summary .store {
   margin-left: auto;
   font-size: var(--text-sm);
@@ -1306,6 +1383,17 @@ input:focus, select:focus, textarea:focus {
 }
 
 .alternative.skip { color: var(--muted); font-size: var(--text-sm); }
+
+.offer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-16);
+  padding: var(--space-10) var(--space-16);
+  border-top: 1px solid var(--line-soft);
+}
+
+.offer .name { font-weight: var(--weight-semibold); }
 
 /* Right-aligned and narrow, so the prices form a column the eye can add up
    rather than sitting wherever each name happens to end. */
