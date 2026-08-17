@@ -169,7 +169,6 @@
   /* ---------- Content measure ---------- */
   --width-page: 1120px;
   --width-prose: 760px;
-  --width-narrow: 640px;
   --width-compact: 560px;
 }
 
@@ -1168,7 +1167,11 @@ body.has-install-hint .page {
 /* ---------- Grocery list ---------- */
 
 .grocery-layout {
-  max-width: var(--width-narrow);
+  /* Wider than the other list pages on purpose: each row now carries a price
+     and the product it came from. At the 640px this used to sit at, the
+     product name was ellipsised away - exactly the part that explains the
+     number. That was this token's only use, so it went with it. */
+  max-width: var(--width-page);
 }
 
 .grocery-range {
@@ -1191,6 +1194,7 @@ body.has-install-hint .page {
 }
 
 .grocery-section h2 .count,
+.offers-section summary .count,
 .stocked-section summary .count {
   font-family: var(--font-body);
   font-size: var(--text-sm);
@@ -1199,6 +1203,7 @@ body.has-install-hint .page {
 }
 
 /* A <details>, so the summary has to carry the h2 look itself. */
+.offers-section summary,
 .stocked-section summary {
   font-family: var(--font-display);
   font-size: var(--text-xl);
@@ -1212,11 +1217,13 @@ body.has-install-hint .page {
   list-style: none;
 }
 
+.offers-section summary::-webkit-details-marker,
 .stocked-section summary::-webkit-details-marker { display: none; }
 
 /* Its own chevron, drawn after the count rather than in the default marker
    slot, so the heading starts on the same left edge as the sections above and
    below it instead of sitting indented from them. */
+.offers-section summary::after,
 .stocked-section summary::after {
   content: "";
   align-self: center;
@@ -1313,6 +1320,14 @@ body.has-install-hint .page {
 /* The price is the control: tapping it is how you disagree with the match. */
 .price-toggle {
   display: flex;
+  /* The button is the row's flex child, not the .item-price inside it, so
+     this is where the sizing has to go. Left to shrink, it collapsed to its
+     narrowest and wrapped a product name into a three-line ribbon with half
+     the row empty beside it. Neither grows nor shrinks: the name column takes
+     the slack, and the cap stops a long description crowding out the
+     ingredient it belongs to. */
+  flex: 0 0 auto;
+  max-width: 42%;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1403,8 +1418,7 @@ body.has-install-hint .page {
   align-items: flex-end;
   gap: var(--space-4);
   text-align: right;
-  flex: 0 0 auto;
-  max-width: 45%;
+  max-width: 100%;
 }
 
 .item-price .amount { font-weight: var(--weight-semibold); white-space: nowrap; }
@@ -1415,14 +1429,14 @@ body.has-install-hint .page {
    and this sits on --surface, like the other green text in the planner. */
 .item-price.on-sale .amount { color: var(--green-ink); }
 
-/* Kroger's own description, shown as returned: clipped for width rather than
-   reworded, with the full text on hover. */
+/* Kroger's own description, shown as returned. It wraps rather than being
+   clipped: it carries the shelf price and size for anything whose cost was
+   scaled, so ellipsising it hid the working behind the number - "$6.73" with
+   no sign that it came from $4.49 a pound. */
 .item-price .product {
   font-size: var(--text-xs);
   color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   max-width: 100%;
 }
 

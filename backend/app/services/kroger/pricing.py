@@ -33,7 +33,7 @@ from ..canonical import best_display, canonical_key
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
-from .units import Measure, cost_to_cover, measure, parse_size
+from .units import Measure, cost_to_cover, measure, parse_size, to_cents
 
 log = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             product.price, parse_size(product.size), product.sold_by, _needed(line)
         )
         line.price = as_item_price(product)
-        line.price.estimated = round(cost, 2)
+        line.price.estimated = to_cents(cost)
         total += cost
         priced += 1
         if product.on_sale and product.regular is not None:
@@ -213,8 +213,8 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
 
     grocery_list.pricing = GroceryPricing(
         store=store,
-        total=round(total, 2),
-        saved=round(saved, 2),
+        total=to_cents(total),
+        saved=to_cents(saved),
         priced=priced,
         total_lines=len(lines),
     )

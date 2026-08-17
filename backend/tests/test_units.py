@@ -17,6 +17,7 @@ from app.services.kroger.units import (
     cost_to_cover,
     measure,
     parse_size,
+    to_cents,
 )
 
 
@@ -146,3 +147,21 @@ def test_a_rate_still_scales_up_past_its_unit():
     three_pounds = measure(3, "lb")
 
     assert cost_to_cover(4.49, pound, "WEIGHT", three_pounds) == pytest.approx(13.47)
+
+
+@pytest.mark.parametrize(
+    ("amount", "expected"),
+    [
+        # 1.5 lb of chicken at $4.49 a pound. `round` answers 6.73, because
+        # the float under 6.735 is a hair below it.
+        (6.735, 6.74),
+        # What actually arrives: 1.5 lb of chicken at $4.49/lb, after the
+        # ratio behind it came out as 1.4999999999999998.
+        (6.734999999999999, 6.74),
+        (0.005, 0.01),
+        (2.345, 2.35),
+        (1.0, 1.0),
+    ],
+)
+def test_money_rounds_the_way_a_till_does(amount, expected):
+    assert to_cents(amount) == expected

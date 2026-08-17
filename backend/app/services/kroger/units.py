@@ -21,6 +21,7 @@ the unit-conversion work.
 import math
 import re
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 WEIGHT = "weight"
 VOLUME = "volume"
@@ -161,3 +162,20 @@ def parse_size(size: str) -> Measure | None:
     except ValueError:
         return None
     return measure(quantity, match.group(2))
+
+
+def to_cents(amount: float) -> float:
+    """A money figure rounded the way a till does.
+
+    Two problems, and the second is the one that bites. Python rounds half to
+    even, where a till rounds half up. And the figure arriving here has
+    usually been through a conversion or two, so a pound and a half of
+    chicken at $4.49 is not 6.735 but 6.734999999999999 - the ratio behind it
+    came out as 1.4999999999999998. Rounded straight to cents that is $6.73,
+    a cent light, and wrong in a way that compounds down a column.
+
+    So the noise is collapsed first, at a precision far finer than money and
+    far coarser than the error, and only then rounded the way a till does.
+    """
+    settled = Decimal(str(round(amount, 6)))
+    return float(settled.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
