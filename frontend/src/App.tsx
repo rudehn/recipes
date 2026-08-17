@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback } from "react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./api";
+import { InstallHint } from "./components/InstallHint";
 import GroceryPage from "./pages/GroceryPage";
 import PantryPage from "./pages/PantryPage";
 import PlannerPage from "./pages/PlannerPage";
@@ -68,6 +69,10 @@ export default function App() {
           />
         </Routes>
       </main>
+      {/* Last in the shell so it comes after the page in reading order: it is
+          an aside about the app itself, and nothing on the page depends on it.
+          Where it appears on screen is the stylesheet's business. */}
+      <InstallHint />
     </div>
   );
 }
