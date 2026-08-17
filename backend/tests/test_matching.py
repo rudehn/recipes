@@ -16,6 +16,8 @@ from app.db import session_factory
 from app.models import IngredientProductMatch
 from app.services.kroger import client as kroger
 from app.services.kroger import matching
+from app.services.kroger.products import _product as _product_from
+from app.services.kroger.units import measure
 
 LOCATION = "01400765"
 
@@ -168,6 +170,87 @@ async def test_dropping_measure_words_is_only_a_fallback(catalog):
     resolved = await resolve(["garlic-clove"])
 
     assert resolved["garlic-clove"] == "0001"
+
+
+def beef(product_id: str, description: str, size: str, regular: float, sold_by="UNIT"):
+    return {
+        "productId": product_id,
+        "description": description,
+        "items": [{"size": size, "soldBy": sold_by, "price": {"regular": regular}}],
+    }
+
+
+def test_the_smallest_package_that_covers_the_need_wins():
+    """Ranking on description length alone bought 2¼ lb of beef at nearly
+    twice the price, because "Kroger® 75/25 Ground Beef Tray" is a shorter
+    string than "Kroger® 73/27 Ground Beef Roll 1 LB"."""
+    candidates = [
+        _product_from(beef("0001", "Kroger® 75/25 Ground Beef Tray", "36 oz", 12.00)),
+        _product_from(beef("0002", "Kroger® 73/27 Ground Beef Roll 1 LB", "1 lb", 6.49)),
+        _product_from(beef("0003", "Private Selection® Angus Ground Beef", "1 lb", 8.49)),
+    ]
+
+    need = measure(1, "lb")
+    assert matching.choose(candidates, "ground-beef", need).product_id == "0002"
+    # Without the amount it falls back to the old answer, which is the bug.
+    assert matching.choose(candidates, "ground-beef").product_id == "0001"
+
+
+def test_a_package_too_small_loses_to_one_that_covers():
+    candidates = [
+        _product_from(beef("0001", "Ground Beef Small", "8 oz", 3.00)),
+        _product_from(beef("0002", "Ground Beef Large", "2 lb", 11.00)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
+
+
+def test_the_biggest_of_a_bad_lot_wins_when_nothing_covers_the_need():
+    """These are the ones you have to buy two of, so the fewest is best."""
+    candidates = [
+        _product_from(beef("0001", "Ground Beef Tiny", "4 oz", 2.00)),
+        _product_from(beef("0002", "Ground Beef Small", "12 oz", 5.00)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
+
+
+def test_a_weight_sold_item_is_costed_at_its_rate_not_its_label():
+    """Its "1 lb" is a price per pound, not a pack. Three pounds is three
+    times $4.99, dearer than the 3 lb tray - and comparing the labels alone
+    would have said the opposite."""
+    candidates = [
+        _product_from(
+            beef("0001", "Fresh Ground Beef", "1 lb", 4.99, sold_by="WEIGHT")
+        ),
+        _product_from(beef("0002", "Ground Beef Tray Packed", "3 lb", 14.00)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(3, "lb")).product_id == "0002"
+
+
+def test_a_weight_sold_item_is_not_rejected_for_being_too_small():
+    """Any amount of it can be bought, so it fits the requirement exactly
+    rather than losing to a package merely because the label is bigger."""
+    candidates = [
+        _product_from(
+            beef("0001", "Fresh Ground Beef", "1 lb", 2.99, sold_by="WEIGHT")
+        ),
+        _product_from(beef("0002", "Ground Beef Tray Packed", "3 lb", 14.00)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(3, "lb")).product_id == "0001"
+
+
+def test_an_unreadable_size_keeps_the_older_ranking():
+    """A compound size is refused rather than guessed, and the candidate is
+    still offered - just ordered behind ones that could be read."""
+    candidates = [
+        _product_from(beef("0001", "Ground Beef Packs", "3 ct / 1 lb", 20.00)),
+        _product_from(beef("0002", "Kroger® Ground Beef Roll 1 LB", "1 lb", 6.49)),
+    ]
+
+    assert matching.choose(candidates, "ground-beef", measure(1, "lb")).product_id == "0002"
 
 
 async def test_nothing_confident_is_recorded_rather_than_searched_repeatedly(catalog):

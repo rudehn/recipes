@@ -35,6 +35,7 @@ const flour = groceryItem({
     regular: 2.59,
     promo: null,
     aisle: "AISLE 18",
+    estimated: null,
   },
 });
 
@@ -48,6 +49,7 @@ const sugar = groceryItem({
     regular: 3.99,
     promo: 2.99,
     aisle: "AISLE 18",
+    estimated: null,
   },
 });
 
@@ -63,6 +65,7 @@ const onion = groceryItem({
     regular: 1.19,
     promo: null,
     aisle: "PRODUCE",
+    estimated: null,
   },
 });
 
@@ -75,6 +78,7 @@ const ALTERNATIVES = [
     regular: 1.19,
     promo: null,
     aisle: "PRODUCE",
+    estimated: null,
   },
   {
     product_id: "0002",
@@ -83,6 +87,7 @@ const ALTERNATIVES = [
     regular: 1.29,
     promo: null,
     aisle: "PRODUCE TABLE 6",
+    estimated: null,
   },
 ];
 
@@ -140,6 +145,44 @@ describe("grocery list pricing", () => {
     const row = (await screen.findByText("sugar")).closest(".grocery-item")!;
     expect(within(row as HTMLElement).getByText("$3.99").tagName).toBe("S");
     expect(within(row as HTMLElement).getByText("$2.99")).toBeInTheDocument();
+  });
+
+  it("costs a weight-sold item at its rate, keeping Kroger's price beside it", async () => {
+    /*
+     * Kroger's "1 lb" on fresh chicken thighs is $4.49 *per pound*, not a
+     * pack, so three pounds is $13.47. Counting the shelf figure understated
+     * that line by two thirds. Kroger's own price is shown alongside rather
+     * than replaced, since altering it is not allowed.
+     */
+    withList(
+      groceryList({
+        items: [
+          groceryItem({
+            key: "chicken-thigh",
+            name: "chicken thighs",
+            amounts: ["3 lb"],
+            price: {
+              product_id: "0003",
+              description: "Perdue® Fresh Boneless Skinless Chicken Thighs",
+              size: "1 lb",
+              regular: 4.49,
+              promo: null,
+              aisle: "MEAT",
+              estimated: 13.47,
+            },
+          }),
+        ],
+        pricing: { store: STORE, total: 13.47, priced: 1, total_lines: 1 },
+      }),
+    );
+
+    renderApp(WEEK);
+
+    const row = (await screen.findByText("chicken thighs")).closest(".grocery-item")!;
+    expect(within(row as HTMLElement).getByText("$13.47")).toBeInTheDocument();
+    expect(
+      within(row as HTMLElement).getByText(/Perdue® Fresh Boneless Skinless Chicken Thighs · \$4\.49 \/ 1 lb/),
+    ).toBeInTheDocument();
   });
 
   it("leaves an unmatched line with no price rather than a zero", async () => {

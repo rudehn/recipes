@@ -293,16 +293,23 @@ function PricingSummary({ pricing }: { pricing: GroceryPricing }) {
 /** A line's price. Kroger's own description and size, shown as returned. */
 function ItemPriceTag({ item }: { item: GroceryItem }) {
   if (!item.price) return null;
-  const { regular, promo, description, size } = item.price;
+  const { regular, promo, description, size, estimated } = item.price;
   const onSale = promo !== null;
+  const shelf = onSale ? promo : regular;
+  const cost = estimated ?? shelf;
+  // A line costing more than one package is the interesting case: three
+  // pounds of chicken at $4.49 a pound is $13.47, and showing the shelf
+  // figure there understates it. Kroger's own price moves down beside the
+  // size rather than being replaced, because altering it is not allowed.
+  const scaled = Math.abs(cost - shelf) >= 0.005;
   return (
     <span className={`item-price${onSale ? " on-sale" : ""}`}>
       <span className="amount">
-        {onSale && <s>{money(regular)}</s>} {money(onSale ? promo : regular)}
+        {onSale && !scaled && <s>{money(regular)}</s>} {money(cost)}
       </span>
       <span className="product" title={description}>
         {description}
-        {size && ` · ${size}`}
+        {scaled ? ` · ${money(shelf)}${size ? ` / ${size}` : ""}` : size ? ` · ${size}` : ""}
       </span>
     </span>
   );

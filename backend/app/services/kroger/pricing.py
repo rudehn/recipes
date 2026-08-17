@@ -8,8 +8,12 @@ it would have without a Kroger account.
 
 No conversion happens here, and that is the point of doing this before recipe
 costing. A grocery list is already package shaped: it says "buy flour", and
-the answer is the price of the bag. Working out what a recipe's two cups of
-it cost needs the size parsing that has not been built yet.
+the answer is the price of the bag, whole. Working out what a recipe's two
+cups of that bag cost is a different question, and needs a density.
+
+The amount the meals call for is still worked out, but only to choose
+*which* package to buy - the smallest that covers it - not to take a share
+of one. See `matching._fit`.
 
 Coverage travels with the total for the same reason amounts travel with
 in-pantry items in `services.grocery`: a number that quietly omits what it
@@ -26,6 +30,7 @@ from .. import settings as settings_service
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
+from .units import Measure, cost_to_cover, measure, parse_size
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +49,25 @@ def as_item_price(product: Product) -> ItemPrice:
         promo=product.promo if product.on_sale else None,
         aisle=product.aisle,
     )
+
+
+def _needed(line: GroceryItem) -> Measure | None:
+    """How much of an ingredient the week's meals call for, if it is countable.
+
+    Summed from the individual uses rather than read off the rendered amounts,
+    which are display strings ("1½ cups"). Only one dimension is answered: a
+    line calling for both a weight and a volume of the same thing has no
+    single amount to fit a package to, so it gets none.
+    """
+    totals: dict[str, float] = {}
+    for use in line.uses:
+        found = measure(use.quantity, use.unit)
+        if found is not None:
+            totals[found.dimension] = totals.get(found.dimension, 0.0) + found.base
+    if len(totals) != 1:
+        return None
+    dimension, base = next(iter(totals.items()))
+    return Measure(dimension, base)
 
 
 def _priceable(grocery_list: GroceryList) -> list[GroceryItem]:
@@ -77,7 +101,10 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
 
     try:
         matched = await matching.product_ids(
-            session, [line.key for line in lines], store.location_id
+            session,
+            [line.key for line in lines],
+            store.location_id,
+            needs={line.key: need for line in lines if (need := _needed(line))},
         )
         found = await products.by_ids(sorted(set(matched.values())), store.location_id)
     except KrogerError as exc:
@@ -92,8 +119,12 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         product = found.get(matched.get(line.key, ""))
         if product is None or product.price is None:
             continue
+        cost = cost_to_cover(
+            product.price, parse_size(product.size), product.sold_by, _needed(line)
+        )
         line.price = as_item_price(product)
-        total += product.price
+        line.price.estimated = round(cost, 2)
+        total += cost
         priced += 1
 
     if not priced:

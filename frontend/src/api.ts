@@ -123,6 +123,14 @@ export interface ItemPrice {
   /** Present only when the item is actually on offer. */
   promo: number | null;
   aisle: string;
+  /**
+   * What covering the week's requirement costs - ours, not Kroger's.
+   *
+   * A weight-sold item's price is a rate, so three pounds of chicken is three
+   * times the shelf figure, and a package smaller than the requirement has to
+   * be bought more than once. `regular` stays Kroger's untouched.
+   */
+  estimated: number | null;
 }
 
 /**

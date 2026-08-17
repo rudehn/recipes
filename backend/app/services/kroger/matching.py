@@ -27,6 +27,7 @@ from ..grocery import UNIT_ALIASES
 from . import products
 from .client import KrogerError
 from .products import Product
+from .units import WEIGHT, Measure, cost_to_cover, parse_size
 
 log = logging.getLogger(__name__)
 
@@ -71,24 +72,69 @@ def _coverage(tokens: list[str], description: str) -> float:
     return sum(1 for t in tokens if t in haystack) / len(tokens)
 
 
-def _rank(product: Product, tokens: list[str]) -> tuple:
+def _fit(product: Product, need: Measure | None) -> tuple[int, float, float]:
+    """How well a package suits the amount the week's meals actually call for.
+
+    Description length is a poor stand-in for "the obvious one to buy" once
+    sizes differ. Asked for a pound of ground beef it chose a 36 oz tray at
+    $12.00 over a 1 lb roll at $6.49, because the tray's name is shorter -
+    two and a quarter times the meat at nearly twice the price.
+
+    So: least left over after covering the requirement, then cheapest. A
+    package too small comes next, since it has to be bought more than once.
+    Anything whose size does not parse, or is measured in another dimension,
+    sorts last and keeps the older behaviour rather than being guessed at - a
+    pound of flour cannot be compared with two cups of it without a density.
+    """
+    # Neutral, so an unreadable size leaves the older ranking exactly as it
+    # was rather than quietly introducing a preference of its own.
+    unknown = (2, 0.0, 0.0)
+    if need is None or need.dimension != WEIGHT:
+        # Only weights. A recipe's volumes and counts look comparable to a
+        # package's and are not: "1 tsp brown sugar" is a volume of a solid,
+        # and matching it against things sold by volume preferred a bottle of
+        # brown sugar *syrup* to a bag of brown sugar. "9 garlic cloves"
+        # against a "5 ct" bag of bulbs is the same mistake in counts. Grams
+        # are always grams, so weight is the one dimension that is safe.
+        return unknown
+    size = parse_size(product.size)
+    if size is None or size.dimension != need.dimension:
+        return unknown
+
+    price = product.regular or 0.0
+    cost = cost_to_cover(price, size, product.sold_by, need)
+
+    # Sold by weight, the price is a rate and any amount can be bought, so it
+    # fits the requirement exactly rather than over- or under-shooting it.
+    if product.sold_by == "WEIGHT":
+        return (0, 0.0, cost)
+    if size.base >= need.base:
+        return (0, size.base - need.base, cost)
+    # Too small: it has to be bought more than once, which `cost` accounts
+    # for. Ordered by how little is left over after the last one.
+    return (1, -size.base, cost)
+
+
+def _rank(product: Product, tokens: list[str], need: Measure | None = None) -> tuple:
     """Sort key, best first, and total so the order cannot wobble.
 
-    After coverage, the shorter description wins. A short description is the
-    plain version of the thing - "Kroger Unbleached Enriched All Purpose
-    Flour" over "King Arthur All Purpose Unbleached Flour, Non-GMO Project,
-    Certified Kosher, No Preservatives" - which is both the likelier intent
-    and, usually, the cheaper one. The id breaks any remaining tie so two
-    equally good candidates cannot swap places between calls.
+    Coverage of the ingredient's name first, then how well the package fits
+    the amount needed, and only then the shorter description - which remains
+    the tiebreak when nothing else separates two candidates, because a short
+    description is usually the plain version of the thing. The id breaks any
+    remaining tie so two equally good candidates cannot swap between calls.
     """
     return (
         -_coverage(tokens, product.description),
+        _fit(product, need),
         len(product.description),
         product.product_id,
     )
 
 
-def ranked(candidates: list[Product], canonical_key: str) -> list[Product]:
+def ranked(
+    candidates: list[Product], canonical_key: str, need: Measure | None = None
+) -> list[Product]:
     """Every candidate in best-fit order, for a person to choose from.
 
     Unlike `choose`, nothing is filtered on coverage. The whole point of
@@ -98,10 +144,12 @@ def ranked(candidates: list[Product], canonical_key: str) -> list[Product]:
     tokens = _tokens(canonical_key)
     if not tokens:
         return list(candidates)
-    return sorted(candidates, key=lambda p: _rank(p, tokens))
+    return sorted(candidates, key=lambda p: _rank(p, tokens, need))
 
 
-def _best(candidates: list[Product], tokens: list[str]) -> Product | None:
+def _best(
+    candidates: list[Product], tokens: list[str], need: Measure | None
+) -> Product | None:
     # A product with no price is no use even when it is the right thing, and
     # one that does not account for the whole ingredient name is a guess.
     usable = [
@@ -111,10 +159,12 @@ def _best(candidates: list[Product], tokens: list[str]) -> Product | None:
     ]
     if not usable:
         return None
-    return min(usable, key=lambda p: _rank(p, tokens))
+    return min(usable, key=lambda p: _rank(p, tokens, need))
 
 
-def choose(candidates: list[Product], canonical_key: str) -> Product | None:
+def choose(
+    candidates: list[Product], canonical_key: str, need: Measure | None = None
+) -> Product | None:
     """The best product for an ingredient, or None if none is good enough.
 
     Two passes over the same results, never a second search. The first asks
@@ -124,11 +174,11 @@ def choose(candidates: list[Product], canonical_key: str) -> Product | None:
     tokens = _tokens(canonical_key)
     if not tokens:
         return None
-    chosen = _best(candidates, tokens)
+    chosen = _best(candidates, tokens, need)
     if chosen is not None:
         return chosen
     reduced = _without_unit_words(tokens)
-    return _best(candidates, reduced) if reduced else None
+    return _best(candidates, reduced, need) if reduced else None
 
 
 async def _stored(
@@ -147,7 +197,12 @@ async def _stored(
     return {row.canonical_key: row for row in rows}
 
 
-async def _resolve(session: AsyncSession, canonical_key: str, location_id: str) -> str | None:
+async def _resolve(
+    session: AsyncSession,
+    canonical_key: str,
+    location_id: str,
+    need: Measure | None = None,
+) -> str | None:
     """Search for one ingredient and record the answer, including "none"."""
     term = canonical_key.replace("-", " ")
     try:
@@ -159,7 +214,7 @@ async def _resolve(session: AsyncSession, canonical_key: str, location_id: str) 
         log.warning("Kroger product search failed for %r: %s", canonical_key, exc)
         return None
 
-    chosen = choose(candidates, canonical_key)
+    chosen = choose(candidates, canonical_key, need)
     if chosen is None:
         log.info(
             "No confident Kroger match for %r among %d results",
@@ -178,7 +233,10 @@ async def _resolve(session: AsyncSession, canonical_key: str, location_id: str) 
 
 
 async def product_ids(
-    session: AsyncSession, canonical_keys: list[str], location_id: str
+    session: AsyncSession,
+    canonical_keys: list[str],
+    location_id: str,
+    needs: dict[str, Measure] | None = None,
 ) -> dict[str, str]:
     """Product ids for the ingredients given, resolving any not seen before.
 
@@ -194,7 +252,7 @@ async def product_ids(
     }
     unseen = [key for key in canonical_keys if key and key not in stored]
     for key in unseen:
-        product_id = await _resolve(session, key, location_id)
+        product_id = await _resolve(session, key, location_id, (needs or {}).get(key))
         if product_id:
             resolved[key] = product_id
     if unseen:
