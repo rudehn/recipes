@@ -3,6 +3,7 @@ import { NavLink, Navigate, Route, Routes } from "react-router-dom";
 
 import { api } from "./api";
 import { InstallHint } from "./components/InstallHint";
+import { PHONE, below } from "./layout";
 import GroceryPage from "./pages/GroceryPage";
 import PantryPage from "./pages/PantryPage";
 import PlannerPage from "./pages/PlannerPage";
@@ -12,6 +13,7 @@ import RecipeSearchPage from "./pages/RecipeSearchPage";
 import RecipesPage from "./pages/RecipesPage";
 import SettingsPage from "./pages/SettingsPage";
 import { useLoad } from "./useLoad";
+import { useMediaQuery } from "./useMediaQuery";
 
 /**
  * A development tool that still ships, so the system can be checked on the
@@ -22,11 +24,58 @@ import { useLoad } from "./useLoad";
  */
 const StyleguidePage = lazy(() => import("./pages/StyleguidePage"));
 
+/**
+ * The sections of the app, in the order they are worked through: find a
+ * recipe, plan the week, shop for it.
+ *
+ * The glyph is only ever shown by the phone's tab bar, where a label alone at
+ * a fifth of the screen width is both unreadable and untappable. It is marked
+ * aria-hidden there, so the label is the accessible name in both layouts and
+ * the two cannot describe different things.
+ */
+const SECTIONS = [
+  { to: "/recipes", label: "Recipes", glyph: "📖" },
+  { to: "/planner", label: "Planner", glyph: "📅" },
+  { to: "/groceries", label: "Groceries", glyph: "🛒" },
+  { to: "/pantry", label: "Pantry", glyph: "🫙" },
+];
+
+const SETTINGS = { to: "/settings", label: "Settings", glyph: "⚙️" };
+
+function Nav({ className, sections }: { className: string; sections: typeof SECTIONS }) {
+  return (
+    <nav className={className} aria-label="Sections">
+      {sections.map((section) => (
+        <NavLink key={section.to} to={section.to}>
+          <span className="nav-glyph" aria-hidden>
+            {section.glyph}
+          </span>
+          <span className="nav-label">{section.label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
 export default function App() {
   // Pricing is opt-in and often absent, so the nav does not advertise it
   // until it is actually configured. A failure here just means no link,
   // which is the same as the far more common case of it being switched off.
   const { data: pricing } = useLoad(useCallback(() => api.pricingStatus(), []));
+
+  /*
+   * On a phone the five sections move out of the top bar and into a tab bar
+   * along the bottom edge: they measure 387px laid out as a row of pills,
+   * which is wider than the screen, and the last of them was simply off it.
+   *
+   * Rendered in one place or the other rather than styled into position,
+   * because the top bar carries a backdrop-filter - and a filtered element is
+   * a containing block for anything fixed inside it, so a tab bar that stayed
+   * in the header would anchor itself to the header rather than to the
+   * bottom of the screen.
+   */
+  const phone = useMediaQuery(below(PHONE));
+  const sections = pricing?.enabled ? [...SECTIONS, SETTINGS] : SECTIONS;
 
   return (
     <div className="shell">
@@ -36,13 +85,7 @@ export default function App() {
             <span className="mark">🍳</span>
             <span className="word">Mise</span>
           </NavLink>
-          <nav className="nav">
-            <NavLink to="/recipes">Recipes</NavLink>
-            <NavLink to="/planner">Planner</NavLink>
-            <NavLink to="/groceries">Groceries</NavLink>
-            <NavLink to="/pantry">Pantry</NavLink>
-            {pricing?.enabled && <NavLink to="/settings">Settings</NavLink>}
-          </nav>
+          {!phone && <Nav className="nav" sections={sections} />}
         </div>
       </header>
       <main className="page">
@@ -73,6 +116,7 @@ export default function App() {
           an aside about the app itself, and nothing on the page depends on it.
           Where it appears on screen is the stylesheet's business. */}
       <InstallHint />
+      {phone && <Nav className="tabbar" sections={sections} />}
     </div>
   );
 }

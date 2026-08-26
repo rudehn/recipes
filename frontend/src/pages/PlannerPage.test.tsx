@@ -2,9 +2,11 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal } from "../api";
+import { WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend } from "../test/backend";
 import { mealPlanEntry, page, recipeSummary } from "../test/fixtures";
 import { renderApp } from "../test/render";
+import { setViewportWidth } from "../test/viewport";
 
 // A Wednesday, so "this week" is Mon 27 Jul - Sun 2 Aug 2026 and the planner
 // has days on both sides of today.
@@ -392,5 +394,141 @@ describe("PlannerPage", () => {
     expect(await screen.findByText(/Showing the last version that loaded/)).toBeInTheDocument();
     expect(document.querySelectorAll(".plan-cell")).toHaveLength(28);
     expect(screen.queryByText(/Couldn't load your meal plan/)).not.toBeInTheDocument();
+  });
+  /**
+   * The same week, narrow enough that seven columns of it no longer fit.
+   *
+   * The grid was 988px wide inside a 343px window: two days visible at a time,
+   * with a sticky label column taking a third of what was left, and the week's
+   * own controls scrolled off the side. A day at a time instead, which is the
+   * direction a phone reads in.
+   */
+  describe("below the width the week grid needs", () => {
+    /** The rows of one day card, in the order the day is eaten. */
+    function agendaDay(dayIndex: number): HTMLElement {
+      return document.querySelectorAll<HTMLElement>(".agenda-day")[dayIndex];
+    }
+
+    it("lays the week out as a day at a time", async () => {
+      setViewportWidth(375);
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      expect(document.querySelector(".week-grid")).toBeNull();
+      expect(document.querySelectorAll(".agenda-day")).toHaveLength(7);
+    });
+
+    it("gives every day all four of its meals", async () => {
+      setViewportWidth(375);
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      expect(
+        [...agendaDay(0).querySelectorAll(".meal-label")].map((l) => l.textContent),
+      ).toEqual(MEAL_ORDER);
+      // The same twenty-eight cells the grid has, arranged the other way round.
+      expect(document.querySelectorAll(".plan-cell")).toHaveLength(28);
+    });
+
+    it("heads each day with its own date", async () => {
+      setViewportWidth(375);
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      const heads = [...document.querySelectorAll(".agenda-day .day-head")];
+      expect(heads.map((h) => h.querySelector(".dow")?.textContent)).toEqual([
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat",
+        "Sun",
+      ]);
+      expect(heads[0]).toHaveTextContent("Jul 27");
+    });
+
+    it("marks today's card, not a column", async () => {
+      setViewportWidth(375);
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      const today = document.querySelectorAll(".agenda-day.today");
+      expect(today).toHaveLength(1);
+      expect(today[0]).toHaveTextContent("Jul 29");
+      expect(within(today[0] as HTMLElement).getByText("Today")).toBeVisible();
+    });
+
+    it("puts a planned meal in the right day's row", async () => {
+      setViewportWidth(375);
+      mockBackend({
+        "GET /api/meal-plan": [
+          mealPlanEntry({
+            plan_date: "2026-07-30",
+            meal: "dinner",
+            recipe: recipeSummary({ title: "Weeknight chicken curry" }),
+          }),
+        ],
+      });
+      renderApp("/planner");
+
+      await screen.findByText("Weeknight chicken curry");
+      // Thursday, the fourth card.
+      expect(agendaDay(3)).toHaveTextContent("Weeknight chicken curry");
+      expect(agendaDay(2)).not.toHaveTextContent("Weeknight chicken curry");
+    });
+
+    it("plans a recipe into the meal whose add button was pressed", async () => {
+      setViewportWidth(375);
+      const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry" });
+      const backend = mockBackend({
+        "GET /api/meal-plan": [],
+        "GET /api/recipes": page([curry]),
+        "POST /api/meal-plan": mealPlanEntry({ recipe: curry }),
+      });
+      const { user } = renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      // Friday's lunch: the third row of the fifth card.
+      const lunch = agendaDay(4).querySelectorAll<HTMLElement>(".agenda-meal")[1];
+      await user.click(within(lunch).getByRole("button", { name: "+ Add" }));
+      expect(await screen.findByRole("heading", { name: "Add to lunch" })).toBeVisible();
+      await user.click(await screen.findByRole("button", { name: /Weeknight chicken curry/ }));
+
+      await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+      expect(backend.requestsTo("POST /api/meal-plan")[0].body).toEqual({
+        plan_date: "2026-07-31",
+        meal: "lunch",
+        recipe_id: 5,
+      });
+    });
+
+    it("still steps between weeks", async () => {
+      setViewportWidth(375);
+      const backend = mockBackend({ "GET /api/meal-plan": [] });
+      const { user } = renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      await user.click(screen.getByRole("button", { name: "Next week" }));
+
+      await waitFor(() => expect(loadedRange(backend)).toEqual(["2026-08-03", "2026-08-09"]));
+      expect(document.querySelectorAll(".agenda-day")).toHaveLength(7);
+    });
+
+    /* The grid is what a tablet in portrait gets, and the width it needs is
+       the width WEEK_GRID names. */
+    it("keeps the grid at exactly the width it fits in", async () => {
+      setViewportWidth(WEEK_GRID + 1);
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      expect(document.querySelector(".week-grid")).not.toBeNull();
+      expect(document.querySelector(".day-agenda")).toBeNull();
+    });
   });
 });

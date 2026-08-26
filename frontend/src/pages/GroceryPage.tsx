@@ -160,8 +160,11 @@ export default function GroceryPage() {
       />
 
       <div className="grocery-range">
+        {/* The word is its own element so that on a phone, where the two
+            fields stack, they can share a left edge instead of each one
+            starting wherever its own label happened to end. */}
         <label>
-          From{" "}
+          <span className="range-label">From</span>{" "}
           <input
             type="date"
             value={start}
@@ -169,7 +172,7 @@ export default function GroceryPage() {
           />
         </label>
         <label>
-          to{" "}
+          <span className="range-label">To</span>{" "}
           <input
             type="date"
             value={end}
