@@ -85,6 +85,47 @@ describe("form controls on a touch screen", () => {
   });
 });
 
+/**
+ * The date fields, which are a different control on the device than anywhere
+ * a test can reach.
+ *
+ * Safari on a phone draws input[type=date] as its own native control, sized to
+ * itself, and that size wins over the width the page asks for until the
+ * appearance is reset. A desktop WebKit draws the desktop control instead, so
+ * this is invisible to a laptop browser and to Playwright's WebKit alike - it
+ * was found on an actual iPhone and can only be re-found on one. What is
+ * assertable is that the rules that answer it are still here.
+ */
+describe("date fields", () => {
+  const touch = () => mediaBlock(TOUCH);
+
+  it("resets the native appearance that carries the sizing", () => {
+    expect(touch()).toMatch(
+      /input\[type="date"\]\s*\{[^}]*-webkit-appearance:\s*none/,
+    );
+    expect(touch()).toMatch(/input\[type="date"\]\s*\{[^}]*[^-]appearance:\s*none/);
+  });
+
+  /**
+   * The load-bearing one. min-width beats max-width in the cascade, so a
+   * control demanding a width of its own cannot be reined in by the max-width
+   * backstop below - only by being told its minimum is nothing.
+   */
+  it("lets the control be narrower than it would choose", () => {
+    expect(touch()).toMatch(/input\[type="date"\]\s*\{[^}]*min-width:\s*0/);
+  });
+
+  it("keeps a backstop on every control, and the calendar glyph off touch", () => {
+    // Weaker than min-width, but it catches the ordinary case of a control
+    // simply being given too much room.
+    expect(css).toMatch(/input,\s*select,\s*textarea\s*\{[^}]*max-width:\s*100%/);
+    // Scoped to a coarse pointer: a mouse-driven browser draws a calendar icon
+    // for itself, and resetting the appearance there would throw it away.
+    const outside = css.replace(touch(), "");
+    expect(outside).not.toMatch(/input\[type="date"\]/);
+  });
+});
+
 describe("the phone's edges", () => {
   it("pays the safe-area inset on everything the content reaches", () => {
     const phone = mediaBlock(below(PHONE));

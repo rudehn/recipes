@@ -315,6 +315,11 @@ input, select, textarea {
   border-radius: var(--radius-sm);
   padding: var(--space-10) var(--space-12);
   outline: none;
+  /* A form control is never wider than the thing holding it. Sounds like it
+     should go without saying, and does not: a control's width is negotiated
+     with the platform, and some of them arrive with an intrinsic size of their
+     own that no layout here asked for. */
+  max-width: 100%;
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
@@ -2186,6 +2191,27 @@ body.has-install-hint .page {
  */
 @media (pointer: coarse) {
   input, select, textarea { font-size: var(--text-control); }
+
+  /*
+   * A date field on iOS is not the field the other engines draw.
+   *
+   * Safari on a phone renders input[type=date] as its own native control, sized
+   * to the format it is showing and to the platform's own type - and until the
+   * appearance is reset it sizes itself in preference to any width given here,
+   * so the "width: 100%" the grocery range asks for is simply not applied. The
+   * field then stands wider than the page and takes the whole document with it.
+   *
+   * Not reproducible anywhere but the device: a desktop WebKit draws the
+   * desktop control, so this is invisible to a browser on a laptop and to
+   * Playwright's WebKit alike. Scoped to a coarse pointer because that is where
+   * the native control differs; a mouse-driven browser keeps the calendar glyph
+   * it draws for itself.
+   */
+  input[type="date"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+  }
 }
 
 /*
@@ -2417,6 +2443,10 @@ body.has-install-hint .page {
     flex-direction: column;
     gap: var(--space-4);
     flex: 0 0 100%;
+    /* A flex item's automatic minimum is its content's, so a field that
+       insists on a width of its own would push the row wider rather than
+       being made to fit inside it. */
+    min-width: 0;
   }
 
   .grocery-range .range-label {
@@ -2425,7 +2455,7 @@ body.has-install-hint .page {
     color: var(--muted);
   }
 
-  .grocery-range label input { width: 100%; }
+  .grocery-range label input { width: 100%; min-width: 0; }
 
   .grocery-range .spacer { display: none; }
 
