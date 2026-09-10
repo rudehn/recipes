@@ -82,6 +82,10 @@ async def resolve(keys: list[str]) -> dict[str, str]:
         return await matching.product_ids(session, keys, LOCATION)
 
 
+def produce(product_id: str, description: str, categories: list[str] | None = None) -> dict:
+    return {**product(product_id, description), "categories": categories or ["Produce"]}
+
+
 async def stored_rows() -> list[IngredientProductMatch]:
     async with session_factory() as session:
         rows = (await session.execute(select(IngredientProductMatch))).scalars().all()
@@ -368,3 +372,127 @@ def test_a_volume_of_a_solid_is_weighed_before_it_is_compared():
 
     chosen = matching.choose(candidates, "all-purpose-flour", measure(2, "cup"))
     assert chosen.product_id == "0002"
+
+
+# ------------------------------------------------- the same name, another thing ---
+
+
+async def test_a_product_made_from_the_ingredient_is_not_the_ingredient(catalog):
+    """"Avocado Oil" accounts for every letter of "avocado" and is a bottle
+    of oil. It won on the tiebreak, being the shorter description, and was
+    then pinned - so every recipe with an avocado in it priced a bottle of
+    oil, and the total looked fine."""
+    catalog.results = [
+        produce("0001", "Avocado Oil", ["Baking Goods"]),
+        produce("0002", "Large Hass Avocado"),
+    ]
+
+    resolved = await resolve(["avocado"])
+
+    assert resolved["avocado"] == "0002"
+
+
+async def test_the_derivative_is_allowed_when_the_ingredient_asks_for_it(catalog):
+    catalog.results = [
+        produce("0001", "Avocado Oil", ["Baking Goods"]),
+        produce("0002", "Large Hass Avocado"),
+    ]
+
+    resolved = await resolve(["avocado-oil"])
+
+    assert resolved["avocado-oil"] == "0001"
+
+
+async def test_nothing_is_better_than_the_wrong_form(catalog):
+    """When the only candidates are derivatives, the answer is no match,
+    which is visible on the list, rather than the oil, which is not."""
+    catalog.results = [produce("0001", "Avocado Oil", ["Baking Goods"])]
+
+    assert await resolve(["avocado"]) == {}
+
+
+async def test_a_word_is_the_ingredient_or_it_is_not(catalog):
+    """Coverage used to be a substring test, which let "pea" find peanuts and
+    "pepper" find peppercorns. Kroger's plural still counts, since the key
+    was singularized and the description is read the same way."""
+    catalog.results = [
+        produce("0001", "Kroger® Dry Roasted Peanuts"),
+        produce("0002", "Kroger® Frozen Sweet Peas"),
+    ]
+
+    resolved = await resolve(["pea"])
+
+    assert resolved["pea"] == "0002"
+
+
+async def test_an_accented_description_meets_a_folded_key(catalog):
+    catalog.results = [produce("0001", "Jalapeño Peppers")]
+
+    assert (await resolve(["jalapeno-pepper"]))["jalapeno-pepper"] == "0001"
+
+
+async def test_nothing_from_a_department_that_sells_no_food_is_chosen(catalog):
+    """Kroger's search does not stop at the grocery aisles. Chicken reaches
+    the dog food, and the description alone does not always say so."""
+    catalog.results = [
+        produce("0001", "Kroger® Chicken", ["Pet Care", "Dog Food"]),
+        produce("0002", "Heritage Farm® Chicken", ["Meat & Seafood"]),
+    ]
+
+    resolved = await resolve(["chicken"])
+
+    assert resolved["chicken"] == "0002"
+
+
+async def test_the_refused_products_are_still_offered_as_alternatives(catalog):
+    """The veto is only for the automatic pick. Whoever opens the
+    alternatives has already disagreed with it, and the product they want
+    may well be the one the rule ruled out."""
+    candidates = [
+        _product_from(produce("0001", "Avocado Oil", ["Baking Goods"])),
+        _product_from(produce("0002", "Large Hass Avocado")),
+    ]
+
+    assert {p.product_id for p in matching.ranked(candidates, "avocado")} == {"0001", "0002"}
+
+
+def test_eggs_are_counted_in_cartons():
+    """Thirty eggs against a dozen and an eighteen: two eighteens at $7.98
+    beat three dozens at $8.97. Counts compare only for the ingredients a
+    recipe counts in the shop's own pieces, and without the amount the two
+    are indistinguishable and the id decides."""
+    candidates = [
+        _product_from(beef("0001", "Kroger® Grade A Large Eggs", "12 ct", 2.99)),
+        _product_from(beef("0002", "Kroger® Grade A Large Eggs", "18 ct", 3.99)),
+    ]
+
+    assert matching.choose(candidates, "egg", measure(30, None)).product_id == "0002"
+    assert matching.choose(candidates, "egg").product_id == "0001"
+
+
+async def test_forgetting_a_pick_searches_again(catalog):
+    """A pinned answer, hand-picked or not, is remade only by being dropped."""
+    catalog.results = FLOURS
+    await resolve(["all-purpose-flour"])
+    async with session_factory() as session:
+        await matching.confirm(session, "all-purpose-flour", LOCATION, "0007101201050")
+
+    async with session_factory() as session:
+        await matching.forget(session, "all-purpose-flour", LOCATION)
+
+    assert await stored_rows() == []
+    assert (await resolve(["all-purpose-flour"]))["all-purpose-flour"] == "0001600010610"
+    assert catalog.searched == ["all purpose flour", "all purpose flour"]
+
+
+async def test_a_pick_says_who_made_it(catalog):
+    catalog.results = FLOURS
+    async with session_factory() as session:
+        picked = await matching.picks(session, ["all-purpose-flour"], LOCATION)
+        assert picked["all-purpose-flour"].hand_picked is False
+        await matching.confirm(session, "all-purpose-flour", LOCATION, "0007101201050")
+
+    async with session_factory() as session:
+        picked = await matching.picks(session, ["all-purpose-flour"], LOCATION)
+
+    assert picked["all-purpose-flour"] == matching.Pick("0007101201050", True)

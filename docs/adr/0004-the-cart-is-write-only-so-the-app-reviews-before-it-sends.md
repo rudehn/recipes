@@ -41,9 +41,9 @@ A count tells a shopper that something is missing without telling them what, at 
 Names cost the same to render.
 
 **A preview minutes old describes a different trip.**
-Products go out of stock, and checkmarks get ticked while the review is open.
+Products go out of stock, and lines get marked while the review is open.
 So the server plans again as it sends and answers with what it did, and the page reports the server's number rather than the one it had on screen.
-The client-side review is keyed on the checkmarks for the same reason: changing them starts the review over rather than leaving it stale.
+The client-side review is keyed on the marks - ticks and "have it" both, see ADR 5 - for the same reason: changing them starts the review over rather than leaving it stale.
 
 **The app must not claim to know what is in a cart it cannot see.**
 A "sent" state is a fact about this app's request, not about the cart.

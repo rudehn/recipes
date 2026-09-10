@@ -166,16 +166,45 @@ export interface SaleItem {
   price: ItemPrice;
 }
 
+/**
+ * A recipe with something discounted in it this week.
+ *
+ * `ingredient_count` is what the discount is read against: two of three
+ * ingredients on offer is a reason to cook the thing, two of nineteen is a
+ * coincidence.
+ */
+export interface RecipeOnSale {
+  recipe: RecipeSummary;
+  on_sale: SaleItem[];
+  ingredient_count: number;
+}
+
+/**
+ * What the shopper has said about a line this trip.
+ *
+ * "to_buy" is the default. "bought" is the tick: in the trolley, still paid
+ * for. "have" is the other answer a shopper gives a list - there is already
+ * enough at home - and takes the line out of the estimate and the cart
+ * without striking it through as bought.
+ */
+export type GroceryStatus = "to_buy" | "bought" | "have";
+
 export interface GroceryItem {
   key: string;
   name: string;
   amounts: string[];
   uses: GroceryRecipeUse[];
-  checked: boolean;
+  status: GroceryStatus;
   from_pantry: boolean;
   pantry_item_id: number | null;
   /** Absent when pricing is off, or when nothing confident matched this line. */
   price: ItemPrice | null;
+  /**
+   * Whether a person chose this line's product, or chose that it should have
+   * none, rather than the matcher. The choice is remembered either way; this
+   * is what lets the page say so.
+   */
+  hand_picked: boolean;
 }
 
 export interface GroceryList {
@@ -229,6 +258,12 @@ export interface CartLine {
   description: string;
   size: string;
   quantity: number;
+  /**
+   * The week's requirement the quantity is meant to cover, as the grocery
+   * list shows it. "2 × 1 lb, for 1½ lb" can be checked; a bare "2" can only
+   * be trusted.
+   */
+  amounts: string[];
 }
 
 /**
@@ -393,16 +428,18 @@ export const api = {
 
   groceryList: (start: string, end: string) =>
     request<GroceryList>(`/api/grocery-list?start=${start}&end=${end}`),
-  toggleGroceryItem: (key: string, checked: boolean) =>
-    request<void>("/api/grocery-list/toggle", {
+  /** Say what a line is this trip. "to_buy" takes any mark off it. */
+  markGroceryItem: (key: string, status: GroceryStatus) =>
+    request<void>("/api/grocery-list/mark", {
       method: "POST",
-      body: JSON.stringify({ key, checked }),
+      body: JSON.stringify({ key, status }),
     }),
-  clearGroceryChecks: () =>
-    request<void>("/api/grocery-list/clear-checks", { method: "POST" }),
+  /** Clear every mark, bought and at-home alike. */
+  newGroceryTrip: () => request<void>("/api/grocery-list/new-trip", { method: "POST" }),
 
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
-  sales: () => request<SaleItem[]>("/api/pricing/sales"),
+  /** Recipes with an ingredient on offer this week, most on offer first. */
+  recipesOnSale: () => request<RecipeOnSale[]>("/api/pricing/sales"),
   matchAlternatives: (key: string) =>
     request<ItemPrice[]>(`/api/pricing/alternatives?key=${encodeURIComponent(key)}`),
   /** `product_id` null marks the line as one not to price. */
@@ -411,6 +448,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ canonical_key, product_id }),
     }),
+  /** Drop a remembered pick, hand-made or not, so the matcher chooses again. */
+  forgetMatch: (key: string) =>
+    request<void>(`/api/pricing/match?key=${encodeURIComponent(key)}`, { method: "DELETE" }),
   searchStores: (zip: string) =>
     request<Store[]>(`/api/pricing/stores?zip=${encodeURIComponent(zip)}`),
   selectStore: (location_id: string) =>
@@ -432,10 +472,23 @@ export const api = {
    *
    * A range rather than the lines on screen: the server rebuilds the list and
    * re-picks the products, so what is ordered is what it would have priced.
+   * The one thing it takes from here is a count per line the shopper changed
+   * in the review, which cannot put anything in the cart the plan did not
+   * already carry. Sent only when there is one, so an untouched review sends
+   * exactly what it always did.
    */
-  addToCart: (start: string, end: string, modality: Modality) =>
+  addToCart: (
+    start: string,
+    end: string,
+    modality: Modality,
+    quantities: Record<string, number> = {},
+  ) =>
     request<CartResult>("/api/cart/add", {
       method: "POST",
-      body: JSON.stringify({ start, end, modality }),
+      body: JSON.stringify(
+        Object.keys(quantities).length > 0
+          ? { start, end, modality, quantities }
+          : { start, end, modality },
+      ),
     }),
 };

@@ -1465,14 +1465,20 @@ body.has-install-hint .page {
   transition: transform var(--transition);
 }
 
+.offers-section[open] summary,
 .stocked-section[open] summary {
   color: inherit;
   margin-bottom: var(--space-10);
 }
 
+.offers-section[open] summary::after,
 .stocked-section[open] summary::after {
   transform: translateY(2px) rotate(-135deg);
 }
+
+/* On the recipes page, above the grid. The same fold as the pantry section
+   on the grocery page, so a reader who has met one has met the other. */
+.offers-section { margin-bottom: var(--space-24); }
 
 .section-note {
   margin: 0 0 var(--space-12);
@@ -1555,11 +1561,16 @@ body.has-install-hint .page {
   /* The button is the row's flex child, not the .item-price inside it, so
      this is where the sizing has to go. Left to shrink, it collapsed to its
      narrowest and wrapped a product name into a three-line ribbon with half
-     the row empty beside it. Neither grows nor shrinks: the name column takes
-     the slack, and the cap stops a long description crowding out the
-     ingredient it belongs to. */
-  flex: 0 0 auto;
+     the row empty beside it. A fixed width rather than the content's own:
+     sized to content, every row's price column was a different width, and
+     the "have it" button beside it landed somewhere new on every row. The
+     name column takes the slack, and the cap stops the column crowding out
+     the ingredient it belongs to on a narrow window. */
+  flex: 0 0 300px;
   max-width: 42%;
+  /* The column is wider than most prices, so they sit at its far edge and
+     go on forming the column the eye can add up. */
+  justify-content: flex-end;
   background: none;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1697,18 +1708,58 @@ body.has-install-hint .page {
 
 .cart-lines li:first-child { border-top: none; }
 
-/* Fixed width so the quantities line up as a column. They are the number
-   worth checking here - three bags of flour is right and is also worth
-   noticing - and a ragged left edge makes them something to hunt for. */
-.cart-lines .quantity {
+/* The count, with a button either side of it. Fixed width so the quantities
+   line up as a column: they are the number worth checking here - three bags
+   of flour is right and is also worth noticing - and a ragged left edge makes
+   them something to hunt for. The stepper is the one from the recipe page,
+   because it is the same control doing the same job. */
+.cart-lines .stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
   flex: none;
-  min-width: 2.5ch;
-  text-align: right;
+  align-self: center;
+  background: var(--surface-2);
+  border-radius: var(--radius-pill);
+  padding: var(--space-2) var(--space-4);
+}
+
+.cart-lines .stepper button {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: var(--accent-ink);
+  font-size: var(--text-base);
+}
+
+.cart-lines .stepper button:hover:not(:disabled) { background: var(--accent-soft); }
+
+.cart-lines .stepper button:disabled { color: var(--muted); opacity: 0.5; }
+
+.cart-lines .quantity {
+  min-width: 3ch;
+  text-align: center;
   font-weight: var(--weight-semibold);
   font-variant-numeric: tabular-nums;
 }
 
-.cart-lines .item-name { flex: none; font-weight: var(--weight-semibold); }
+.cart-lines .item-name {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+}
+
+/* The amount the count is meant to cover, under the name: the working behind
+   the number, so "2×" can be checked against "1½ lb" rather than trusted. */
+.cart-lines .covers {
+  font-size: var(--text-xs);
+  font-weight: normal;
+  color: var(--muted);
+}
 
 /* Kroger's own wording for what will actually be bought. Takes the spare
    width and wraps: it is the half of the row that says whether the match is
@@ -1777,16 +1828,63 @@ body.has-install-hint .page {
 
 .cart-connection .page-note { margin: 0; }
 
+/* One recipe with something on offer in it: the recipe on the left, its
+   discounted ingredients on the right as a column the eye can add up. */
 .offer {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-16);
-  padding: var(--space-10) var(--space-16);
-  border-top: 1px solid var(--line-soft);
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-8);
 }
 
-.offer .name { font-weight: var(--weight-semibold); }
+.offer-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.offer-recipe a {
+  font-weight: var(--weight-semibold);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+
+.offer-recipe a:hover { text-decoration-color: currentColor; }
+
+/* The discount read against the whole: two of three ingredients on offer is
+   a reason to cook the thing, two of nineteen is a coincidence. */
+.offer-coverage {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.offer-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  flex: none;
+  max-width: 55%;
+}
+
+.offer-items li {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: var(--space-12);
+}
+
+.offer-items .name { font-weight: var(--weight-semibold); }
 
 /* Right-aligned and narrow, so the prices form a column the eye can add up
    rather than sitting wherever each name happens to end. */
@@ -1821,6 +1919,22 @@ body.has-install-hint .page {
 .grocery-item.checked { opacity: 0.55; }
 
 .grocery-item.checked .name { text-decoration: line-through; }
+
+/* Already at home. Dimmed like a ticked line, but not struck through: a strike
+   says "bought", and this line was not - it is simply no longer needed. */
+.grocery-item.have { opacity: 0.55; }
+
+/* The "have it" button, beside the tick rather than being one. Quiet, because
+   it is the second thing a row offers rather than the first, and never
+   shrinking: a squeezed button reads as a broken one. */
+.grocery-item > .btn { flex: none; }
+
+/* Pressed while the line is set aside, so the row says so twice: once in the
+   tag and once in the button that undoes it. */
+.grocery-item > .btn[aria-pressed="true"] {
+  background: var(--surface-2);
+  border-color: var(--line);
+}
 
 /* Settled, not struck out: these are not bought, they are simply not needed. */
 .grocery-item.stocked {
@@ -1876,7 +1990,8 @@ body.has-install-hint .page {
   text-decoration-color: currentColor;
 }
 
-.grocery-item .pantry-tag {
+.grocery-item .pantry-tag,
+.grocery-item .have-tag {
   margin-left: auto;
   font-size: var(--text-2xs);
   font-weight: var(--weight-bold);
@@ -1885,7 +2000,24 @@ body.has-install-hint .page {
   padding: var(--space-4) var(--space-10);
   border-radius: var(--radius-pill);
   white-space: nowrap;
+  /* The tags sit at the top of the row where the name is, rather than
+     centred against a row that may hold three lines of recipes. */
+  margin-top: var(--space-2);
 }
+
+/* The two tags together, when a pantry staple is also at home this week. */
+.grocery-item .pantry-tag + .have-tag { margin-left: 0; }
+
+/* "your pick": the product on this line was the shopper's own choice. Under
+   the price rather than beside it, so the column of prices stays a column. */
+.pick-tag {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.unmatched .pick-tag { margin-left: var(--space-6); }
 
 /* ---------- Pantry ---------- */
 
@@ -2472,9 +2604,25 @@ body.has-install-hint .page {
 
   .grocery-item .item-text { flex: 1 0 100%; }
 
-  .grocery-item .pantry-tag { margin-left: 0; }
+  .grocery-item .pantry-tag,
+  .grocery-item .have-tag { margin-left: 0; }
 
   .grocery-item.stocked .btn { flex: 1; }
+
+  /* The offers' two columns become two rows on a phone. */
+  .offer { flex-direction: column; gap: var(--space-8); }
+
+  /* Full width, or the column is only as wide as its longest line and the
+     prices sit in the middle of the row rather than at its edge. */
+  .offer-items { max-width: 100%; width: 100%; }
+
+  .offer-items li { justify-content: space-between; }
+
+  /* A cart line wraps to two rows: the stepper and name first, then Kroger's
+     wording for the product on its own line under them. */
+  .cart-lines li { flex-wrap: wrap; }
+
+  .cart-lines .product { flex: 1 0 100%; text-align: left; }
 
   .price-toggle {
     flex: 1;

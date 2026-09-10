@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type Page, type RecipeSummary } from "../api";
+import { api, type Page, type RecipeOnSale, type RecipeSummary } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePhoto, TimeChips } from "../components/RecipeBits";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
@@ -176,6 +176,8 @@ export default function RecipesPage() {
         </div>
       )}
 
+      {!blank && <OnSale />}
+
       {!blank && !listing && loading && <p className="list-status">Loading recipes…</p>}
 
       {!blank && listing && listing.items.length === 0 && !filtering && (
@@ -228,5 +230,64 @@ export default function RecipesPage() {
         </EmptyState>
       )}
     </>
+  );
+}
+
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * Recipes with an ingredient on offer at the chosen store this week.
+ *
+ * This used to be a list of discounted ingredients on the grocery page, where
+ * it answered a question nobody on that page was asking: the list's own lines
+ * already show a sale price. What a discount is good for is deciding what to
+ * cook, so it lives here, phrased as recipes, most on offer first.
+ *
+ * Folded away, because the answer is usually "nothing much" and it must not
+ * push the recipes themselves down the page, and absent entirely when there
+ * is nothing to say - which includes every household without a Kroger
+ * account, for whom the server answers with an empty list rather than an
+ * error.
+ */
+function OnSale() {
+  const { data } = useLoad(useCallback(() => api.recipesOnSale(), []));
+  if (!data || data.length === 0) return null;
+  return (
+    <details className="offers-section">
+      <summary>
+        On sale this week{" "}
+        <span className="count">
+          {data.length} recipe{data.length === 1 ? "" : "s"}
+        </span>
+      </summary>
+      {data.map((entry: RecipeOnSale) => (
+        <div key={entry.recipe.id} className="offer">
+          <div className="offer-recipe">
+            <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
+            <span className="offer-coverage">
+              {entry.on_sale.length} of {entry.ingredient_count} ingredient
+              {entry.ingredient_count === 1 ? "" : "s"} on offer
+            </span>
+          </div>
+          <ul className="offer-items">
+            {entry.on_sale.map((sale) => (
+              <li key={sale.key}>
+                <span className="name">{sale.name}</span>
+                <span className="item-price on-sale">
+                  <span className="amount">
+                    <s>{money(sale.price.regular)}</s>{" "}
+                    {money(sale.price.promo ?? sale.price.regular)}
+                  </span>
+                  <span className="product">
+                    {sale.price.description}
+                    {sale.price.size && ` · ${sale.price.size}`}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </details>
   );
 }

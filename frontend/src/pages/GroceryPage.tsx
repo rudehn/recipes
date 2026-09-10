@@ -3,13 +3,14 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import {
   api,
+  type CartLine,
   type CartResult,
   type GroceryItem,
   type GroceryList,
   type GroceryPricing,
   type GroceryRecipeUse,
+  type GroceryStatus,
   type Modality,
-  type SaleItem,
 } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
@@ -19,30 +20,35 @@ import { useAction } from "../useAction";
 import { errorMessage, useLoad } from "../useLoad";
 
 /**
- * Checkmarks the server has not accepted, by item key.
+ * Marks the server has not accepted, by item key.
  *
  * This page is used in a grocery aisle, which is where the signal is worst, so
- * a failed toggle is expected rather than exceptional. The mark stays on
+ * a failed mark is expected rather than exceptional. The mark stays on
  * screen: the shopper put the thing in the cart, and quietly taking the tick
  * back would be the more damaging lie. Holding the intended state here instead
  * of only in the loaded list also means a later reload cannot silently undo it.
  */
-type Unsaved = ReadonlyMap<string, boolean>;
+type Unsaved = ReadonlyMap<string, GroceryStatus>;
 
 const itemCount = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
-function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList | null {
-  if (!list || unsaved.size === 0) return list;
-  const apply = (item: GroceryItem) =>
-    unsaved.has(item.key) ? { ...item, checked: unsaved.get(item.key)! } : item;
+function withStatus(list: GroceryList, key: string, status: GroceryStatus): GroceryList {
+  const set = (item: GroceryItem) => (item.key === key ? { ...item, status } : item);
   return {
     ...list,
-    items: list.items.map(apply),
-    in_pantry: list.in_pantry.map(apply),
-    pantry_restock: list.pantry_restock.map(apply),
+    items: list.items.map(set),
+    in_pantry: list.in_pantry.map(set),
+    pantry_restock: list.pantry_restock.map(set),
   };
+}
+
+function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList | null {
+  if (!list || unsaved.size === 0) return list;
+  let applied = list;
+  for (const [key, status] of unsaved) applied = withStatus(applied, key, status);
+  return applied;
 }
 
 export default function GroceryPage() {
@@ -83,37 +89,45 @@ export default function GroceryPage() {
     };
   }
 
-  async function toggle(item: GroceryItem) {
-    const checked = !item.checked;
-    // Optimistic flip so the list feels instant.
-    setList((prev) => {
-      if (!prev) return prev;
-      const flip = (i: GroceryItem) => (i.key === item.key ? { ...i, checked } : i);
-      return {
-        ...prev,
-        items: prev.items.map(flip),
-        in_pantry: prev.in_pantry.map(flip),
-        pantry_restock: prev.pantry_restock.map(flip),
-      };
-    });
+  /** Say what a line is this trip. Optimistic, so the list feels instant. */
+  async function mark(item: GroceryItem, status: GroceryStatus) {
+    setList((prev) => (prev ? withStatus(prev, item.key, status) : prev));
     try {
-      await api.toggleGroceryItem(item.key, checked);
+      await api.markGroceryItem(item.key, status);
       setUnsaved(forget(item.key));
       reload();
     } catch {
-      setUnsaved((prev) => new Map(prev).set(item.key, checked));
+      setUnsaved((prev) => new Map(prev).set(item.key, status));
     }
+  }
+
+  function toggle(item: GroceryItem) {
+    return mark(item, item.status === "bought" ? "to_buy" : "bought");
+  }
+
+  /**
+   * "Have it": there is enough at home, so it is not bought and not paid for.
+   *
+   * Its own mark rather than a tick, because a tick means the opposite - in
+   * the trolley, about to be paid for - and the estimate has to tell the two
+   * apart. And its own mark rather than a pantry entry, because it is only
+   * true of this week: avocados on the counter now say nothing about next
+   * week's list, and a pantry that thought otherwise would quietly set them
+   * aside forever.
+   */
+  function haveIt(item: GroceryItem) {
+    return mark(item, item.status === "have" ? "to_buy" : "have");
   }
 
   /** Send the marks again, for when the signal is back. */
   async function saveUnsaved() {
     setSaving(true);
-    const stillUnsaved = new Map<string, boolean>();
-    for (const [key, checked] of unsaved) {
+    const stillUnsaved = new Map<string, GroceryStatus>();
+    for (const [key, status] of unsaved) {
       try {
-        await api.toggleGroceryItem(key, checked);
+        await api.markGroceryItem(key, status);
       } catch {
-        stillUnsaved.set(key, checked);
+        stillUnsaved.set(key, status);
       }
     }
     setUnsaved(stillUnsaved);
@@ -135,8 +149,15 @@ export default function GroceryPage() {
     if (await action.run(() => api.updatePantryItem(id, { in_stock: false }))) reload();
   }
 
-  async function clearChecks() {
-    if (await action.run(() => api.clearGroceryChecks())) {
+  /**
+   * Clear every mark at once.
+   *
+   * Ticks and "have it" go together, because both are statements about one
+   * trip. "Have it" in particular is only true of the week it was said in,
+   * so it is not allowed to outlive the ticks it sits beside.
+   */
+  async function newTrip() {
+    if (await action.run(() => api.newGroceryTrip())) {
       setUnsaved(new Map());
       reload();
     }
@@ -180,8 +201,8 @@ export default function GroceryPage() {
           />
         </label>
         <span className="spacer" />
-        <Button size="small" onClick={clearChecks}>
-          Clear checkmarks
+        <Button size="small" onClick={newTrip}>
+          Start a new trip
         </Button>
       </div>
 
@@ -194,8 +215,8 @@ export default function GroceryPage() {
       {unsaved.size > 0 && (
         <Banner tone="notice" spaced role="status">
           <span>
-            {unsaved.size} checkmark{unsaved.size === 1 ? "" : "s"} not saved yet. They
-            are on this list but not on your other devices.
+            {unsaved.size} mark{unsaved.size === 1 ? "" : "s"} not saved yet. They are on
+            this list but not on your other devices.
           </span>
           <Button size="small" onClick={saveUnsaved} disabled={saving}>
             {saving ? "Saving…" : "Save now"}
@@ -216,8 +237,6 @@ export default function GroceryPage() {
 
       {list && !empty && <SendToCart start={start} end={end} list={list} />}
 
-      {canPrice && <Offers />}
-
       {!error && empty && (
         <EmptyState glyph="🧺" title="Nothing to buy">
           <p>
@@ -229,14 +248,13 @@ export default function GroceryPage() {
 
       {list && list.items.length > 0 && (
         <section className="grocery-section">
-          <h2>
-            To buy <span className="count">{itemCount(list.items.length)}</span>
-          </h2>
+          <SectionHeading title="To buy" items={list.items} />
           {list.items.map((item) => (
             <GroceryRow
               key={item.key}
               item={item}
               onToggle={toggle}
+              onHaveIt={haveIt}
               canPrice={canPrice}
               onMatched={reload}
             />
@@ -266,15 +284,13 @@ export default function GroceryPage() {
 
       {list && list.pantry_restock.length > 0 && (
         <section className="grocery-section">
-          <h2>
-            Restock pantry{" "}
-            <span className="count">{itemCount(list.pantry_restock.length)}</span>
-          </h2>
+          <SectionHeading title="Restock pantry" items={list.pantry_restock} />
           {list.pantry_restock.map((item) => (
             <GroceryRow
               key={item.key}
               item={item}
               onToggle={toggle}
+              onHaveIt={haveIt}
               canPrice={canPrice}
               onMatched={reload}
             />
@@ -282,6 +298,27 @@ export default function GroceryPage() {
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * A section's heading with what it really holds.
+ *
+ * Lines marked "have it" stay in place - a row that moves the moment it is
+ * tapped cannot be un-tapped - but they are no longer things to buy, so the
+ * count does not include them. Saying how many were set aside keeps the
+ * heading honest about the rows under it.
+ */
+function SectionHeading({ title, items }: { title: string; items: GroceryItem[] }) {
+  const have = items.filter((item) => item.status === "have").length;
+  return (
+    <h2>
+      {title}{" "}
+      <span className="count">
+        {itemCount(items.length - have)}
+        {have > 0 && ` · ${have} you have`}
+      </span>
+    </h2>
   );
 }
 
@@ -315,16 +352,16 @@ const KROGER_CART_URL = "https://www.kroger.com/cart";
 /**
  * Which lines the shopping still covers, as a value that changes when they do.
  *
- * The review below is built by the server from the same checkmarks, so ticking
- * something off while the review is open would leave it describing a trip that
+ * The review below is built by the server from the same marks, so marking
+ * something while the review is open would leave it describing a trip that
  * is no longer the one about to be ordered. This is what tells it to look
- * again, and it is the checked keys rather than the whole list because they
+ * again, and it is the marked keys rather than the whole list because they
  * are the only thing the answer depends on.
  */
-function checkedSignature(list: GroceryList): string {
+function markSignature(list: GroceryList): string {
   return [...list.items, ...list.pantry_restock]
-    .filter((item) => item.checked)
-    .map((item) => item.key)
+    .filter((item) => item.status !== "to_buy")
+    .map((item) => `${item.key}=${item.status}`)
     .sort()
     .join(",");
 }
@@ -358,7 +395,7 @@ function SendToCart({
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState<CartResult | null>(null);
 
-  const signature = checkedSignature(list);
+  const signature = markSignature(list);
 
   if (!status?.configured) return null;
 
@@ -435,9 +472,9 @@ function SendToCart({
       </div>
 
       {open && (
-        // Keyed on the checkmarks, so ticking something off while the review
-        // is open starts it again rather than leaving it describing a trip
-        // that is no longer the one about to be ordered.
+        // Keyed on the marks, so marking something while the review is open
+        // starts it again rather than leaving it describing a trip that is
+        // no longer the one about to be ordered.
         <CartReview
           key={signature}
           start={start}
@@ -452,13 +489,18 @@ function SendToCart({
   );
 }
 
+/** The most of one product a single send will order; the server's cap too. */
+const MAX_QUANTITY = 99;
+
 /**
  * What is about to be ordered, and the button that orders it.
  *
  * The quantities are the reason this is a list rather than a count. They come
  * from what the week's meals add up to and are not always one - three bags of
  * flour for a week of bread is right, and is also the kind of thing worth
- * seeing before it is bought rather than after.
+ * seeing before it is bought rather than after. Each can be changed here: the
+ * arithmetic behind it is bounded by what the app knows about an ingredient,
+ * and a person reading "1 × 12 ct, for 24 eggs" can do the sum it could not.
  */
 function CartReview({
   start,
@@ -476,8 +518,24 @@ function CartReview({
     reload,
   } = useLoad(useCallback(() => api.cartPreview(start, end), [start, end]));
   const [modality, setModality] = useState<Modality>("PICKUP");
+  const [quantities, setQuantities] = useState<ReadonlyMap<string, number>>(new Map());
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+
+  function quantityOf(line: CartLine): number {
+    return quantities.get(line.key) ?? line.quantity;
+  }
+
+  function adjust(line: CartLine, by: number) {
+    const next = Math.min(MAX_QUANTITY, Math.max(1, quantityOf(line) + by));
+    setQuantities((prev) => {
+      const changed = new Map(prev);
+      // Back at the worked-out number is the same as never having changed it.
+      if (next === line.quantity) changed.delete(line.key);
+      else changed.set(line.key, next);
+      return changed;
+    });
+  }
 
   /**
    * Not routed through `useAction`, which reports a failed write and answers
@@ -489,7 +547,7 @@ function CartReview({
     setSending(true);
     setSendError(null);
     try {
-      onSent(await api.addToCart(start, end, modality));
+      onSent(await api.addToCart(start, end, modality, Object.fromEntries(quantities)));
     } catch (cause) {
       setSendError(errorMessage(cause, "Nothing was sent to your Kroger cart."));
       setSending(false);
@@ -516,20 +574,44 @@ function CartReview({
       ) : (
         <>
           <ul className="cart-lines">
-            {plan.lines.map((line) => (
-              <li key={line.key}>
-                <span className="quantity" aria-label={`${line.quantity} of`}>
-                  {line.quantity}×
-                </span>
-                <span className="item-name">
-                  <span className="name">{line.name}</span>
-                </span>
-                <span className="product" title={line.description}>
-                  {line.description}
-                  {line.size && ` · ${line.size}`}
-                </span>
-              </li>
-            ))}
+            {plan.lines.map((line) => {
+              const quantity = quantityOf(line);
+              return (
+                <li key={line.key}>
+                  <span className="stepper" role="group" aria-label={`How many ${line.name}`}>
+                    <button
+                      type="button"
+                      aria-label={`Fewer ${line.name}`}
+                      disabled={quantity <= 1}
+                      onClick={() => adjust(line, -1)}
+                    >
+                      −
+                    </button>
+                    <span className="quantity">{quantity}×</span>
+                    <button
+                      type="button"
+                      aria-label={`More ${line.name}`}
+                      disabled={quantity >= MAX_QUANTITY}
+                      onClick={() => adjust(line, 1)}
+                    >
+                      +
+                    </button>
+                  </span>
+                  <span className="item-name">
+                    <span className="name">{line.name}</span>
+                    {line.amounts.length > 0 && (
+                      // The amount the count is meant to cover. "2 × 1 lb,
+                      // for 1½ lb" can be checked; "2" can only be trusted.
+                      <span className="covers">for {line.amounts.join(" + ")}</span>
+                    )}
+                  </span>
+                  <span className="product" title={line.description}>
+                    {line.description}
+                    {line.size && ` · ${line.size}`}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
 
           {plan.skipped.length > 0 && (
@@ -561,39 +643,13 @@ function CartReview({
 }
 
 /**
- * Ingredients you cook with that are discounted this week.
+ * A line's price. Kroger's own description and size, shown as returned.
  *
- * Folded away, because the answer is usually "nothing much" and it must not
- * push the list itself down the page. Built from products already chosen, so
- * it costs one batched lookup and never a search.
+ * Says when the product was the shopper's own choice. The choice is
+ * remembered either way, and a remembered choice nobody can see is
+ * indistinguishable from a guess - and "back to automatic" only makes sense
+ * on a line that has left it.
  */
-function Offers() {
-  const { data } = useLoad(useCallback(() => api.sales(), []));
-  if (!data || data.length === 0) return null;
-  return (
-    <details className="grocery-section offers-section">
-      <summary>
-        On sale <span className="count">{itemCount(data.length)}</span>
-      </summary>
-      {data.map((sale: SaleItem) => (
-        <div key={sale.key} className="offer">
-          <span className="name">{sale.name}</span>
-          <span className="item-price on-sale">
-            <span className="amount">
-              <s>{money(sale.price.regular)}</s> {money(sale.price.promo ?? sale.price.regular)}
-            </span>
-            <span className="product">
-              {sale.price.description}
-              {sale.price.size && ` · ${sale.price.size}`}
-            </span>
-          </span>
-        </div>
-      ))}
-    </details>
-  );
-}
-
-/** A line's price. Kroger's own description and size, shown as returned. */
 function ItemPriceTag({ item }: { item: GroceryItem }) {
   if (!item.price) return null;
   const { regular, promo, description, size, estimated } = item.price;
@@ -614,6 +670,7 @@ function ItemPriceTag({ item }: { item: GroceryItem }) {
         {description}
         {scaled ? ` · ${money(shelf)}${size ? ` / ${size}` : ""}` : size ? ` · ${size}` : ""}
       </span>
+      {item.hand_picked && <span className="pick-tag">your pick</span>}
     </span>
   );
 }
@@ -697,9 +754,11 @@ function ItemUses({ item }: { item: GroceryItem }) {
 function Alternatives({
   item,
   onPick,
+  onForget,
 }: {
   item: GroceryItem;
   onPick: (productId: string | null) => void;
+  onForget: () => void;
 }) {
   const { data, error, loading } = useLoad(
     useCallback(() => api.matchAlternatives(item.key), [item.key]),
@@ -756,6 +815,14 @@ function Alternatives({
       <button type="button" className="alternative skip" onClick={() => onPick(null)}>
         Don&rsquo;t price this
       </button>
+      {item.hand_picked && (
+        // Offered only on a line a person has already decided about. It is
+        // also the one way a remembered choice, hand-made or not, gets
+        // remade: nothing else ever looks again.
+        <button type="button" className="alternative skip" onClick={onForget}>
+          Back to the automatic pick
+        </button>
+      )}
     </div>
   );
 }
@@ -763,11 +830,13 @@ function Alternatives({
 function GroceryRow({
   item,
   onToggle,
+  onHaveIt,
   canPrice,
   onMatched,
 }: {
   item: GroceryItem;
   onToggle: (item: GroceryItem) => void;
+  onHaveIt: (item: GroceryItem) => void;
   /** Whether a store is set, so there is anything to choose between. */
   canPrice: boolean;
   onMatched: () => void;
@@ -780,25 +849,42 @@ function GroceryRow({
     onMatched();
   }
 
+  async function forget() {
+    await api.forgetMatch(item.key);
+    setOpen(false);
+    onMatched();
+  }
+
+  const bought = item.status === "bought";
+  const have = item.status === "have";
+  const rowClass = `grocery-item${bought ? " checked" : ""}${have ? " have" : ""}`;
+
   return (
     <div className="grocery-entry">
-      <div className={`grocery-item${item.checked ? " checked" : ""}`}>
+      <div className={rowClass}>
         <div className="item-text">
           {/* The label wraps only the checkbox and the name. It used to wrap
               the whole row, which would make a click on the price toggle tick
               the item off as well - and the recipe links below would be the
               same trap. */}
           <label className="grocery-check">
-            <input
-              type="checkbox"
-              checked={item.checked}
-              onChange={() => onToggle(item)}
-            />
+            <input type="checkbox" checked={bought} onChange={() => onToggle(item)} />
             <ItemName item={item} />
           </label>
           <ItemUses item={item} />
         </div>
         {item.from_pantry && <span className="pantry-tag">pantry</span>}
+        {have && <span className="have-tag">have it</span>}
+        {/* "Have it" sits beside the tick rather than being one, because it
+            means the opposite: not in the trolley, and not to be paid for. */}
+        <Button
+          size="small"
+          aria-pressed={have}
+          onClick={() => onHaveIt(item)}
+          aria-label={have ? `${item.name}: need it after all` : `${item.name}: have it already`}
+        >
+          {have ? "Need it" : "Have it"}
+        </Button>
         {canPrice && (
           <button
             type="button"
@@ -806,20 +892,27 @@ function GroceryRow({
             aria-expanded={open}
             aria-label={
               item.price
-                ? `${item.name}: ${item.price.description}. Choose a different product`
-                : `${item.name}: not priced. Choose a product`
+                ? `${item.name}: ${item.price.description}${
+                    item.hand_picked ? ", your pick" : ""
+                  }. Choose a different product`
+                : item.hand_picked
+                  ? `${item.name}: not priced, your choice. Choose a product`
+                  : `${item.name}: not priced. Choose a product`
             }
             onClick={() => setOpen((wasOpen) => !wasOpen)}
           >
             {item.price ? (
               <ItemPriceTag item={item} />
             ) : (
-              <span className="unmatched">no match</span>
+              <span className="unmatched">
+                {item.hand_picked ? "not priced" : "no match"}
+                {item.hand_picked && <span className="pick-tag">your pick</span>}
+              </span>
             )}
           </button>
         )}
       </div>
-      {open && <Alternatives item={item} onPick={pick} />}
+      {open && <Alternatives item={item} onPick={pick} onForget={forget} />}
     </div>
   );
 }

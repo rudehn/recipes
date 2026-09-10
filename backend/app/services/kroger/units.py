@@ -13,15 +13,19 @@ three one-pound packs, and "8 ct / 30.4 ounce" means eight patties weighing
 30.4 ounces in total - the same shape with opposite arithmetic, and nothing
 in the string says which. Both are refused.
 
-Volume and weight are separate dimensions here, and no attempt is made to
-cross between them: that needs a per-ingredient density, which is the rest of
-the unit-conversion work.
+Volume and weight are separate dimensions here, and crossing between them
+needs a per-ingredient density. `comparable` is the one place that crossing
+happens, and everything that relates a requirement to a package - which one
+to buy, what it costs, how many to order - goes through it, so those three
+answers cannot disagree.
 """
 
 import math
 import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+
+from .density import grams_per_cup, sold_by_the_piece
 
 WEIGHT = "weight"
 VOLUME = "volume"
@@ -116,8 +120,49 @@ def as_weight(amount: Measure | None, grams_per_cup: float | None) -> Measure | 
     return None
 
 
+def comparable(
+    size: Measure | None,
+    need: Measure | None,
+    canonical_key: str = "",
+    grams: float | None = None,
+) -> tuple[Measure, Measure] | None:
+    """A package and a requirement in one dimension, or None if there is none.
+
+    The bridge between what a recipe asks for and what a shelf offers. Weight
+    against weight and volume against volume need nothing; a volume against a
+    weight needs the ingredient's density, which is looked up unless given.
+    Counts are the exception: a recipe's six cloves of garlic and Kroger's
+    "1 ct" bulb are both counts, of different things, and relating them
+    bought six bulbs. So a count compares only for the ingredients a recipe
+    counts in the shop's own pieces - eggs, tortillas, buns.
+
+    None is a real answer. It means the two cannot be related, and every
+    caller falls back to one package rather than to a guess.
+    """
+    if size is None or need is None or size.base <= 0:
+        return None
+    if size.dimension == need.dimension:
+        if size.dimension == COUNT and not sold_by_the_piece(canonical_key):
+            return None
+        return size, need
+    if {size.dimension, need.dimension} != {WEIGHT, VOLUME}:
+        return None
+    if grams is None:
+        grams = grams_per_cup(canonical_key)
+    weighed_size = as_weight(size, grams)
+    weighed_need = as_weight(need, grams)
+    if weighed_size is None or weighed_need is None:
+        return None
+    return weighed_size, weighed_need
+
+
 def cost_to_cover(
-    price: float, size: Measure | None, sold_by: str, need: Measure | None
+    price: float,
+    size: Measure | None,
+    sold_by: str,
+    need: Measure | None,
+    canonical_key: str = "",
+    grams: float | None = None,
 ) -> float:
     """What covering `need` actually costs, as against one package's price.
 
@@ -127,16 +172,13 @@ def cost_to_cover(
     price understated that line by two thirds. A package smaller than the
     requirement has to be bought more than once.
 
-    Only weights are scaled. Counts and volumes look comparable and are not:
-    a recipe's six cloves of garlic and Kroger's "1 ct" bulb are both counts
-    of different things, and multiplying would buy six bulbs. Grams are
-    always grams, so weight is the one dimension where the arithmetic is
-    safe. Everything else falls back to the price of one package.
+    Whether the two can be related at all is `comparable`'s decision. Where
+    they cannot, this is the price of one package.
     """
-    if need is None or size is None:
+    related = comparable(size, need, canonical_key, grams)
+    if related is None:
         return price
-    if need.dimension != WEIGHT or size.dimension != WEIGHT or size.base <= 0:
-        return price
+    size, need = related
     if sold_by == "WEIGHT":
         # Never less than one of whatever unit the rate is quoted in. The
         # arithmetic alone says a teaspoon of a $10.99/lb item costs eleven
@@ -147,15 +189,18 @@ def cost_to_cover(
     return price * math.ceil(need.base / size.base)
 
 
-def packages_to_cover(size: Measure | None, need: Measure | None) -> int:
+def packages_to_cover(
+    size: Measure | None,
+    need: Measure | None,
+    canonical_key: str = "",
+    grams: float | None = None,
+) -> int:
     """How many of a product to order to cover `need`.
 
     The counting half of `cost_to_cover`, and deliberately the same arithmetic
     on the same conditions: the quantity that reaches the cart has to be the
     quantity that was priced, or the estimate on screen describes a different
-    trolley than the one being filled. Only weights scale, for the reason
-    given there - a recipe's six garlic cloves and Kroger's "1 ct" bulb are
-    both counts, of different things, and multiplying would buy six bulbs.
+    trolley than the one being filled.
 
     Always rounded up, where `cost_to_cover` leaves a weight-sold item
     unrounded. A rate can honestly be charged in fractions and an order cannot:
@@ -164,10 +209,10 @@ def packages_to_cover(size: Measure | None, need: Measure | None) -> int:
     named after. The two therefore disagree by up to one unit on weight-sold
     lines, which is why the quantity is shown before anything is sent.
     """
-    if need is None or size is None:
+    related = comparable(size, need, canonical_key, grams)
+    if related is None:
         return 1
-    if need.dimension != WEIGHT or size.dimension != WEIGHT or size.base <= 0:
-        return 1
+    size, need = related
     return max(1, math.ceil(need.base / size.base))
 
 

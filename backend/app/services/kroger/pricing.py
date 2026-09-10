@@ -12,8 +12,8 @@ the answer is the price of the bag, whole. Working out what a recipe's two
 cups of that bag cost is a different question, and needs a density.
 
 The amount the meals call for is still worked out, but only to choose
-*which* package to buy - the smallest that covers it - not to take a share
-of one. See `matching._fit`.
+*which* package to buy and how many of it - never to take a share of one.
+See `matching._fit` and `units.comparable`.
 
 Coverage travels with the total for the same reason amounts travel with
 in-pantry items in `services.grocery`: a number that quietly omits what it
@@ -22,12 +22,21 @@ is only discovered at the till.
 """
 
 import logging
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import Ingredient, IngredientProductMatch, PantryItem
-from ...schemas import GroceryItem, GroceryList, GroceryPricing, ItemPrice, SaleItem
+from ...models import Ingredient, IngredientProductMatch, PantryItem, Recipe
+from ...schemas import (
+    GroceryItem,
+    GroceryList,
+    GroceryPricing,
+    ItemPrice,
+    RecipeOnSale,
+    RecipeSummary,
+    SaleItem,
+)
 from .. import settings as settings_service
 from ..canonical import best_display, canonical_key
 from . import matching, products
@@ -73,21 +82,21 @@ def needed(line: GroceryItem) -> Measure | None:
     return Measure(dimension, base)
 
 
-async def on_sale(session: AsyncSession) -> list[SaleItem]:
-    """Things you cook with that are discounted this week.
+async def _discounted(session: AsyncSession) -> dict[str, Product]:
+    """The ingredients whose chosen product is on offer, by key.
 
     Built only from ingredients already matched to a product, and those rows
     exist only because someone opened a list containing them. Nothing is
     searched for here: this re-prices choices already made, which is the
     difference between noticing an offer and gathering a catalogue.
 
-    The ingredient's own name comes from the recipes and pantry that use it,
-    through the same `best_display` the grocery list uses, so a sale reads as
-    "flour" rather than as a product code.
+    Empty rather than an error when pricing is off, no store is set, or
+    Kroger cannot be reached: an offers panel with nothing in it is a normal
+    sight, and the page it sits on is not about offers.
     """
     store = await settings_service.selected_store(session)
     if not enabled() or store is None:
-        return []
+        return {}
 
     rows = (
         await session.execute(
@@ -98,7 +107,7 @@ async def on_sale(session: AsyncSession) -> list[SaleItem]:
         )
     ).scalars().all()
     if not rows:
-        return []
+        return {}
 
     try:
         found = await products.by_ids(
@@ -106,23 +115,57 @@ async def on_sale(session: AsyncSession) -> list[SaleItem]:
         )
     except KrogerError as exc:
         log.warning("Could not check for offers: %s", exc)
+        return {}
+
+    return {
+        row.canonical_key: product
+        for row in rows
+        if (product := found.get(row.product_id or "")) is not None and product.on_sale
+    }
+
+
+async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
+    """Recipes with something discounted in them this week, most first.
+
+    The offers used to be listed as ingredients on the grocery page, where
+    they answered a question nobody on that page was asking: the list's own
+    lines already show a sale price, and its total already says what the
+    offers saved. What a discount on an ingredient is good for is deciding
+    what to cook, so it is put with the recipes and phrased as them.
+
+    Ranked by how much of the recipe is on offer, because two of three
+    ingredients discounted is a reason to cook the thing and two of nineteen
+    is a coincidence. Ties go to the title so the order cannot wobble.
+    """
+    discounted = await _discounted(session)
+    if not discounted:
         return []
 
     names = await _ingredient_names(session)
-    sales: list[SaleItem] = []
-    for row in rows:
-        product = found.get(row.product_id or "")
-        if product is None or not product.on_sale:
+    recipes = (await session.execute(select(Recipe))).scalars().unique().all()
+
+    found: list[RecipeOnSale] = []
+    for recipe in recipes:
+        keys = {k for ing in recipe.ingredients if (k := canonical_key(ing.name))}
+        hits = sorted(keys & discounted.keys(), key=lambda k: names.get(k, k))
+        if not hits:
             continue
-        sales.append(
-            SaleItem(
-                key=row.canonical_key,
-                name=names.get(row.canonical_key) or row.canonical_key.replace("-", " "),
-                price=as_item_price(product),
+        found.append(
+            RecipeOnSale(
+                recipe=RecipeSummary.model_validate(recipe),
+                on_sale=[
+                    SaleItem(
+                        key=key,
+                        name=names.get(key) or key.replace("-", " "),
+                        price=as_item_price(discounted[key]),
+                    )
+                    for key in hits
+                ],
+                ingredient_count=len(keys),
             )
         )
-    sales.sort(key=lambda s: s.name)
-    return sales
+    found.sort(key=lambda r: (-len(r.on_sale) / r.ingredient_count, r.recipe.title.casefold()))
+    return found
 
 
 async def _ingredient_names(session: AsyncSession) -> dict[str, str]:
@@ -142,14 +185,32 @@ def to_buy(grocery_list: GroceryList) -> list[GroceryItem]:
 
     In-pantry items are left out: they are set aside precisely because they
     are not being bought, and pricing them would inflate a total meant to say
-    what the trip costs.
+    what the trip costs. So are lines marked as already at home, for the
+    same reason. A ticked line stays: it is in the trolley, and the till will
+    charge for it.
     """
-    return [*grocery_list.items, *grocery_list.pantry_restock]
+    return [
+        line
+        for line in [*grocery_list.items, *grocery_list.pantry_restock]
+        if line.status != "have"
+    ]
 
 
-async def chosen_products(
+@dataclass(frozen=True)
+class Choice:
+    """What a line means on the shelf, and whether a person said so.
+
+    `product` is None for a line nothing confident matched, or one a person
+    marked as not to be priced - the two are told apart by `hand_picked`.
+    """
+
+    product: Product | None
+    hand_picked: bool
+
+
+async def choices(
     session: AsyncSession, lines: list[GroceryItem], location_id: str
-) -> dict[str, Product]:
+) -> dict[str, Choice]:
     """The product each line means, keyed by the line's key.
 
     The single place that answers "which thing on the shelf is this". Pricing
@@ -158,21 +219,23 @@ async def chosen_products(
     product while another goes into the cart is wrong in the way that is only
     discovered at collection.
 
-    Lines with no confident match are simply absent, which is the same answer
-    both callers already give them - unpriced, and not ordered.
+    Every line is answered, so that a line with no product can still say
+    whether that was the shopper's decision.
     """
-    matched = await matching.product_ids(
+    picked = await matching.picks(
         session,
         [line.key for line in lines],
         location_id,
         needs={line.key: need for line in lines if (need := needed(line))},
     )
-    found = await products.by_ids(sorted(set(matched.values())), location_id)
-    chosen: dict[str, Product] = {}
+    wanted = sorted({p.product_id for p in picked.values() if p.product_id})
+    found = await products.by_ids(wanted, location_id) if wanted else {}
+    chosen: dict[str, Choice] = {}
     for line in lines:
-        product = found.get(matched.get(line.key, ""))
-        if product is not None:
-            chosen[line.key] = product
+        pick = picked.get(line.key)
+        if pick is None:
+            continue
+        chosen[line.key] = Choice(found.get(pick.product_id or ""), pick.hand_picked)
     return chosen
 
 
@@ -191,12 +254,17 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         # apart from "switched off" through /pricing/status and can prompt.
         return grocery_list
 
-    lines = to_buy(grocery_list)
+    # Every line gets its price, including those marked as already at home:
+    # the product is still what the line means, and a set-aside line reading
+    # "no match" would be a lie about the matching rather than a fact about
+    # the trip. Only the total is particular about which lines it counts.
+    lines = [*grocery_list.items, *grocery_list.pantry_restock]
+    paying = to_buy(grocery_list)
     if not lines:
         return grocery_list
 
     try:
-        chosen = await chosen_products(session, lines, store.location_id)
+        chosen = await choices(session, lines, store.location_id)
     except KrogerError as exc:
         # One warning, and the list goes out unpriced. Same principle as a
         # failing site in recipe_search: a thinner answer beats no answer.
@@ -207,23 +275,27 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
     saved = 0.0
     priced = 0
     for line in lines:
-        product = chosen.get(line.key)
+        choice = chosen.get(line.key)
+        if choice is None:
+            continue
+        line.hand_picked = choice.hand_picked
+        product = choice.product
         if product is None or product.price is None:
             continue
-        cost = cost_to_cover(
-            product.price, parse_size(product.size), product.sold_by, needed(line)
-        )
+        need = needed(line)
+        size = parse_size(product.size)
+        cost = cost_to_cover(product.price, size, product.sold_by, need, line.key)
         line.price = as_item_price(product)
         line.price.estimated = to_cents(cost)
+        if line.status == "have":
+            continue
         total += cost
         priced += 1
         if product.on_sale and product.regular is not None:
             # What the same trip would have cost at the regular price, scaled
             # the same way, so a saving on a weight-sold item is not quoted
             # per pound while its cost is quoted for three of them.
-            was = cost_to_cover(
-                product.regular, parse_size(product.size), product.sold_by, needed(line)
-            )
+            was = cost_to_cover(product.regular, size, product.sold_by, need, line.key)
             saved += was - cost
 
     if not priced:
@@ -239,6 +311,6 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         total=to_cents(total),
         saved=to_cents(saved),
         priced=priced,
-        total_lines=len(lines),
+        total_lines=len(paying),
     )
     return grocery_list

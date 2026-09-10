@@ -14,7 +14,15 @@ import pytest
 
 from app import config
 from app.db import session_factory
-from app.models import AppSettings, Ingredient, MealPlanEntry, PantryItem, Recipe
+from app.models import (
+    AppSettings,
+    GroceryCheck,
+    Ingredient,
+    IngredientProductMatch,
+    MealPlanEntry,
+    PantryItem,
+    Recipe,
+)
 from app.services.kroger import client as kroger
 
 LOCATION = "01400765"
@@ -228,10 +236,11 @@ async def test_a_trip_with_no_offers_saved_nothing(client, catalog):
     assert (await fetch(client))["pricing"]["saved"] == 0.0
 
 
-async def test_offers_are_listed_for_things_already_matched(client, catalog):
+async def test_offers_are_listed_as_the_recipes_they_would_go_into(client, catalog):
     """Built from matches that exist only because a list was opened. Nothing
     is searched for, so this notices an offer rather than gathering a
-    catalogue."""
+    catalogue. And it answers as recipes rather than ingredients: a discount
+    on sugar is only interesting as a reason to bake something."""
     await seed(["flour", "sugar"])
     await fetch(client)
 
@@ -239,10 +248,117 @@ async def test_offers_are_listed_for_things_already_matched(client, catalog):
 
     assert resp.status_code == 200
     body = resp.json()
+    assert [r["recipe"]["title"] for r in body] == ["Test bake"]
     # Flour is matched but not discounted, so only sugar is an offer.
-    assert [s["name"] for s in body] == ["sugar"]
-    assert body[0]["price"]["promo"] == 2.99
-    assert body[0]["price"]["regular"] == 3.99
+    assert [s["name"] for s in body[0]["on_sale"]] == ["sugar"]
+    assert body[0]["on_sale"][0]["price"]["promo"] == 2.99
+    assert body[0]["on_sale"][0]["price"]["regular"] == 3.99
+    assert body[0]["ingredient_count"] == 2
+
+
+async def test_recipes_with_more_of_themselves_on_offer_come_first(client, catalog):
+    """Two of two ingredients discounted is a reason to cook the thing; one of
+    three is a coincidence. A recipe with nothing on offer is not listed."""
+    await seed(["flour", "sugar", "saffron"])
+    await fetch(client)
+    async with session_factory() as session:
+        for title, names in [("Sugar cookies", ["sugar"]), ("Plain bread", ["flour"])]:
+            recipe = Recipe(title=title, servings=4)
+            recipe.ingredients = [
+                Ingredient(name=n, quantity=1, unit="cup", position=i)
+                for i, n in enumerate(names)
+            ]
+            session.add(recipe)
+        await session.commit()
+
+    body = (await client.get("/api/pricing/sales")).json()
+
+    assert [r["recipe"]["title"] for r in body] == ["Sugar cookies", "Test bake"]
+
+
+async def test_a_line_already_at_home_is_not_priced_into_the_trip(client, catalog):
+    """"Have it" means it is not being bought, so it comes out of the total
+    and out of the count the total is quoted against. A tick does not: what
+    is in the trolley is still paid for."""
+    await seed(["flour", "sugar"])
+    async with session_factory() as session:
+        session.add(GroceryCheck(key="sugar", status="have"))
+        await session.commit()
+
+    body = await fetch(client)
+
+    assert body["pricing"]["total"] == 2.59
+    assert body["pricing"]["priced"] == 1
+    assert body["pricing"]["total_lines"] == 1
+    # Still on the list, in place, so it can be un-said - and still priced,
+    # since the product is still what the line means. Only the total leaves
+    # it out.
+    by_name = {i["name"]: i for i in body["items"]}
+    assert by_name["sugar"]["status"] == "have"
+    assert by_name["sugar"]["price"]["description"] == "Kroger® Granulated Sugar"
+
+
+async def test_a_ticked_line_is_still_paid_for(client, catalog):
+    await seed(["flour", "sugar"])
+    async with session_factory() as session:
+        session.add(GroceryCheck(key="sugar", status="bought"))
+        await session.commit()
+
+    body = await fetch(client)
+
+    assert body["pricing"]["total"] == round(2.59 + 2.99, 2)
+    assert body["pricing"]["total_lines"] == 2
+
+
+async def test_a_line_says_whether_its_product_was_chosen_by_hand(client, catalog):
+    """A remembered choice the shopper cannot see is indistinguishable from a
+    guess, and "back to automatic" only makes sense on a line that has left
+    it. A line a person marked as not to be priced says so too, rather than
+    reading as a miss."""
+    await seed(["flour", "sugar", "saffron"])
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="sugar", location_id=LOCATION,
+                product_id="0002", user_confirmed=True,
+            )
+        )
+        session.add(
+            IngredientProductMatch(
+                canonical_key="saffron", location_id=LOCATION,
+                product_id=None, user_confirmed=True,
+            )
+        )
+        await session.commit()
+
+    by_name = {i["name"]: i for i in (await fetch(client))["items"]}
+
+    assert by_name["flour"]["hand_picked"] is False
+    assert by_name["sugar"]["hand_picked"] is True
+    assert by_name["saffron"]["hand_picked"] is True
+    assert by_name["saffron"]["price"] is None
+
+
+async def test_forgetting_a_pick_lets_the_matcher_choose_again(client, catalog):
+    """The way back from a hand pick - and the only way an automatic pick
+    made under older rules gets remade under newer ones."""
+    await seed(["flour"])
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="flour", location_id=LOCATION,
+                product_id=None, user_confirmed=True,
+            )
+        )
+        await session.commit()
+    assert (await fetch(client))["items"][0]["price"] is None
+
+    resp = await client.delete("/api/pricing/match?key=flour")
+
+    assert resp.status_code == 204
+    line = (await fetch(client))["items"][0]
+    assert line["price"]["description"] == "Kroger® All Purpose Flour"
+    assert line["hand_picked"] is False
 
 
 async def test_offers_are_empty_before_anything_has_been_matched(client, catalog):

@@ -26,10 +26,12 @@ it lasts months and is the shopper's consent made durable, so it lives in
 `app_settings` - and Kroger rotates it on every refresh, meaning each renewal
 has to be written back or the next one fails.
 
-What gets ordered is not decided here. `pricing.chosen_products` picks the
-product for a line, and this module orders that product and no other: a cart
-that quietly disagrees with the total on screen is the failure worth designing
-against, and it would be invisible until collection.
+What gets ordered is not decided here. `pricing.choices` picks the product
+for a line, and this module orders that product and no other: a cart that
+quietly disagrees with the total on screen is the failure worth designing
+against, and it would be invisible until collection. How many is decided
+here, from the same arithmetic the estimate used - and then, if the shopper
+says otherwise in the review, from the shopper.
 """
 
 import asyncio
@@ -209,21 +211,32 @@ async def _token(session: AsyncSession, stale: str | None = None) -> str:
 def _sendable(grocery_list: GroceryList) -> list[GroceryItem]:
     """The lines worth ordering.
 
-    Ticked-off lines are left out. A tick means the thing is already in a real
-    trolley or already at home, and this runs before a trip rather than during
-    one, so ordering them again is the one mistake the cart cannot be asked to
-    undo.
+    Marked lines are left out. A tick means the thing is already in a real
+    trolley, and "have" means it is already at home; this runs before a trip
+    rather than during one, so ordering either again is the one mistake the
+    cart cannot be asked to undo.
     """
-    return [line for line in pricing.to_buy(grocery_list) if not line.checked]
+    return [line for line in pricing.to_buy(grocery_list) if line.status == "to_buy"]
 
 
-async def plan(session: AsyncSession, grocery_list: GroceryList) -> CartPlan:
+async def plan(
+    session: AsyncSession,
+    grocery_list: GroceryList,
+    quantities: dict[str, int] | None = None,
+) -> CartPlan:
     """Exactly what sending this list would put in the cart.
 
     Shown before anything is sent, because nothing can be taken back out
     afterwards. It carries the quantities as well as the products: those are
     worked out from the week's meals and can differ from one, and "3 × Kroger
     Boneless Chicken Thighs" is a number worth reading before it is ordered.
+    The amount that number is meant to cover travels with it, so it can be
+    checked rather than trusted.
+
+    `quantities` are counts the shopper set by hand, by line key, and they
+    replace the worked-out ones for the lines they name. Only the count is
+    theirs to set: the product is still this app's choice, so a key the plan
+    does not carry cannot smuggle anything in and is simply ignored.
 
     Lines that cannot be sent are named rather than counted. "2 not sent" is a
     number the shopper cannot act on; "parsley, bay leaf" is a shopping list.
@@ -233,17 +246,22 @@ async def plan(session: AsyncSession, grocery_list: GroceryList) -> CartPlan:
     if store is None or not lines:
         return CartPlan(lines=[], skipped=[line.name for line in lines])
 
-    chosen = await pricing.chosen_products(session, lines, store.location_id)
+    chosen = await pricing.choices(session, lines, store.location_id)
+    overrides = quantities or {}
 
     sending: list[CartLine] = []
     skipped: list[str] = []
     for line in lines:
-        product = chosen.get(line.key)
+        choice = chosen.get(line.key)
+        product = choice.product if choice else None
         # The UPC is what the cart is addressed by, and it is not the product
         # id. A product without one cannot be ordered even though it priced.
         if product is None or not product.upc:
             skipped.append(line.name)
             continue
+        worked_out = packages_to_cover(
+            parse_size(product.size), pricing.needed(line), line.key
+        )
         sending.append(
             CartLine(
                 key=line.key,
@@ -251,7 +269,8 @@ async def plan(session: AsyncSession, grocery_list: GroceryList) -> CartPlan:
                 upc=product.upc,
                 description=product.description,
                 size=product.size,
-                quantity=packages_to_cover(parse_size(product.size), pricing.needed(line)),
+                quantity=overrides.get(line.key, worked_out),
+                amounts=line.amounts,
             )
         )
     return CartPlan(lines=sending, skipped=skipped)

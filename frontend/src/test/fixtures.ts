@@ -100,11 +100,12 @@ export function groceryItem(overrides: Partial<GroceryItem> = {}): GroceryItem {
     name: "chicken thighs",
     amounts: ["2 lb"],
     uses: [],
-    checked: false,
+    status: "to_buy",
     from_pantry: false,
     pantry_item_id: null,
     // Unpriced by default: pricing is opt-in, so this is the ordinary line.
     price: null,
+    hand_picked: false,
     ...overrides,
   };
 }
@@ -144,6 +145,7 @@ export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
     description: "Kroger® All Purpose Flour",
     size: "5 lb",
     quantity: 1,
+    amounts: ["2 cups"],
     ...overrides,
   };
 }

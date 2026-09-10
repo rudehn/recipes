@@ -48,6 +48,9 @@ CATALOG = {
     "sugar": catalog_entry("0002", "Kroger® Granulated Sugar", size="4 lb"),
     # No UPC at all. It prices, and it still cannot be ordered.
     "yeast": {**catalog_entry("0003", "Kroger® Active Dry Yeast"), "upc": ""},
+    "milk": catalog_entry("0004", "Kroger® Whole Milk", size="1 gal"),
+    "egg": catalog_entry("0005", "Kroger® Grade A Large Eggs", size="12 ct"),
+    "garlic": catalog_entry("0006", "Garlic", size="1 ct"),
     "saffron": None,
 }
 
@@ -321,11 +324,25 @@ async def test_a_modality_kroger_does_not_have_is_refused(client, fake):
 
 
 async def test_ticked_off_lines_are_not_ordered(client, fake):
-    """A tick means it is already in a trolley or already at home. This runs
-    before the trip, and ordering it again is exactly what cannot be undone."""
+    """A tick means it is already in a trolley. This runs before the trip,
+    and ordering it again is exactly what cannot be undone."""
     await seed(["flour", "sugar"])
     async with session_factory() as session:
-        session.add(GroceryCheck(key="flour", checked=True))
+        session.add(GroceryCheck(key="flour", status="bought"))
+        await session.commit()
+
+    resp = await send(client)
+
+    assert resp.json()["added"] == 1
+    assert [i["upc"] for i in fake.carts[0]["items"]] == ["000111100002"]
+
+
+async def test_lines_already_at_home_are_not_ordered_either(client, fake):
+    """The whole reason the mark exists: three avocados on the counter must
+    not become six."""
+    await seed(["flour", "sugar"])
+    async with session_factory() as session:
+        session.add(GroceryCheck(key="flour", status="have"))
         await session.commit()
 
     resp = await send(client)
@@ -357,14 +374,76 @@ async def test_a_week_needing_more_than_one_package_orders_more_than_one(client,
     assert fake.carts[0]["items"][0]["quantity"] == 3
 
 
-async def test_a_countable_ingredient_is_never_multiplied(client, fake):
-    """Six of a recipe's units against Kroger's package is not six packages -
-    the two count different things - so the fallback is one."""
-    await seed(["flour"], quantity=6, unit=None)
+async def test_a_countable_ingredient_is_not_multiplied_by_default(client, fake):
+    """Six cloves against Kroger's "1 ct" bulb is not six bulbs - the two
+    count different things - so the fallback is one."""
+    await seed(["garlic"], quantity=6, unit=None)
 
     await send(client)
 
     assert fake.carts[0]["items"][0]["quantity"] == 1
+
+
+async def test_an_ingredient_counted_in_the_shops_own_pieces_is_multiplied(client, fake):
+    """Eggs are the exception that proves it: a recipe's egg and Kroger's
+    "12 ct" count the same thing, so twenty of them is two cartons."""
+    await seed(["egg"], quantity=20, unit=None)
+
+    await send(client)
+
+    assert fake.carts[0]["items"][0]["quantity"] == 2
+
+
+async def test_a_volume_is_weighed_before_it_is_counted_against_a_bag(client, fake):
+    """Twenty-four cups of flour is three kilos, which a five pound bag does
+    not hold. This used to order one bag: the quantity only knew how to
+    divide a weight by a weight, while the ranking beside it had already
+    converted the cups."""
+    await seed(["flour"], quantity=24, unit="cup")
+
+    await send(client)
+
+    assert fake.carts[0]["items"][0]["quantity"] == 2
+
+
+async def test_a_volume_against_a_volume_needs_no_density(client, fake):
+    """Six quarts of milk against a gallon jug is two jugs."""
+    await seed(["milk"], quantity=6, unit="quart")
+
+    await send(client)
+
+    assert fake.carts[0]["items"][0]["quantity"] == 2
+
+
+async def test_the_shopper_can_set_a_count_by_hand(client, fake):
+    """The arithmetic is bounded by the density table, and a person reading
+    the review can do the sum it could not. Only the count is theirs: the
+    product still comes from the plan."""
+    await seed(["flour", "sugar"])
+
+    resp = await send(client, quantities={"flour": 3})
+
+    assert resp.status_code == 200
+    by_upc = {i["upc"]: i["quantity"] for i in fake.carts[0]["items"]}
+    assert by_upc == {"000111100001": 3, "000111100002": 1}
+
+
+async def test_a_count_for_a_line_the_plan_does_not_carry_orders_nothing(client, fake):
+    """A key the shopper's list does not have cannot put anything in the
+    cart, however it is spelt."""
+    await seed(["flour"])
+
+    await send(client, quantities={"caviar": 4, "000111100002": 2})
+
+    assert [i["upc"] for i in fake.carts[0]["items"]] == ["000111100001"]
+
+
+async def test_a_count_outside_what_can_be_ordered_is_refused(client, fake):
+    await seed(["flour"])
+
+    assert (await send(client, quantities={"flour": 0})).status_code == 422
+    assert (await send(client, quantities={"flour": 100})).status_code == 422
+    assert fake.carts == []
 
 
 async def test_nothing_is_sent_when_nothing_matched(client, fake):
@@ -398,6 +477,9 @@ async def test_the_preview_says_what_would_be_sent_without_sending_it(client, fa
             "description": "Kroger® All Purpose Flour",
             "size": "5 lb",
             "quantity": 3,
+            # The amount the count is meant to cover, so "3" can be checked
+            # against "12 lb" rather than trusted.
+            "amounts": ["12 lb"],
         }
     ]
 

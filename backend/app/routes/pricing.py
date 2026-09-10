@@ -19,7 +19,7 @@ from ..schemas import (
     ItemPrice,
     MatchSelection,
     PricingStatus,
-    SaleItem,
+    RecipeOnSale,
     StoreOut,
     StoreSelection,
 )
@@ -116,16 +116,16 @@ async def alternatives(
     return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
 
 
-@router.get("/sales", response_model=list[SaleItem])
+@router.get("/sales", response_model=list[RecipeOnSale])
 async def sales(session: AsyncSession = Depends(get_session)):
-    """Ingredients you cook with that are on offer.
+    """Recipes with an ingredient on offer this week.
 
     Re-prices products already chosen rather than searching for anything, so
     it costs one batched call and stays clear of gathering a catalogue.
     Returns an empty list rather than an error when pricing is off or no
     store is set, since an offers panel with nothing in it is a normal sight.
     """
-    return await pricing.on_sale(session)
+    return await pricing.recipes_on_sale(session)
 
 
 @router.put("/match", status_code=204)
@@ -139,3 +139,18 @@ async def set_match(
     """
     store = await _require_store(session)
     await matching.confirm(session, data.canonical_key, store.location_id, data.product_id)
+
+
+@router.delete("/match", status_code=204)
+async def forget_match(
+    key: str = Query(min_length=1, max_length=300),
+    session: AsyncSession = Depends(get_session),
+):
+    """Let the matcher choose again for an ingredient.
+
+    The way back from a hand pick, and the only way an automatic pick gets
+    remade: both are pinned, and the next list to need this ingredient
+    searches afresh.
+    """
+    store = await _require_store(session)
+    await matching.forget(session, key, store.location_id)

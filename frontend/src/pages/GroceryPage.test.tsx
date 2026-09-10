@@ -7,6 +7,7 @@ import {
   type MockBackend,
   type MockRequest,
 } from "../test/backend";
+import type { GroceryStatus } from "../api";
 import { groceryItem, groceryList, recipe } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
@@ -186,7 +187,7 @@ describe("GroceryPage", () => {
       // Routed so a stray toggle is recorded and asserted on. An unmocked call
       // is answered 501 and never reaches the request log, so leaving it out
       // would make the assertion below pass whatever the click did.
-      "POST /api/grocery-list/toggle": undefined,
+      "POST /api/grocery-list/mark": undefined,
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
@@ -198,7 +199,7 @@ describe("GroceryPage", () => {
       "aria-current",
       "true",
     );
-    expect(backend.requestsTo("POST /api/grocery-list/toggle")).toHaveLength(0);
+    expect(backend.requestsTo("POST /api/grocery-list/mark")).toHaveLength(0);
   });
 
   it("shows an unquantified item without a trailing separator", async () => {
@@ -210,7 +211,7 @@ describe("GroceryPage", () => {
     renderApp(WEEK);
 
     await screen.findByText("salt");
-    expect(row("salt").textContent).toBe("salt");
+    expect(row("salt").querySelector(".item-name")!.textContent).toBe("salt");
   });
 
   it("keeps pantry restocking in its own section", async () => {
@@ -335,9 +336,9 @@ describe("GroceryPage", () => {
     let release: () => void = () => {};
     const backend = mockBackend({
       "GET /api/grocery-list": groceryList({
-        items: [groceryItem({ key: "chicken", name: "chicken thighs", checked: false })],
+        items: [groceryItem({ key: "chicken", name: "chicken thighs" })],
       }),
-      "POST /api/grocery-list/toggle": () => new Promise<undefined>((r) => (release = () => r(undefined))),
+      "POST /api/grocery-list/mark": () => new Promise<undefined>((r) => (release = () => r(undefined))),
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
@@ -345,9 +346,9 @@ describe("GroceryPage", () => {
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
 
     expect(within(row("chicken thighs")).getByRole("checkbox")).toBeChecked();
-    expect(backend.requestsTo("POST /api/grocery-list/toggle")[0].body).toEqual({
+    expect(backend.requestsTo("POST /api/grocery-list/mark")[0].body).toEqual({
       key: "chicken",
-      checked: true,
+      status: "bought",
     });
     release();
   });
@@ -355,9 +356,9 @@ describe("GroceryPage", () => {
   it("unticks an item that was already checked", async () => {
     const backend = mockBackend({
       "GET /api/grocery-list": groceryList({
-        items: [groceryItem({ key: "chicken", name: "chicken thighs", checked: true })],
+        items: [groceryItem({ key: "chicken", name: "chicken thighs", status: "bought" })],
       }),
-      "POST /api/grocery-list/toggle": undefined,
+      "POST /api/grocery-list/mark": undefined,
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
@@ -365,27 +366,92 @@ describe("GroceryPage", () => {
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
 
     await waitFor(() =>
-      expect(backend.requestsTo("POST /api/grocery-list/toggle")[0].body).toEqual({
+      expect(backend.requestsTo("POST /api/grocery-list/mark")[0].body).toEqual({
         key: "chicken",
-        checked: false,
+        status: "to_buy",
       }),
     );
   });
 
-  it("clears every checkmark and reloads", async () => {
+  it("starts a new trip, clearing every mark, and reloads", async () => {
     const backend = mockBackend({
       "GET /api/grocery-list": groceryList({ items: [groceryItem()] }),
-      "POST /api/grocery-list/clear-checks": undefined,
+      "POST /api/grocery-list/new-trip": undefined,
     });
     const { user } = renderApp(WEEK);
     await waitFor(() => expect(backend.requestsTo("GET /api/grocery-list")).toHaveLength(1));
 
-    await user.click(screen.getByRole("button", { name: "Clear checkmarks" }));
+    await user.click(screen.getByRole("button", { name: "Start a new trip" }));
 
     await waitFor(() =>
-      expect(backend.requestsTo("POST /api/grocery-list/clear-checks")).toHaveLength(1),
+      expect(backend.requestsTo("POST /api/grocery-list/new-trip")).toHaveLength(1),
     );
     await waitFor(() => expect(backend.requestsTo("GET /api/grocery-list")).toHaveLength(2));
+  });
+
+  it("lets a line be marked as already at home, without ticking it", async () => {
+    // Enough avocados on the counter is not the same as avocados in the
+    // trolley: the line is not struck through, and the estimate and the
+    // cart both leave it out.
+    // Held open so the optimistic mark can be seen before the server answers.
+    let release: () => void = () => {};
+    const backend = mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [groceryItem({ key: "avocado", name: "avocados" })],
+      }),
+      "POST /api/grocery-list/mark": () =>
+        new Promise<undefined>((r) => (release = () => r(undefined))),
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("avocados");
+
+    await user.click(screen.getByRole("button", { name: "avocados: have it already" }));
+
+    expect(within(row("avocados")).getByRole("checkbox")).not.toBeChecked();
+    expect(row("avocados")).toHaveClass("have");
+    expect(within(row("avocados")).getByText("have it")).toBeInTheDocument();
+    expect(backend.requestsTo("POST /api/grocery-list/mark")[0].body).toEqual({
+      key: "avocado",
+      status: "have",
+    });
+    release();
+  });
+
+  it("can take an at-home mark back", async () => {
+    const backend = mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [groceryItem({ key: "avocado", name: "avocados", status: "have" })],
+      }),
+      "POST /api/grocery-list/mark": undefined,
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("avocados");
+
+    await user.click(screen.getByRole("button", { name: "avocados: need it after all" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("POST /api/grocery-list/mark")[0].body).toEqual({
+        key: "avocado",
+        status: "to_buy",
+      }),
+    );
+  });
+
+  it("counts what is left to buy, and says how many were set aside", async () => {
+    mockBackend({
+      "GET /api/grocery-list": groceryList({
+        items: [
+          groceryItem({ name: "avocados", status: "have" }),
+          groceryItem({ name: "limes" }),
+          groceryItem({ name: "onions" }),
+        ],
+      }),
+    });
+    renderApp(WEEK);
+
+    const heading = await screen.findByRole("heading", { name: /to buy/i });
+    expect(heading).toHaveTextContent("2 items");
+    expect(heading).toHaveTextContent("1 you have");
   });
 
   it("explains an empty list rather than showing a bare page", async () => {
@@ -428,7 +494,7 @@ describe("GroceryPage", () => {
       "GET /api/grocery-list": groceryList({
         items: [groceryItem({ key: "chicken", name: "chicken thighs" })],
       }),
-      "POST /api/grocery-list/toggle": new HttpError(503, "Server is restarting"),
+      "POST /api/grocery-list/mark": new HttpError(503, "Server is restarting"),
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
@@ -436,27 +502,27 @@ describe("GroceryPage", () => {
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
 
     expect(within(row("chicken thighs")).getByRole("checkbox")).toBeChecked();
-    expect(await screen.findByText(/1 checkmark not saved yet/)).toBeInTheDocument();
+    expect(await screen.findByText(/1 mark not saved yet/)).toBeInTheDocument();
   });
 
   it("sends the unsaved marks again when asked", async () => {
     let reachable = false;
-    let checked = false;
+    let status: GroceryStatus = "to_buy";
     const backend = mockBackend({
       "GET /api/grocery-list": () =>
         groceryList({
-          items: [groceryItem({ key: "chicken", name: "chicken thighs", checked })],
+          items: [groceryItem({ key: "chicken", name: "chicken thighs", status })],
         }),
-      "POST /api/grocery-list/toggle": (req: MockRequest) => {
+      "POST /api/grocery-list/mark": (req: MockRequest) => {
         if (!reachable) return new HttpError(503, "Server is restarting");
-        checked = (req.body as { checked: boolean }).checked;
+        status = (req.body as { status: GroceryStatus }).status;
         return undefined;
       },
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
-    await screen.findByText(/1 checkmark not saved yet/);
+    await screen.findByText(/1 mark not saved yet/);
 
     reachable = true;
     await user.click(screen.getByRole("button", { name: "Save now" }));
@@ -465,7 +531,7 @@ describe("GroceryPage", () => {
       expect(screen.queryByText(/not saved yet/)).not.toBeInTheDocument(),
     );
     expect(within(row("chicken thighs")).getByRole("checkbox")).toBeChecked();
-    expect(backend.requestsTo("POST /api/grocery-list/toggle")).toHaveLength(2);
+    expect(backend.requestsTo("POST /api/grocery-list/mark")).toHaveLength(2);
   });
 
   it("does not let a later reload undo an unsaved tick", async () => {
@@ -478,7 +544,7 @@ describe("GroceryPage", () => {
           groceryItem({ key: "rice", name: "rice" }),
         ],
       }),
-      "POST /api/grocery-list/toggle": (req: MockRequest) =>
+      "POST /api/grocery-list/mark": (req: MockRequest) =>
         (req.body as { key: string }).key === "chicken"
           ? new HttpError(503, "Server is restarting")
           : undefined,
@@ -487,7 +553,7 @@ describe("GroceryPage", () => {
     await screen.findByText("chicken thighs");
 
     await user.click(within(row("chicken thighs")).getByRole("checkbox"));
-    await screen.findByText(/1 checkmark not saved yet/);
+    await screen.findByText(/1 mark not saved yet/);
     await user.click(within(row("rice")).getByRole("checkbox"));
 
     await waitFor(() => expect(backend.requestsTo("GET /api/grocery-list")).toHaveLength(2));
@@ -501,7 +567,7 @@ describe("GroceryPage", () => {
         ++attempt === 1
           ? groceryList({ items: [groceryItem({ key: "chicken", name: "chicken thighs" })] })
           : new HttpError(503, "Server is restarting"),
-      "POST /api/grocery-list/toggle": undefined,
+      "POST /api/grocery-list/mark": undefined,
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
@@ -515,17 +581,17 @@ describe("GroceryPage", () => {
     expect(screen.queryByText(/Couldn't load your grocery list/)).not.toBeInTheDocument();
   });
 
-  it("reports a failure to clear the checkmarks", async () => {
+  it("reports a failure to start a new trip", async () => {
     mockBackend({
       "GET /api/grocery-list": groceryList({
         items: [groceryItem({ name: "chicken thighs" })],
       }),
-      "POST /api/grocery-list/clear-checks": new HttpError(503, "Server is restarting"),
+      "POST /api/grocery-list/new-trip": new HttpError(503, "Server is restarting"),
     });
     const { user } = renderApp(WEEK);
     await screen.findByText("chicken thighs");
 
-    await user.click(screen.getByRole("button", { name: "Clear checkmarks" }));
+    await user.click(screen.getByRole("button", { name: "Start a new trip" }));
 
     expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
     expect(screen.getByText("chicken thighs")).toBeInTheDocument();

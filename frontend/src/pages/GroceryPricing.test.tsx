@@ -354,72 +354,108 @@ describe("grocery list pricing", () => {
   });
 });
 
-describe("offers", () => {
-  const SALE = [
-    {
-      key: "granulated-sugar",
-      name: "sugar",
-      price: {
-        product_id: "0002",
-        description: "Kroger® Granulated Sugar",
-        size: "4 lb",
-        regular: 3.99,
-        promo: 2.99,
-        aisle: "AISLE 18",
-        estimated: null,
-      },
-    },
-  ];
+describe("remembered picks", () => {
+  const handPicked = groceryItem({
+    ...onion,
+    key: "onion",
+    hand_picked: true,
+    price: { ...onion.price!, description: "Jumbo Yellow Onions", product_id: "0002" },
+  });
 
-  function withSales(sales: unknown) {
-    return mockBackend({
+  it("says when the product was the shopper's own choice", async () => {
+    // The choice is remembered either way. A remembered choice nobody can
+    // see is indistinguishable from a guess.
+    mockBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
+        items: [handPicked, flour],
+        pricing: { store: STORE, total: 3.88, saved: 0, priced: 2, total_lines: 2 },
+      }),
+    });
+
+    renderApp(WEEK);
+
+    const onionRow = (await screen.findByText("onion")).closest(".grocery-item")!;
+    expect(within(onionRow as HTMLElement).getByText("your pick")).toBeInTheDocument();
+    const flourRow = screen.getByText("flour").closest(".grocery-item")!;
+    expect(within(flourRow as HTMLElement).queryByText("your pick")).not.toBeInTheDocument();
+  });
+
+  it("tells a line left unpriced on purpose apart from a miss", async () => {
+    mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [groceryItem({ ...saffron, hand_picked: true }), groceryItem({ name: "bay leaf" })],
+        pricing: { store: STORE, total: 0, saved: 0, priced: 0, total_lines: 2 },
+      }),
+    });
+
+    renderApp(WEEK);
+
+    const saffronRow = (await screen.findByText("saffron")).closest(".grocery-item")!;
+    expect(within(saffronRow as HTMLElement).getByText("not priced")).toBeInTheDocument();
+    expect(within(saffronRow as HTMLElement).getByText("your pick")).toBeInTheDocument();
+    const bayRow = screen.getByText("bay leaf").closest(".grocery-item")!;
+    expect(within(bayRow as HTMLElement).getByText("no match")).toBeInTheDocument();
+  });
+
+  it("offers a way back to the automatic pick, and only on a hand-picked line", async () => {
+    const backend = mockBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [handPicked, flour],
+        pricing: { store: STORE, total: 3.88, saved: 0, priced: 2, total_lines: 2 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+      "DELETE /api/pricing/match": undefined,
+    });
+
+    const { user } = renderApp(WEEK);
+    await screen.findByText("onion");
+
+    await user.click(screen.getByRole("button", { name: /^flour: .*Choose a different product/ }));
+    const flourPanel = await screen.findByRole("group", { name: "Products for flour" });
+    expect(
+      within(flourPanel).queryByRole("button", { name: /back to the automatic pick/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^onion: .*Choose a different product/ }));
+    const onionPanel = await screen.findByRole("group", { name: "Products for onion" });
+    await user.click(
+      within(onionPanel).getByRole("button", { name: /back to the automatic pick/i }),
+    );
+
+    await waitFor(() => expect(backend.requestsTo("DELETE /api/pricing/match")).toHaveLength(1));
+    expect(backend.requestsTo("DELETE /api/pricing/match")[0].searchParams.get("key")).toBe(
+      "onion",
+    );
+    // The list is asked for again, since the line now prices differently.
+    await waitFor(() => expect(backend.requestsTo("GET /api/grocery-list")).toHaveLength(2));
+  });
+
+  it("says what the offers took off the total", async () => {
+    withList(
+      groceryList({
         items: [sugar],
         pricing: { store: STORE, total: 2.99, saved: 1.0, priced: 1, total_lines: 1 },
       }),
-      "GET /api/pricing/sales": sales,
-    });
-  }
-
-  it("says what the offers took off the total", async () => {
-    withSales([]);
+    );
 
     renderApp(WEEK);
 
     expect(await screen.findByText("$1.00 off with offers")).toBeInTheDocument();
   });
 
-  it("lists what you cook with that is discounted", async () => {
-    withSales(SALE);
+  it("no longer lists offers on the grocery page", async () => {
+    // The list's own lines show a sale price and the total says what the
+    // offers saved. What a discount is good for is deciding what to cook,
+    // and that lives with the recipes.
+    const backend = withList(groceryList({ items: [sugar] }));
 
     renderApp(WEEK);
 
-    const offers = (await screen.findByText("sugar", { selector: ".offer .name" })).closest(
-      ".offer",
-    )!;
-    expect(within(offers as HTMLElement).getByText(/Kroger® Granulated Sugar/)).toBeInTheDocument();
-    expect(within(offers as HTMLElement).getByText("$3.99").tagName).toBe("S");
-  });
-
-  it("stays out of the way when nothing is discounted", async () => {
-    withSales([]);
-
-    renderApp(WEEK);
-
-    await screen.findByText("est. $2.99");
+    await screen.findByText("sugar");
     expect(screen.queryByText(/^On sale/)).not.toBeInTheDocument();
-  });
-
-  it("is not asked for at all without a store", async () => {
-    const backend = mockBackend({
-      "GET /api/pricing/status": { enabled: true, store: null },
-      "GET /api/grocery-list": groceryList({ items: [saffron], pricing: null }),
-    });
-
-    renderApp(WEEK);
-
-    await screen.findByText("saffron");
     expect(backend.requestsTo("GET /api/pricing/sales")).toHaveLength(0);
   });
 });

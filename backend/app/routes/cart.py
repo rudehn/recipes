@@ -113,12 +113,17 @@ async def disconnect(session: AsyncSession = Depends(get_session)):
     await cart.disconnect(session)
 
 
-async def _plan_for(session: AsyncSession, start: date, end: date) -> CartPlan:
+async def _plan_for(
+    session: AsyncSession,
+    start: date,
+    end: date,
+    quantities: dict[str, int] | None = None,
+) -> CartPlan:
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
     grocery_list = await build_grocery_list(session, start, end)
     try:
-        return await cart.plan(session, grocery_list)
+        return await cart.plan(session, grocery_list, quantities)
     except kroger.KrogerError:
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
@@ -145,7 +150,9 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     The list is rebuilt here rather than accepted from the client, so what is
     ordered is what this app would have priced. It is also re-planned rather
     than reusing the preview: a preview can be minutes old, and a product that
-    has gone since is better skipped than ordered.
+    has gone since is better skipped than ordered. The one thing taken from
+    the client is a count per line, which is the shopper's to set and cannot
+    put anything in the cart that the plan did not already carry.
     """
     _require_configured()
 
@@ -156,7 +163,7 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     if await settings_service.cart_connection(session) is None:
         raise HTTPException(status_code=409, detail="No Kroger account is connected")
 
-    plan = await _plan_for(session, data.start, data.end)
+    plan = await _plan_for(session, data.start, data.end, data.quantities)
     if not plan.lines:
         # Nothing was sent, so nothing is recorded. Stamping a send here would
         # make the page warn that a list is already in the cart when none is.

@@ -43,7 +43,6 @@ afterEach(() => {
 function withCart(routes: Routes = {}) {
   return mockBackend({
     "GET /api/pricing/status": { enabled: true, store: STORE },
-    "GET /api/pricing/sales": [],
     "GET /api/grocery-list": groceryList({ items: [flour, sugar] }),
     "GET /api/cart/status": CONNECTED,
     ...routes,
@@ -96,7 +95,7 @@ describe("sending the grocery list to a Kroger cart", () => {
     withCart({
       "GET /api/cart/preview": cartPlan({
         lines: [
-          cartLine({ name: "flour", quantity: 3 }),
+          cartLine({ name: "flour", quantity: 3, amounts: ["12 lb"] }),
           cartLine({
             name: "sugar",
             description: "Kroger® Granulated Sugar",
@@ -114,6 +113,56 @@ describe("sending the grocery list to a Kroger cart", () => {
     const flourLine = lines.find((li) => within(li).queryByText("flour"))!;
     expect(within(flourLine).getByText("3×")).toBeInTheDocument();
     expect(within(flourLine).getByText(/5 lb/)).toBeInTheDocument();
+    // And the amount the three are meant to cover, so the number can be
+    // checked rather than trusted.
+    expect(within(flourLine).getByText("for 12 lb")).toBeInTheDocument();
+  });
+
+  it("lets the shopper change a quantity, and sends only the ones changed", async () => {
+    // The arithmetic behind the count is bounded by what the app knows about
+    // an ingredient. A person reading "1 × 12 ct, for 24 eggs" can do the
+    // sum it could not.
+    const backend = withCart({
+      "GET /api/cart/preview": cartPlan({
+        lines: [
+          cartLine({ key: "egg", name: "eggs", quantity: 1, amounts: ["24"] }),
+          cartLine({ key: "flour", name: "flour", quantity: 1 }),
+        ],
+      }),
+      "POST /api/cart/add": { added: 2, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+    await screen.findByText("eggs");
+    await user.click(screen.getByRole("button", { name: "More eggs" }));
+    await user.click(screen.getByRole("button", { name: "More eggs" }));
+    await user.click(screen.getByRole("button", { name: "Fewer eggs" }));
+
+    const eggLine = screen.getAllByRole("listitem").find((li) => within(li).queryByText("eggs"))!;
+    expect(within(eggLine).getByText("2×")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /send 2 items to kroger/i }));
+
+    await waitFor(() => expect(backend.requestsTo("POST /api/cart/add")).toHaveLength(1));
+    expect(backend.requestsTo("POST /api/cart/add")[0].body).toEqual({
+      start: "2026-07-27",
+      end: "2026-08-02",
+      modality: "PICKUP",
+      quantities: { egg: 2 },
+    });
+  });
+
+  it("does not let a quantity drop below one", async () => {
+    withCart({
+      "GET /api/cart/preview": cartPlan({ lines: [cartLine({ name: "flour", quantity: 1 })] }),
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+
+    // Zero of something is what unticking the line is for.
+    expect(await screen.findByRole("button", { name: "Fewer flour" })).toBeDisabled();
   });
 
   it("names the lines it cannot order rather than counting them", async () => {
@@ -236,11 +285,17 @@ describe("sending the grocery list to a Kroger cart", () => {
   it("asks the server again when a checkmark changes under an open review", async () => {
     const backend = withCart({
       "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
-      "POST /api/grocery-list/toggle": undefined,
+      "POST /api/grocery-list/mark": undefined,
       "GET /api/grocery-list": () =>
         groceryList({
           items: [
-            { ...flour, checked: backend.requestsTo("POST /api/grocery-list/toggle").length > 0 },
+            {
+              ...flour,
+              status:
+                backend.requestsTo("POST /api/grocery-list/mark").length > 0
+                  ? "bought"
+                  : "to_buy",
+            },
             sugar,
           ],
         }),

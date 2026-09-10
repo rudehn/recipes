@@ -8,6 +8,11 @@ services.quantity, so a scaled half-batch reads "1½ cups", not "1.5 cups".
 Ingredients already in the pantry are set aside rather than bought, and
 out-of-stock pantry items are added, so a single list covers the whole
 shopping trip.
+
+Each line carries the mark the shopper has put on it this trip, if any:
+bought, or already at home. Neither moves the line. A row that vanishes the
+moment it is tapped cannot be checked against the trolley or un-tapped, so
+both marks are rendered in place and cleared together when the trip is over.
 """
 
 import re
@@ -18,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import GroceryCheck, MealPlanEntry, PantryItem, Recipe
-from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse
+from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse, GroceryStatus
 from .canonical import best_display, canonical_key
 from .quantity import format_quantity
 
@@ -92,18 +97,18 @@ def _format_amounts(per_unit: dict[str | None, float], unitless_uses: int) -> li
     return amounts
 
 
-def _needs_buying(pantry: PantryItem | None, checked: bool) -> bool:
+def _needs_buying(pantry: PantryItem | None, status: GroceryStatus) -> bool:
     """Whether a pantry-tracked line belongs in the "to buy" section.
 
     An in-stock staple is nothing to buy, so it is normally set aside. But
-    checking an item off is itself what restocks it (routes.grocery.toggle_item
-    flips in_stock), so treating every in-stock staple as set aside would move
-    the row out from under the user the instant they ticked it - mid-trip, with
-    no way to confirm it was bought and no way to untick it. A checked staple
-    therefore stays in "to buy" and renders struck through, until the
-    checkmarks are cleared.
+    marking an item is itself what restocks it (routes.grocery.mark_item flips
+    in_stock), so treating every in-stock staple as set aside would move the
+    row out from under the user the instant they tapped it - mid-trip, with
+    no way to confirm it was bought and no way to untap it. A marked staple
+    therefore stays in "to buy" and renders as marked, until the trip's marks
+    are cleared.
     """
-    return pantry is None or not pantry.in_stock or checked
+    return pantry is None or not pantry.in_stock or status != "to_buy"
 
 
 async def build_grocery_list(
@@ -121,8 +126,8 @@ async def build_grocery_list(
     pantry_items = (await session.execute(select(PantryItem))).scalars().all()
     pantry_by_key = {canonical_key(p.name): p for p in pantry_items}
 
-    checks = (await session.execute(select(GroceryCheck))).scalars().all()
-    checked_keys = {c.key for c in checks if c.checked}
+    marks = (await session.execute(select(GroceryCheck))).scalars().all()
+    status_of: dict[str, GroceryStatus] = {m.key: m.status for m in marks}  # type: ignore[misc]
 
     # key -> aggregation state
     name_variants: dict[str, list[str]] = defaultdict(list)
@@ -162,7 +167,7 @@ async def build_grocery_list(
             name=best_display(variants),
             amounts=_format_amounts(quantities.get(key, {}), no_quantity_uses[key]),
             uses=uses[key],
-            checked=key in checked_keys,
+            status=status_of.get(key, "to_buy"),
             from_pantry=pantry is not None,
             pantry_item_id=pantry.id if pantry is not None else None,
         )
@@ -171,7 +176,7 @@ async def build_grocery_list(
         # planned, and an ingredient that silently never appears is only
         # discovered at the stove. The amounts travel with it so the cook can
         # weigh what the meals need against what the jar holds.
-        if _needs_buying(pantry, key in checked_keys):
+        if _needs_buying(pantry, item.status):
             items.append(item)
         else:
             in_pantry.append(item)
@@ -182,7 +187,8 @@ async def build_grocery_list(
     restock: list[GroceryItem] = []
     for pantry in pantry_items:
         key = item_key(pantry.name)
-        if key in covered_keys or not _needs_buying(pantry, key in checked_keys):
+        status = status_of.get(key, "to_buy")
+        if key in covered_keys or not _needs_buying(pantry, status):
             continue
         restock.append(
             GroceryItem(
@@ -190,7 +196,7 @@ async def build_grocery_list(
                 name=pantry.name,
                 amounts=[],
                 uses=[],
-                checked=key in checked_keys,
+                status=status,
                 from_pantry=True,
                 pantry_item_id=pantry.id,
             )

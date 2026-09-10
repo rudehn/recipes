@@ -161,6 +161,10 @@ def test_a_rate_still_scales_up_past_its_unit():
         # Counts of different things. Six cloves against a "1 ct" bulb is one
         # bulb; multiplying would buy six.
         (measure(6, None), parse_size("1 ct"), 1),
+        # A volume against a volume needs no density at all.
+        (measure(6, "quart"), parse_size("1 gal"), 2),
+        # And a volume against a weight is one package when there is none.
+        (measure(24, "cup"), parse_size("5 lb"), 1),
         # A weight-sold rate rounds up where the price does not: there is no
         # way to order 1.4 lb through this API.
         (measure(1.4, "lb"), parse_size("1 lb"), 2),
@@ -173,6 +177,25 @@ def test_how_many_packages_cover_the_week(need, size, expected):
     """The counting half of `cost_to_cover`, on the same conditions: the
     quantity ordered has to be the quantity that was priced."""
     assert packages_to_cover(size, need) == expected
+
+
+def test_a_volume_of_a_known_ingredient_is_weighed_before_it_is_counted():
+    """Twenty-four cups of flour is three kilos and a five pound bag holds
+    two and a quarter, so two bags. The density comes from the ingredient's
+    name, the same way the ranking found it."""
+    assert packages_to_cover(parse_size("5 lb"), measure(24, "cup"), "all-purpose-flour") == 2
+    assert cost_to_cover(2.59, parse_size("5 lb"), "UNIT", measure(24, "cup"), "flour") == (
+        pytest.approx(5.18)
+    )
+
+
+def test_a_count_is_only_a_count_of_the_same_thing():
+    """Twenty eggs against a dozen is two cartons. Six cloves against a bulb
+    is still one bulb: garlic is not on the list of things a recipe counts
+    in the shop's own pieces, and that list is the whole rule."""
+    assert packages_to_cover(parse_size("12 ct"), measure(20, None), "egg") == 2
+    assert packages_to_cover(parse_size("12 ct"), measure(20, None), "large-brown-egg") == 2
+    assert packages_to_cover(parse_size("1 ct"), measure(6, None), "garlic-clove") == 1
 
 
 @pytest.mark.parametrize(

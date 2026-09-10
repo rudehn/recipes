@@ -12,6 +12,10 @@ package and a recipe using part of it needs a conversion.
 
 `promo` is absent rather than zero when nothing is on sale, which is the
 common case, so it is optional here rather than defaulted to 0.
+
+`categories` are Kroger's department names - "Produce", "Pet Care", "Baking
+Goods" - and are carried because they answer a question the description
+cannot: whether a thing whose name contains the ingredient is food at all.
 """
 
 from dataclasses import dataclass
@@ -39,6 +43,7 @@ class Product:
     regular: float | None
     promo: float | None
     aisle: str
+    categories: tuple[str, ...] = ()
 
     @property
     def on_sale(self) -> bool:
@@ -65,6 +70,7 @@ def _product(raw: dict[str, Any]) -> Product | None:
     price = item.get("price") or {}
     aisles = raw.get("aisleLocations") or []
     aisle = aisles[0].get("description", "") if aisles and isinstance(aisles[0], dict) else ""
+    categories = tuple(c for c in raw.get("categories") or [] if isinstance(c, str))
     return Product(
         product_id=product_id,
         upc=raw.get("upc", ""),
@@ -75,6 +81,7 @@ def _product(raw: dict[str, Any]) -> Product | None:
         regular=_number(price.get("regular")),
         promo=_number(price.get("promo")),
         aisle=aisle,
+        categories=categories,
     )
 
 

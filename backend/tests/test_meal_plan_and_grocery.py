@@ -216,8 +216,8 @@ async def test_stocked_staple_moves_to_the_buy_list_when_marked_out_of_stock(cli
 
     # Ticking it off at the shop restocks it, and it goes back to being set aside.
     key = data["items"][0]["key"]
-    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
-    await client.post("/api/grocery-list/clear-checks")
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "bought"})
+    await client.post("/api/grocery-list/new-trip")
 
     data = await grocery(client)
     assert data["items"] == []
@@ -267,7 +267,7 @@ async def test_checking_pantry_item_restocks_it(client):
     key = data["pantry_restock"][0]["key"]
 
     resp = await client.post(
-        "/api/grocery-list/toggle", json={"key": key, "checked": True}
+        "/api/grocery-list/mark", json={"key": key, "status": "bought"}
     )
     assert resp.status_code == 204
 
@@ -278,7 +278,7 @@ async def test_checking_pantry_item_restocks_it(client):
     # test_checked_pantry_item_stays_on_the_list.
     data = await grocery(client)
     assert [i["name"] for i in data["pantry_restock"]] == ["Coffee"]
-    assert data["pantry_restock"][0]["checked"] is True
+    assert data["pantry_restock"][0]["status"] == "bought"
 
 
 async def test_checked_pantry_item_stays_on_the_list(client):
@@ -291,15 +291,15 @@ async def test_checked_pantry_item_stays_on_the_list(client):
     ).json()
     key = (await grocery(client))["pantry_restock"][0]["key"]
 
-    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "bought"})
     data = await grocery(client)
     assert [i["name"] for i in data["pantry_restock"]] == ["Coffee"]
-    assert data["pantry_restock"][0]["checked"] is True
+    assert data["pantry_restock"][0]["status"] == "bought"
 
     # And unticking it is possible, because the row is still there to untick.
-    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": False})
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "to_buy"})
     data = await grocery(client)
-    assert data["pantry_restock"][0]["checked"] is False
+    assert data["pantry_restock"][0]["status"] == "to_buy"
     assert (await client.get("/api/pantry")).json()[0]["in_stock"] is False
     assert data["pantry_restock"][0]["pantry_item_id"] == pantry["id"]
 
@@ -314,10 +314,10 @@ async def test_checked_pantry_ingredient_stays_in_the_buy_section(client):
     await client.post("/api/pantry", json={"name": "olive oil", "in_stock": False})
     key = (await grocery(client))["items"][0]["key"]
 
-    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "bought"})
     data = await grocery(client)
     assert [i["name"] for i in data["items"]] == ["Olive oil"]
-    assert data["items"][0]["checked"] is True
+    assert data["items"][0]["status"] == "bought"
     # Still one row, not one in each section - checking it off restocked it,
     # which is exactly the state that would otherwise move it to "in pantry".
     assert data["in_pantry"] == []
@@ -347,14 +347,95 @@ async def test_check_state_persists_across_regeneration(client):
 
     data = await grocery(client)
     key = data["items"][0]["key"]
-    await client.post("/api/grocery-list/toggle", json={"key": key, "checked": True})
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "bought"})
 
     data = await grocery(client)
-    assert data["items"][0]["checked"] is True
+    assert data["items"][0]["status"] == "bought"
 
-    await client.post("/api/grocery-list/clear-checks")
+    await client.post("/api/grocery-list/new-trip")
     data = await grocery(client)
-    assert data["items"][0]["checked"] is False
+    assert data["items"][0]["status"] == "to_buy"
+
+
+async def test_a_line_can_be_marked_as_already_at_home(client):
+    """The other thing a shopper says to a list. It is not a tick: the line
+    is not struck through as bought, and it is not going to be paid for. It
+    stays where it is, so it can be un-said."""
+    recipe = await make_recipe(
+        client, "Guacamole", [{"name": "Avocados", "quantity": 3, "unit": None}]
+    )
+    await plan(client, "2026-07-20", "dinner", recipe["id"])
+    key = (await grocery(client))["items"][0]["key"]
+
+    resp = await client.post("/api/grocery-list/mark", json={"key": key, "status": "have"})
+
+    assert resp.status_code == 204
+    data = await grocery(client)
+    assert [i["name"] for i in data["items"]] == ["Avocados"]
+    assert data["items"][0]["status"] == "have"
+
+
+async def test_one_mark_replaces_another(client):
+    """A line cannot be both in the trolley and left at home."""
+    recipe = await make_recipe(client, "Soup", [{"name": "Carrots", "quantity": 3, "unit": None}])
+    await plan(client, "2026-07-20", "dinner", recipe["id"])
+    key = (await grocery(client))["items"][0]["key"]
+
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "have"})
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "bought"})
+
+    assert (await grocery(client))["items"][0]["status"] == "bought"
+
+
+async def test_a_new_trip_clears_at_home_marks_as_well_as_ticks(client):
+    """"Have it" is only true of the week it was said in. The avocados on the
+    counter are gone by the next list, so the mark is not allowed to outlive
+    the ticks it sits beside."""
+    recipe = await make_recipe(
+        client,
+        "Guacamole",
+        [
+            {"name": "Avocados", "quantity": 3, "unit": None},
+            {"name": "Limes", "quantity": 2, "unit": None},
+        ],
+    )
+    await plan(client, "2026-07-20", "dinner", recipe["id"])
+    avocado, lime = [i["key"] for i in (await grocery(client))["items"]]
+    await client.post("/api/grocery-list/mark", json={"key": avocado, "status": "have"})
+    await client.post("/api/grocery-list/mark", json={"key": lime, "status": "bought"})
+
+    await client.post("/api/grocery-list/new-trip")
+
+    assert {i["status"] for i in (await grocery(client))["items"]} == {"to_buy"}
+
+
+async def test_saying_a_staple_is_at_home_restocks_it(client):
+    """Having enough olive oil and the pantry saying it is in stock are the
+    same fact, so the mark tells the pantry rather than contradicting it."""
+    recipe = await make_recipe(
+        client, "Salad", [{"name": "Olive oil", "quantity": 2, "unit": "tbsp"}]
+    )
+    await plan(client, "2026-07-20", "lunch", recipe["id"])
+    pantry = (
+        await client.post("/api/pantry", json={"name": "olive oil", "in_stock": False})
+    ).json()
+    key = (await grocery(client))["items"][0]["key"]
+
+    await client.post("/api/grocery-list/mark", json={"key": key, "status": "have"})
+
+    stocked = {p["id"]: p["in_stock"] for p in (await client.get("/api/pantry")).json()}
+    assert stocked[pantry["id"]] is True
+    # And, like a tick, it stays on the list until the trip is over rather
+    # than vanishing under the shopper's finger.
+    data = await grocery(client)
+    assert [i["name"] for i in data["items"]] == ["Olive oil"]
+    assert data["items"][0]["status"] == "have"
+
+
+async def test_a_mark_needs_a_status_the_list_knows(client):
+    resp = await client.post("/api/grocery-list/mark", json={"key": "carrot", "status": "lost"})
+
+    assert resp.status_code == 422
 
 
 async def test_pantry_duplicate_name_rejected(client):

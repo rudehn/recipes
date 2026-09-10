@@ -198,14 +198,29 @@ class IngredientProductMatch(Base):
     )
 
 
+# The two things a shopper can say about a grocery line during a trip. A line
+# with no row is simply to buy. "bought" is the tick: it is in the trolley, and
+# the trip still pays for it. "have" is the other answer to a line, that there
+# is already enough at home - not bought, not paid for, and not ordered.
+GROCERY_BOUGHT = "bought"
+GROCERY_HAVE = "have"
+
+
 class GroceryCheck(Base):
-    """Checked-off state for generated grocery list items, keyed by the
-    normalized item key so checks survive regenerating the list."""
+    """A mark against a generated grocery line, for the length of one trip.
+
+    Keyed by the normalized item key so a mark survives regenerating the
+    list. Both marks live in one row because they are two answers to the
+    same question - "does this still need buying?" - and one row cannot hold
+    both at once. A line in the pantry is not marked here: the pantry's own
+    stock flag is what sets it aside, and a "have" mark on a pantry-tracked
+    line restocks it instead.
+    """
 
     __tablename__ = "grocery_checks"
 
     key: Mapped[str] = mapped_column(String(300), primary_key=True)
-    checked: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

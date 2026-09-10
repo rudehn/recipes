@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
@@ -206,6 +206,19 @@ class SaleItem(BaseModel):
     price: ItemPrice
 
 
+class RecipeOnSale(BaseModel):
+    """A recipe with something discounted in it this week.
+
+    `ingredient_count` is there so the discount can be read against the
+    whole: two of three ingredients on offer is a reason to cook the thing,
+    two of nineteen is a coincidence.
+    """
+
+    recipe: RecipeSummary
+    on_sale: list[SaleItem]
+    ingredient_count: int
+
+
 class MatchSelection(BaseModel):
     """A hand-picked product for one ingredient.
 
@@ -235,18 +248,31 @@ class GroceryPricing(BaseModel):
     total_lines: int
 
 
+# What a shopper has said about a line this trip. "to_buy" is the default and
+# is what the absence of a mark means. "bought" is the tick: in the trolley,
+# still paid for. "have" is the other answer - enough at home already - and
+# takes the line out of the estimate and the cart without striking it through
+# as bought.
+GroceryStatus = Literal["to_buy", "bought", "have"]
+
+
 class GroceryItem(BaseModel):
     key: str
     name: str
     # Aggregated amounts, one entry per distinct unit (e.g. "2 cups" + "1 tbsp").
     amounts: list[str]
     uses: list[GroceryRecipeUse]
-    checked: bool
+    status: GroceryStatus = "to_buy"
     # True when this line comes from the pantry restock list, not a recipe.
     from_pantry: bool = False
     pantry_item_id: int | None = None
     # Absent when pricing is off, or when nothing confident matched.
     price: ItemPrice | None = None
+    # Whether a person chose the product for this line - or chose that it
+    # should have none - rather than the matcher. A remembered choice the
+    # shopper cannot see is indistinguishable from a guess, and the way back
+    # to the automatic pick only makes sense for a line that has left it.
+    hand_picked: bool = False
 
 
 class GroceryList(BaseModel):
@@ -261,9 +287,11 @@ class GroceryList(BaseModel):
     pricing: GroceryPricing | None = None
 
 
-class GroceryToggle(BaseModel):
-    key: str
-    checked: bool
+class GroceryMark(BaseModel):
+    """Say what a line is this trip. "to_buy" takes any mark off it."""
+
+    key: str = Field(min_length=1, max_length=300)
+    status: GroceryStatus
 
 
 # How the order is to be collected. Kroger's own two values, sent per item.
@@ -301,8 +329,11 @@ class CartLine(BaseModel):
     """One line as it would be ordered.
 
     Carries what the shopper needs to check it before it is sent: their own
-    word for the ingredient, Kroger's for the product, and how many. The
-    quantity is worked out from the week's meals and is not always one.
+    word for the ingredient, Kroger's for the product, how many, and the
+    amount the meals asked for that the count is meant to cover. The
+    quantity is worked out from that amount and is not always one, and a
+    number with the reason for it beside it - "2 × 1 lb, for 1½ lb" - can be
+    checked where a bare "2" can only be trusted.
     """
 
     key: str
@@ -311,6 +342,13 @@ class CartLine(BaseModel):
     description: str
     size: str
     quantity: int
+    # The week's requirement as the grocery list shows it, one entry per unit.
+    amounts: list[str] = []
+
+
+# The most of one product a single send will order. There is no recipe that
+# needs more; a number past this is a slipped finger on a stepper.
+MAX_CART_QUANTITY = 99
 
 
 class CartPlan(BaseModel):
@@ -336,6 +374,20 @@ class CartRequest(BaseModel):
     start: date
     end: date
     modality: Modality = "PICKUP"
+    # Counts the shopper set by hand in the review, by line key. Only the
+    # count: the product still comes from the server's own plan, and a key
+    # the plan does not carry is ignored rather than ordered. The arithmetic
+    # behind the automatic count is bounded by the density table, and a
+    # person reading "1 × 12 ct, for 24 eggs" can do the sum it could not.
+    quantities: dict[str, int] = {}
+
+    @field_validator("quantities")
+    @classmethod
+    def _counts_are_orderable(cls, quantities: dict[str, int]) -> dict[str, int]:
+        for key, count in quantities.items():
+            if not 1 <= count <= MAX_CART_QUANTITY:
+                raise ValueError(f"quantity for {key!r} must be between 1 and {MAX_CART_QUANTITY}")
+        return quantities
 
     @model_validator(mode="after")
     def _range_runs_forwards(self) -> "CartRequest":

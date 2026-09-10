@@ -109,6 +109,34 @@ GRAMS_PER_CUP: dict[str, float] = {
 }
 
 
+# Ingredients a recipe counts in the same pieces the shop does. "2 eggs"
+# against a "12 ct" carton is arithmetic; "6 cloves garlic" against a "1 ct"
+# bulb is not, and multiplying bought six bulbs. So counts are refused unless
+# the ingredient is one of these, where a recipe's unit and Kroger's are the
+# same object. Curated for the same reason as the table above: there is no
+# rule, only a list.
+SOLD_BY_THE_PIECE: frozenset[str] = frozenset({
+    "egg",
+    "tortilla",
+    "bun",
+    "hamburger-bun",
+    "hot-dog-bun",
+    "bagel",
+    "pita",
+    "taco-shell",
+    "english-muffin",
+    "croissant",
+    "hot-dog",
+    "sausage-link",
+})
+
+
+def _walk(canonical_key: str) -> list[str]:
+    """The name, then each shorter tail of it: most specific first."""
+    tokens = [t for t in canonical_key.split("-") if t]
+    return ["-".join(tokens[start:]) for start in range(len(tokens))]
+
+
 def grams_per_cup(canonical_key: str) -> float | None:
     """What a cup of this ingredient weighs, or None if it is not known.
 
@@ -116,9 +144,16 @@ def grams_per_cup(canonical_key: str) -> float | None:
     over a general one and an unlisted variety still finds its family:
     "unbleached-bread-flour" tries itself, then "bread-flour", then "flour".
     """
-    tokens = [t for t in canonical_key.split("-") if t]
-    for start in range(len(tokens)):
-        found = GRAMS_PER_CUP.get("-".join(tokens[start:]))
+    for name in _walk(canonical_key):
+        found = GRAMS_PER_CUP.get(name)
         if found is not None:
             return found
     return None
+
+
+def sold_by_the_piece(canonical_key: str) -> bool:
+    """Whether a recipe's count of this is a count of what Kroger packs.
+
+    The same walk as the density: "large-brown-egg" finds "egg".
+    """
+    return any(name in SOLD_BY_THE_PIECE for name in _walk(canonical_key))

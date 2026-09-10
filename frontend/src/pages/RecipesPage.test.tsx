@@ -28,8 +28,23 @@ function recipesBackend(recipes: RouteHandler | object, tags: unknown = TAGS) {
   return mockBackend({
     "GET /api/recipes/tags": tags,
     "GET /api/recipes": recipes,
+    "GET /api/pricing/sales": [],
   });
 }
+
+const SUGAR_ON_SALE = {
+  key: "granulated-sugar",
+  name: "sugar",
+  price: {
+    product_id: "0002",
+    description: "Kroger® Granulated Sugar",
+    size: "4 lb",
+    regular: 3.99,
+    promo: 2.99,
+    aisle: "AISLE 18",
+    estimated: null,
+  },
+};
 
 function cardTitles(): string[] {
   return screen.queryAllByRole("heading", { level: 3 }).map((h) => h.textContent ?? "");
@@ -290,5 +305,37 @@ describe("RecipesPage", () => {
 
     expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't load/)).not.toBeInTheDocument();
+  });
+
+  describe("what is on sale this week", () => {
+    it("lists the recipes with an ingredient on offer, most on offer first", async () => {
+      mockBackend({
+        "GET /api/recipes/tags": TAGS,
+        "GET /api/recipes": page([curry, bread]),
+        "GET /api/pricing/sales": [
+          { recipe: bread, on_sale: [SUGAR_ON_SALE], ingredient_count: 3 },
+        ],
+      });
+      const { user } = renderApp("/recipes");
+
+      await user.click(await screen.findByText(/on sale this week/i));
+
+      const offer = screen.getByText("1 of 3 ingredients on offer").closest(".offer")!;
+      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
+        "href",
+        "/recipes/2",
+      );
+      expect(within(offer as HTMLElement).getByText("sugar")).toBeInTheDocument();
+      expect(within(offer as HTMLElement).getByText("$3.99").tagName).toBe("S");
+      expect(within(offer as HTMLElement).getByText(/\$2\.99/)).toBeInTheDocument();
+    });
+
+    it("stays out of the way when nothing is on offer", async () => {
+      recipesBackend(page([curry]));
+      renderApp("/recipes");
+
+      await screen.findByText("Weeknight chicken curry");
+      expect(screen.queryByText(/on sale this week/i)).not.toBeInTheDocument();
+    });
   });
 });

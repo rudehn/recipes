@@ -14,17 +14,19 @@ deliberately high, and no confident answer is stored as no answer.
 
 import logging
 import re
+from dataclasses import dataclass
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...models import IngredientProductMatch
+from ..canonical import _fold_accents, _singularize
 from ..grocery import UNIT_ALIASES
 from . import products
 from .client import KrogerError
 from .density import grams_per_cup
 from .products import Product
-from .units import Measure, as_weight, cost_to_cover, parse_size
+from .units import Measure, comparable, cost_to_cover, parse_size
 
 log = logging.getLogger(__name__)
 
@@ -56,20 +58,100 @@ def _without_unit_words(tokens: list[str]) -> list[str] | None:
     return kept if kept and len(kept) < len(tokens) else None
 
 
-def _coverage(tokens: list[str], description: str) -> float:
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _words(description: str) -> list[str]:
+    """A description as the words `canonical_key` would have made of it.
+
+    Accents are folded and plurals singularized the same way the key was, so
+    "Jalapeño Peppers" and the key "jalapeno-pepper" meet on equal terms.
+    """
+    return [_singularize(w) for w in _WORD_RE.findall(_fold_accents(description).casefold())]
+
+
+def _coverage(tokens: list[str], words: list[str]) -> float:
     """How much of the ingredient the description accounts for.
 
-    Substring rather than word matching, because `canonical_key` singularizes
-    ("thigh") while Kroger does not ("Thighs"), and because sizes run into
-    words in descriptions.
+    Whole words, compared after the same singularizing the key went through.
+    This used to be a substring test, chosen so that the key's "thigh" would
+    find Kroger's "Thighs" - and it did, but it also let "pea" find peanuts
+    and "pepper" find peppercorns, which are wrong in the invisible way. A
+    word either is the ingredient or it is not.
     """
     if not tokens:
         return 0.0
-    haystack = description.casefold()
-    return sum(1 for t in tokens if t in haystack) / len(tokens)
+    present = set(words)
+    return sum(1 for t in tokens if t in present) / len(tokens)
 
 
-_WORD_RE = re.compile(r"[a-z0-9]+")
+# Words that make a product a different thing from the ingredient whose name
+# it carries. "Avocado Oil" accounts for every letter of "avocado" and is not
+# one; the same goes for garlic powder, coconut milk, apple juice, and a bag
+# of dog food with chicken in its name. A candidate carrying one of these that
+# the ingredient itself does not is refused - only for the automatic pick,
+# since the alternatives exist for exactly the case where the rule is wrong.
+#
+# Hand-curated in the same spirit as PREP_WORDS. Words that name a form the
+# ingredient is honestly sold in are left out on purpose: "sesame" is bought
+# as sesame seeds and "maple" as maple syrup.
+DERIVATIVE_WORDS = frozenset({
+    # Extracted from the ingredient
+    "oil", "juice", "extract", "powder", "concentrate", "vinegar", "wine",
+    # Made from it
+    "milk", "cream", "butter", "cheese", "yogurt", "flour", "bread", "chip",
+    "flake", "sauce", "paste", "broth", "stock", "soup", "salsa", "jam",
+    "jelly", "spread", "dip", "dressing", "seasoning", "chocolate", "candy",
+    "cookie", "cake", "pie", "bar", "cereal", "smoothie", "drink", "soda",
+    # Merely tastes or smells of it
+    "flavored", "flavor", "scented",
+    # Not food at all
+    "food", "treat", "candle", "soap", "lotion", "shampoo", "supplement",
+    "vitamin", "capsule", "spray", "cleaner", "wash",
+})
+
+
+def _is_derivative(words: list[str], tokens: list[str]) -> bool:
+    """Whether the description names the ingredient as something else."""
+    own = set(tokens)
+    return any(w in DERIVATIVE_WORDS and w not in own for w in words)
+
+
+# Kroger department names that no recipe ingredient is bought from. Kroger's
+# search does not stop at the grocery aisles, so "chicken" reaches the pet
+# food and "lavender" the candles, and a description is not always enough to
+# tell. Matched as substrings of the category names Kroger returns, which are
+# free text of theirs and have not been catalogued from here: a name that
+# contains "Pet" is not food whatever the rest of it says.
+NON_FOOD_CATEGORIES = (
+    "pet",
+    "health",
+    "beauty",
+    "personal care",
+    "household",
+    "cleaning",
+    "baby",
+    "home",
+    "garden",
+    "floral",
+    "kitchen",
+    "toy",
+    "electronics",
+    "office",
+    "automotive",
+    "sporting",
+    "party",
+    "apparel",
+    "pharmacy",
+)
+
+
+def _non_food(product: Product) -> bool:
+    return any(
+        marker in category.casefold()
+        for category in product.categories
+        for marker in NON_FOOD_CATEGORIES
+    )
 
 # Extra words are bucketed rather than compared one by one, because brand
 # names vary in length for reasons that say nothing about the product. Three
@@ -80,7 +162,7 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 _SLACK = 3
 
 
-def _slack(product: Product, tokens: list[str]) -> int:
+def _slack(words: list[str], tokens: list[str]) -> int:
     """How much of the description the ingredient does *not* account for.
 
     Coverage asks whether the name appears; this asks how much else is there.
@@ -89,7 +171,6 @@ def _slack(product: Product, tokens: list[str]) -> int:
     cheaper than brown sugar. A product whose description is mostly the
     ingredient is far likelier to be the ingredient.
     """
-    words = _WORD_RE.findall(product.description.casefold())
     extra = sum(
         1
         for w in words
@@ -132,20 +213,22 @@ def _fit(
     if need is None:
         return unknown
 
-    # Everything is compared as weight, both sides converted through the same
-    # density. Counts are excluded and cannot be converted: a recipe's nine
-    # garlic cloves and a "5 ct" bag of bulbs are counts of different things,
-    # and comparing them bought five bulbs for nine cloves.
+    # Both sides are brought to one dimension by `comparable`, which is also
+    # what the cart's quantity goes through, so the package chosen here is
+    # the one whose count is worked out there. Where the two cannot be
+    # related - no density for this ingredient, a size that cannot be read,
+    # a count of cloves against a count of bulbs - the older ranking stands
+    # rather than a guess being made.
     grams = grams_per_cup(canonical_key)
-    wanted = as_weight(need, grams)
-    size = as_weight(parse_size(product.size), grams)
-    if wanted is None or size is None:
-        # No density for this ingredient, or a size that cannot be read. Both
-        # leave the older ranking exactly as it was rather than guessing.
+    related = comparable(parse_size(product.size), need, canonical_key, grams)
+    if related is None:
         return unknown
+    size, wanted = related
 
     price = product.regular or 0.0
-    cost = cost_to_cover(price, size, product.sold_by, wanted)
+    cost = cost_to_cover(
+        price, parse_size(product.size), product.sold_by, need, canonical_key, grams
+    )
 
     # Sold by weight, the price is a rate and any amount can be bought, so it
     # fits the requirement exactly rather than over- or under-shooting it.
@@ -173,9 +256,10 @@ def _rank(
     description is usually the plain version of the thing. The id breaks any
     remaining tie so two equally good candidates cannot swap between calls.
     """
+    words = _words(product.description)
     return (
-        -_coverage(tokens, product.description),
-        _slack(product, tokens),
+        -_coverage(tokens, words),
+        _slack(words, tokens),
         _fit(product, need, canonical_key),
         len(product.description),
         product.product_id,
@@ -204,11 +288,17 @@ def _best(
     canonical_key: str,
 ) -> Product | None:
     # A product with no price is no use even when it is the right thing, and
-    # one that does not account for the whole ingredient name is a guess.
+    # one that does not account for the whole ingredient name is a guess. One
+    # that accounts for it and then some - the oil, the powder, the juice -
+    # is a different thing, and so is anything from a department that sells
+    # no food.
     usable = [
         p
         for p in candidates
-        if p.regular is not None and _coverage(tokens, p.description) >= MIN_COVERAGE
+        if p.regular is not None
+        and _coverage(tokens, words := _words(p.description)) >= MIN_COVERAGE
+        and not _is_derivative(words, tokens)
+        and not _non_food(p)
     ]
     if not usable:
         return None
@@ -285,32 +375,61 @@ async def _resolve(
     return chosen.product_id if chosen else None
 
 
+@dataclass(frozen=True)
+class Pick:
+    """What an ingredient has been decided to mean, and who decided.
+
+    `product_id` is None for a line deliberately left unpriced, or for a
+    search that found nothing confident. `hand_picked` is what separates a
+    choice a person made from one this module made - the first is never
+    revisited, and the page says which is which so a remembered choice is
+    something the shopper can see rather than something that merely happens.
+    """
+
+    product_id: str | None
+    hand_picked: bool
+
+
+async def picks(
+    session: AsyncSession,
+    canonical_keys: list[str],
+    location_id: str,
+    needs: dict[str, Measure] | None = None,
+) -> dict[str, Pick]:
+    """What each ingredient given means here, resolving any not seen before.
+
+    Only the keys asked for are touched. Keys already recorded are returned
+    from the row, never re-searched, which is what keeps a price stable
+    between page loads. Every key asked for is answered, including those that
+    resolved to nothing: the caller shows those as unpriced, and needs to
+    know whether that was a person's decision.
+    """
+    stored = await _stored(session, canonical_keys, location_id)
+
+    resolved: dict[str, Pick] = {
+        key: Pick(row.product_id, row.user_confirmed) for key, row in stored.items()
+    }
+    unseen = [key for key in canonical_keys if key and key not in stored]
+    for key in unseen:
+        product_id = await _resolve(session, key, location_id, (needs or {}).get(key))
+        resolved[key] = Pick(product_id, False)
+    if unseen:
+        await session.commit()
+    return resolved
+
+
 async def product_ids(
     session: AsyncSession,
     canonical_keys: list[str],
     location_id: str,
     needs: dict[str, Measure] | None = None,
 ) -> dict[str, str]:
-    """Product ids for the ingredients given, resolving any not seen before.
+    """Product ids alone, for callers with no interest in who chose them.
 
-    Only the keys asked for are touched. Keys already recorded are returned
-    from the row, never re-searched, which is what keeps a price stable
-    between page loads. Keys that resolved to nothing are absent from the
-    result, and callers show them as unpriced.
+    Keys that resolved to nothing are absent, which is the older contract.
     """
-    stored = await _stored(session, canonical_keys, location_id)
-
-    resolved: dict[str, str] = {
-        key: row.product_id for key, row in stored.items() if row.product_id
-    }
-    unseen = [key for key in canonical_keys if key and key not in stored]
-    for key in unseen:
-        product_id = await _resolve(session, key, location_id, (needs or {}).get(key))
-        if product_id:
-            resolved[key] = product_id
-    if unseen:
-        await session.commit()
-    return resolved
+    found = await picks(session, canonical_keys, location_id, needs)
+    return {key: pick.product_id for key, pick in found.items() if pick.product_id}
 
 
 async def confirm(
@@ -328,4 +447,22 @@ async def confirm(
         session.add(row)
     row.product_id = product_id
     row.user_confirmed = True
+    await session.commit()
+
+
+async def forget(session: AsyncSession, canonical_key: str, location_id: str) -> None:
+    """Drop whatever was decided, so the next look decides afresh.
+
+    The way back from a hand pick to the automatic one, and also the only way
+    an automatic pick made under older rules gets remade under newer ones:
+    rows are pinned, hand-picked or not, and nothing re-derives them by
+    itself. Deleting rather than resetting means the next page load searches
+    again, which is the point.
+    """
+    await session.execute(
+        delete(IngredientProductMatch).where(
+            IngredientProductMatch.canonical_key == canonical_key,
+            IngredientProductMatch.location_id == location_id,
+        )
+    )
     await session.commit()
