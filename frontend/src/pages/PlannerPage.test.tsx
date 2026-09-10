@@ -531,4 +531,57 @@ describe("PlannerPage", () => {
       expect(document.querySelector(".day-agenda")).toBeNull();
     });
   });
+
+  describe("what the week costs", () => {
+    it("shows what cooking the week costs against what shopping for it costs", async () => {
+      // Two numbers on purpose: cooking prices the share of each package the
+      // meals use, shopping prices whole packages, and the gap is the pantry
+      // surplus.
+      mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry()],
+        "GET /api/meal-plan/cost": {
+          store: { location_id: "1", name: "Kroger - Riverside", address: "", chain: "KROGER" },
+          total: 61.2,
+          priced: 40,
+          total_lines: 44,
+          days: [{ plan_date: "2026-07-27", total: 61.2, priced: 40, total_lines: 44 }],
+          grocery_total: 84.1,
+        },
+      });
+      renderApp("/planner");
+
+      expect(await screen.findByText("est. $61.20 to cook")).toBeInTheDocument();
+      expect(screen.getByText("40 of 44 ingredients priced")).toBeInTheDocument();
+      expect(screen.getByText("about $84.10 to shop for, in whole packages")).toBeInTheDocument();
+    });
+
+    it("asks again when a meal is added, since the answer changed", async () => {
+      const backend = mockBackend({
+        "GET /api/meal-plan": [],
+        "GET /api/meal-plan/cost": null,
+        "GET /api/recipes": page([recipeSummary({ id: 5, title: "Weeknight chicken curry" })]),
+        "GET /api/recipes/tags": [],
+        "POST /api/meal-plan": mealPlanEntry({
+          recipe: recipeSummary({ id: 5, title: "Weeknight chicken curry" }),
+        }),
+      });
+      const { user } = renderApp("/planner");
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan/cost")).toHaveLength(1));
+
+      await user.click(within(cell("dinner", 0)).getByRole("button", { name: "+ Add" }));
+      await user.click(await screen.findByRole("button", { name: /Weeknight chicken curry/ }));
+
+      await waitFor(() =>
+        expect(backend.requestsTo("GET /api/meal-plan/cost").length).toBeGreaterThan(1),
+      );
+    });
+
+    it("looks like the ordinary planner without pricing", async () => {
+      mockBackend({ "GET /api/meal-plan": [], "GET /api/meal-plan/cost": null });
+      renderApp("/planner");
+
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+      expect(screen.queryByText(/to cook/)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -193,6 +193,9 @@ class IngredientProductMatch(Base):
     location_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     product_id: Mapped[str | None] = mapped_column(String(32))
     user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The rules the automatic pick was made under; see matching.MATCHER_VERSION.
+    # An unconfirmed row from an older version is remade on its next use.
+    matcher_version: Mapped[int] = mapped_column(Integer, default=1)
     resolved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
@@ -224,3 +227,25 @@ class GroceryCheck(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+
+
+class CartSentLine(Base):
+    """A grocery line this app has put in the Kroger cart, and when.
+
+    The cart cannot be read back, so this is the only record there is of
+    what went. It is a fact about this app's requests, not about the cart:
+    the shopper may have taken the thing out again on kroger.com, and the
+    review says "sent" rather than "in your cart" for exactly that reason.
+    Its use is to keep a second send from ordering the first send twice.
+
+    Keyed by the grocery line, and cleared with the marks when a new trip
+    starts, because a trip is what a cart holds.
+    """
+
+    __tablename__ = "cart_sent_lines"
+
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    upc: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str] = mapped_column(String(300))
+    quantity: Mapped[int] = mapped_column(Integer)
+    sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

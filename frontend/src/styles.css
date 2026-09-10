@@ -2019,6 +2019,162 @@ body.has-install-hint .page {
 
 .unmatched .pick-tag { margin-left: var(--space-6); }
 
+/* Kroger says the shelf is empty today. Muted rather than alarming: the
+   product is still the right one, it just cannot be ordered this morning. */
+.stock-tag {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* By name or by aisle. Sits at the end of the section heading, where the
+   count is, so the heading says what the rows under it are ordered by. */
+.order-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  letter-spacing: normal;
+}
+
+.order-toggle button {
+  padding: var(--space-4) var(--space-10);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+}
+
+.order-toggle button:hover { background: var(--surface-2); }
+
+.order-toggle button[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+/* An aisle's name over the rows found in it, in Kroger's own capitals. */
+.aisle-head {
+  margin: var(--space-16) 0 var(--space-8);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.grocery-section .aisle-head:first-of-type { margin-top: 0; }
+
+/* Lines an earlier send already put in the cart, each with a tick to send it
+   again on purpose. */
+.cart-sent { margin-bottom: var(--space-12); }
+
+.cart-sent .section-note { margin-bottom: var(--space-8); }
+
+.cart-sent-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cart-sent-lines li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-10);
+  padding: var(--space-6) 0;
+  color: var(--muted);
+}
+
+.cart-sent-lines label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  cursor: pointer;
+}
+
+.cart-sent-lines .name { font-weight: var(--weight-semibold); color: var(--ink); }
+
+.cart-sent-lines .product {
+  font-size: var(--text-xs);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* A figure on the right of a suggestion row, for the folds that have one
+   number rather than a column of prices. */
+.offer-figure {
+  flex: none;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+/* ---------- Recipe cost ---------- */
+
+/* Under the chips in the hero: the total, then what it covers, in one line
+   that wraps as one. */
+.recipe-cost {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  margin: var(--space-12) 0 0;
+}
+
+.recipe-cost .total { font-weight: var(--weight-semibold); }
+
+.recipe-cost .per-serving { font-weight: var(--weight-medium); }
+
+.recipe-cost .coverage { font-size: var(--text-sm); color: var(--muted); }
+
+/* What a line costs, at the end of the ingredient row. */
+.ingredient-list .line-cost {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ingredient-list .line-cost .whole { font-size: var(--text-2xs); }
+
+/* ---------- Remembered products ---------- */
+
+.picks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pick {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.pick:first-child { border-top: none; }
+
+.pick-name {
+  flex: 0 0 10rem;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.pick-product {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.pick-product .pick-tag { margin-left: var(--space-6); }
+
+.pick .btn { flex: none; }
+
 /* ---------- Pantry ---------- */
 
 .settings-layout { max-width: var(--width-compact); }
@@ -2621,6 +2777,16 @@ body.has-install-hint .page {
   /* A cart line wraps to two rows: the stepper and name first, then Kroger's
      wording for the product on its own line under them. */
   .cart-lines li { flex-wrap: wrap; }
+
+  .cart-sent-lines li { flex-wrap: wrap; }
+
+  .cart-sent-lines .product { flex: 1 0 100%; text-align: left; }
+
+  .order-toggle { margin-left: 0; flex: 0 0 100%; }
+
+  .pick { flex-wrap: wrap; }
+
+  .pick-name { flex: 1 0 100%; }
 
   .cart-lines .product { flex: 1 0 100%; text-align: left; }
 

@@ -345,4 +345,59 @@ describe("sending the grocery list to a Kroger cart", () => {
       .toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /send .* to kroger/i })).not.toBeInTheDocument();
   });
+
+  it("holds back what an earlier send put in the cart, unless asked", async () => {
+    // "Sent", never "in your cart": the cart cannot be read. Leaving these
+    // out is the only guard against ordering the first send twice, so a
+    // second bag is asked for by name.
+    const backend = withCart({
+      "GET /api/cart/preview": cartPlan({
+        lines: [cartLine({ key: "sugar", name: "sugar" })],
+        sent: [
+          {
+            key: "flour",
+            name: "flour",
+            description: "Kroger® All Purpose Flour",
+            quantity: 2,
+            sent_at: "2026-07-28T15:42:00Z",
+          },
+        ],
+      }),
+      "POST /api/cart/add": { added: 2, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+
+    expect(await screen.findByText(/already sent this trip/i)).toBeInTheDocument();
+    expect(screen.getByText(/2× Kroger® All Purpose Flour · sent/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /send 1 item to kroger/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "flour" }));
+    await user.click(screen.getByRole("button", { name: /send 2 items to kroger/i }));
+
+    await waitFor(() => expect(backend.requestsTo("POST /api/cart/add")).toHaveLength(1));
+    expect(backend.requestsTo("POST /api/cart/add")[0].body).toEqual({
+      start: "2026-07-27",
+      end: "2026-08-02",
+      modality: "PICKUP",
+      resend: ["flour"],
+    });
+  });
+
+  it("names what the store is out of, apart from what nothing matched", async () => {
+    withCart({
+      "GET /api/cart/preview": cartPlan({
+        lines: [cartLine()],
+        skipped: ["saffron"],
+        out_of_stock: ["butter"],
+      }),
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+
+    expect(await screen.findByText(/out of stock at your store today: butter/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing at your store is matched to them: saffron/i)).toBeInTheDocument();
+  });
 });

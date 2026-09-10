@@ -177,4 +177,97 @@ describe("SettingsPage", () => {
       await screen.findByText("No stores found near that ZIP code."),
     ).toBeInTheDocument();
   });
+
+  describe("remembered products", () => {
+    const PICKS = [
+      {
+        key: "all-purpose-flour",
+        name: "flour",
+        product: {
+          product_id: "0001",
+          description: "Kroger® All Purpose Flour",
+          size: "5 lb",
+          regular: 2.59,
+          promo: null,
+          aisle: "AISLE 18",
+          in_stock: true,
+          estimated: null,
+        },
+        hand_picked: false,
+        resolved_at: "2026-07-20T12:00:00Z",
+      },
+      {
+        key: "onion",
+        name: "onion",
+        product: {
+          product_id: "0002",
+          description: "Jumbo Yellow Onions",
+          size: "1 lb",
+          regular: 1.29,
+          promo: null,
+          aisle: "PRODUCE",
+          in_stock: true,
+          estimated: null,
+        },
+        hand_picked: true,
+        resolved_at: "2026-07-21T12:00:00Z",
+      },
+      { key: "salt", name: "salt", product: null, hand_picked: true, resolved_at: "2026-07-21T12:00:00Z" },
+      { key: "saffron", name: "saffron", product: null, hand_picked: false, resolved_at: "2026-07-21T12:00:00Z" },
+    ];
+
+    function withPicks(picks: unknown) {
+      return mockBackend({
+        "GET /api/cart/status": cartStatus({ configured: false }),
+        "GET /api/pricing/status": { enabled: true, store: riverside },
+        "GET /api/pricing/matches": picks,
+        "DELETE /api/pricing/match": undefined,
+      });
+    }
+
+    it("lists every pick, saying which were yours and which priced nothing", async () => {
+      withPicks(PICKS);
+      renderApp("/settings");
+
+      const rows = await screen.findAllByRole("listitem");
+      const flour = rows.find((r) => within(r).queryByText("flour"))!;
+      expect(within(flour).getByText(/Kroger® All Purpose Flour · 5 lb · \$2\.59/)).toBeInTheDocument();
+      expect(within(flour).queryByText("your pick")).not.toBeInTheDocument();
+      const onion = rows.find((r) => within(r).queryByText("onion"))!;
+      expect(within(onion).getByText("your pick")).toBeInTheDocument();
+      const salt = rows.find((r) => within(r).queryByText("salt"))!;
+      expect(within(salt).getByText(/not priced, by choice/)).toBeInTheDocument();
+      const saffron = rows.find((r) => within(r).queryByText("saffron"))!;
+      expect(within(saffron).getByText(/nothing matched/)).toBeInTheDocument();
+    });
+
+    it("forgets a pick and reloads the list", async () => {
+      const backend = withPicks(PICKS);
+      const { user } = renderApp("/settings");
+
+      await user.click(await screen.findByRole("button", { name: "Forget onion" }));
+
+      await waitFor(() => expect(backend.requestsTo("DELETE /api/pricing/match")).toHaveLength(1));
+      expect(backend.requestsTo("DELETE /api/pricing/match")[0].searchParams.get("key")).toBe("onion");
+      await waitFor(() => expect(backend.requestsTo("GET /api/pricing/matches")).toHaveLength(2));
+    });
+
+    it("says so when nothing has been remembered yet", async () => {
+      withPicks([]);
+      renderApp("/settings");
+
+      expect(await screen.findByText(/nothing remembered yet/i)).toBeInTheDocument();
+    });
+
+    it("is not shown before a store is chosen", async () => {
+      const backend = mockBackend({
+        "GET /api/cart/status": cartStatus({ configured: false }),
+        "GET /api/pricing/status": { enabled: true, store: null },
+      });
+      renderApp("/settings");
+
+      await screen.findByLabelText("ZIP code");
+      expect(backend.requestsTo("GET /api/pricing/matches")).toHaveLength(0);
+    });
+  });
 });

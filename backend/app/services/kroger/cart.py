@@ -41,10 +41,12 @@ import logging
 import time
 from dataclasses import dataclass
 
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import config
-from ...schemas import CartLine, CartPlan, GroceryItem, GroceryList
+from ...models import CartSentLine, utcnow
+from ...schemas import CartLine, CartPlan, GroceryItem, GroceryList, SentLine
 from .. import settings as settings_service
 from . import pricing
 from .client import (
@@ -219,10 +221,42 @@ def _sendable(grocery_list: GroceryList) -> list[GroceryItem]:
     return [line for line in pricing.to_buy(grocery_list) if line.status == "to_buy"]
 
 
+async def sent_lines(session: AsyncSession) -> dict[str, CartSentLine]:
+    """What this trip's earlier sends put in the cart, by line key."""
+    rows = (await session.execute(select(CartSentLine))).scalars().all()
+    return {row.key: row for row in rows}
+
+
+async def record_sent(session: AsyncSession, lines: list[CartLine]) -> None:
+    """Remember what just went, so the next send can leave it out.
+
+    A line sent twice keeps the later record: it is the one whose quantity
+    describes the second order, and the first is already in the cart.
+    """
+    sent = await sent_lines(session)
+    for line in lines:
+        row = sent.get(line.key)
+        if row is None:
+            row = CartSentLine(key=line.key)
+            session.add(row)
+        row.upc = line.upc
+        row.description = line.description
+        row.quantity = line.quantity
+        row.sent_at = utcnow()
+    await session.commit()
+
+
+async def forget_sent(session: AsyncSession) -> None:
+    """A new trip is a new cart."""
+    await session.execute(delete(CartSentLine))
+    await session.commit()
+
+
 async def plan(
     session: AsyncSession,
     grocery_list: GroceryList,
     quantities: dict[str, int] | None = None,
+    resend: list[str] | None = None,
 ) -> CartPlan:
     """Exactly what sending this list would put in the cart.
 
@@ -238,19 +272,44 @@ async def plan(
     theirs to set: the product is still this app's choice, so a key the plan
     does not carry cannot smuggle anything in and is simply ignored.
 
+    Lines an earlier send this trip already put in the cart are left out and
+    listed as `sent`, unless `resend` names them. The cart cannot be read, so
+    this record is the only thing standing between a second send and two of
+    everything; the shopper who really does want a second bag says so.
+
     Lines that cannot be sent are named rather than counted. "2 not sent" is a
     number the shopper cannot act on; "parsley, bay leaf" is a shopping list.
+    A product the store is out of today is named separately: it is matched
+    and priced and still cannot be ordered, and "buy it the usual way" is the
+    wrong advice for a shelf that is merely empty this morning.
     """
     store = await settings_service.selected_store(session)
     lines = _sendable(grocery_list)
     if store is None or not lines:
         return CartPlan(lines=[], skipped=[line.name for line in lines])
 
+    already = await sent_lines(session)
+    again = set(resend or [])
+    sent = [
+        SentLine(
+            key=line.key,
+            name=line.name,
+            description=already[line.key].description,
+            quantity=already[line.key].quantity,
+            sent_at=already[line.key].sent_at,
+        )
+        for line in lines
+        if line.key in already and line.key not in again
+    ]
+    held_back = {line.key for line in sent}
+    lines = [line for line in lines if line.key not in held_back]
+
     chosen = await pricing.choices(session, lines, store.location_id)
     overrides = quantities or {}
 
     sending: list[CartLine] = []
     skipped: list[str] = []
+    out_of_stock: list[str] = []
     for line in lines:
         choice = chosen.get(line.key)
         product = choice.product if choice else None
@@ -259,8 +318,11 @@ async def plan(
         if product is None or not product.upc:
             skipped.append(line.name)
             continue
+        if not product.in_stock:
+            out_of_stock.append(line.name)
+            continue
         worked_out = packages_to_cover(
-            parse_size(product.size), pricing.needed(line), line.key
+            parse_size(product.size), pricing.needed(line), line.key, None, product.sold_by_piece
         )
         sending.append(
             CartLine(
@@ -273,7 +335,7 @@ async def plan(
                 amounts=line.amounts,
             )
         )
-    return CartPlan(lines=sending, skipped=skipped)
+    return CartPlan(lines=sending, skipped=skipped, out_of_stock=out_of_stock, sent=sent)
 
 
 async def send(session: AsyncSession, lines: list[CartLine], modality: str) -> None:

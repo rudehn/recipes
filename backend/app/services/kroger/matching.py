@@ -30,6 +30,18 @@ from .units import Measure, comparable, cost_to_cover, parse_size
 
 log = logging.getLogger(__name__)
 
+# Which rules chose an automatic match. Rows are pinned, so a match made under
+# older rules would otherwise keep its answer forever - "avocado" stayed a
+# bottle of oil for as long as the row existed, however the ranking improved.
+# Bump this when `choose` changes what it would pick, and unconfirmed rows
+# made under the old number are searched again on their next use. Hand picks
+# are never touched: they were not this module's decision.
+#
+# 1: substring coverage, no vetoes.
+# 2: whole-word coverage, derivative and non-food vetoes, out-of-stock
+#    products passed over.
+MATCHER_VERSION = 2
+
 # How much of the ingredient name a product description has to account for.
 # Every token, in practice: "chicken thigh" matching a product that mentions
 # only chicken is how a recipe ends up priced as a whole bird.
@@ -220,14 +232,15 @@ def _fit(
     # a count of cloves against a count of bulbs - the older ranking stands
     # rather than a guess being made.
     grams = grams_per_cup(canonical_key)
-    related = comparable(parse_size(product.size), need, canonical_key, grams)
+    each = product.sold_by_piece
+    related = comparable(parse_size(product.size), need, canonical_key, grams, each)
     if related is None:
         return unknown
     size, wanted = related
 
     price = product.regular or 0.0
     cost = cost_to_cover(
-        price, parse_size(product.size), product.sold_by, need, canonical_key, grams
+        price, parse_size(product.size), product.sold_by, need, canonical_key, grams, each
     )
 
     # Sold by weight, the price is a rate and any amount can be bought, so it
@@ -291,11 +304,14 @@ def _best(
     # one that does not account for the whole ingredient name is a guess. One
     # that accounts for it and then some - the oil, the powder, the juice -
     # is a different thing, and so is anything from a department that sells
-    # no food.
+    # no food. One the shelf is out of is passed over too: pinning it would
+    # price the list against something that cannot be bought, and the row
+    # would outlast the gap on the shelf.
     usable = [
         p
         for p in candidates
         if p.regular is not None
+        and p.in_stock
         and _coverage(tokens, words := _words(p.description)) >= MIN_COVERAGE
         and not _is_derivative(words, tokens)
         and not _non_food(p)
@@ -370,6 +386,7 @@ async def _resolve(
             location_id=location_id,
             product_id=chosen.product_id if chosen else None,
             user_confirmed=False,
+            matcher_version=MATCHER_VERSION,
         )
     )
     return chosen.product_id if chosen else None
@@ -406,6 +423,20 @@ async def picks(
     """
     stored = await _stored(session, canonical_keys, location_id)
 
+    # An automatic answer from older rules is dropped and asked again, so an
+    # improvement to the ranking reaches the lists already priced under the
+    # old one. Hand picks are kept whatever version they carry.
+    stale = [
+        row
+        for row in stored.values()
+        if not row.user_confirmed and row.matcher_version < MATCHER_VERSION
+    ]
+    for row in stale:
+        await session.delete(row)
+        del stored[row.canonical_key]
+    if stale:
+        await session.flush()
+
     resolved: dict[str, Pick] = {
         key: Pick(row.product_id, row.user_confirmed) for key, row in stored.items()
     }
@@ -413,9 +444,22 @@ async def picks(
     for key in unseen:
         product_id = await _resolve(session, key, location_id, (needs or {}).get(key))
         resolved[key] = Pick(product_id, False)
-    if unseen:
+    if unseen or stale:
         await session.commit()
     return resolved
+
+
+async def stored_picks(
+    session: AsyncSession, canonical_keys: list[str], location_id: str
+) -> dict[str, Pick]:
+    """What is already decided, and nothing more.
+
+    For callers that must not search - ranking the whole recipe box would
+    otherwise be a search per ingredient in it. Keys nothing has answered
+    are absent, and the caller treats them as unpriced.
+    """
+    stored = await _stored(session, canonical_keys, location_id)
+    return {key: Pick(row.product_id, row.user_confirmed) for key, row in stored.items()}
 
 
 async def product_ids(
@@ -447,6 +491,7 @@ async def confirm(
         session.add(row)
     row.product_id = product_id
     row.user_confirmed = True
+    row.matcher_version = MATCHER_VERSION
     await session.commit()
 
 

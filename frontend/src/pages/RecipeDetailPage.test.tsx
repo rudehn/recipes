@@ -154,6 +154,13 @@ describe("RecipeDetailPage", () => {
   it("deletes after confirming, then returns to the recipe list", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const backend = mockBackend({
+      // Before the ":id" route, which would otherwise answer it with a recipe.
+      "GET /api/recipes/suggestions": {
+        on_sale: [],
+        cheap: [],
+        median_per_serving: null,
+        pantry: [],
+      },
       "GET /api/recipes/:id": curry,
       "DELETE /api/recipes/:id": undefined,
       "GET /api/recipes": page([]),
@@ -311,5 +318,104 @@ describe("RecipeDetailPage", () => {
       "href",
       "/recipes/1/edit",
     );
+  });
+
+  describe("what it costs", () => {
+    const STORE = {
+      location_id: "01400765",
+      name: "Kroger - Riverside",
+      address: "601 Woodman Dr, Dayton, OH 45431",
+      chain: "KROGER",
+    };
+    const chicken = curry.ingredients[0];
+
+    function withCost(cost: unknown) {
+      return mockBackend({
+        // Declared first: ":id" would otherwise swallow "/cost" as well.
+        "GET /api/recipes/:id/cost": cost,
+        "GET /api/recipes/:id": curry,
+      });
+    }
+
+    it("shows the total with what it covers, and each line's share", async () => {
+      // Coverage is part of the number: "$8.40" with three ingredients
+      // unpriced reads exactly like "$8.40" priced in full.
+      withCost({
+        store: STORE,
+        total: 8.4,
+        per_serving: 2.1,
+        priced: 1,
+        total_lines: curry.ingredients.length,
+        lines: [
+          {
+            ingredient_id: chicken.id,
+            name: chicken.name,
+            cost: 8.4,
+            whole_package: false,
+            product: null,
+          },
+        ],
+      });
+
+      renderApp("/recipes/1");
+
+      expect(await screen.findByText("est. $8.40")).toBeInTheDocument();
+      expect(screen.getByText("$2.10 a serving")).toBeInTheDocument();
+      expect(
+        screen.getByText(`1 of ${curry.ingredients.length} ingredients priced · Kroger - Riverside`),
+      ).toBeInTheDocument();
+      expect(rowFor("chicken thighs").querySelector(".line-cost")!.textContent).toBe("$8.40");
+    });
+
+    it("scales the cost with the servings stepper", async () => {
+      withCost({
+        store: STORE,
+        total: 8.4,
+        per_serving: 2.1,
+        priced: 1,
+        total_lines: 1,
+        lines: [
+          { ingredient_id: chicken.id, name: chicken.name, cost: 8.4, whole_package: false, product: null },
+        ],
+      });
+      const { user } = renderApp("/recipes/1");
+      await screen.findByText("est. $8.40");
+
+      await user.click(screen.getByRole("button", { name: "More servings" }));
+
+      // Serves 4, now 5: a quarter more of everything.
+      expect(screen.getByText("est. $10.50")).toBeInTheDocument();
+      expect(rowFor("chicken thighs").querySelector(".line-cost")!.textContent).toBe("$10.50");
+      // Per serving is per serving whatever the batch.
+      expect(screen.getByText("$2.10 a serving")).toBeInTheDocument();
+    });
+
+    it("says when a line was priced as a whole package", async () => {
+      withCost({
+        store: STORE,
+        total: 1.29,
+        per_serving: 0.32,
+        priced: 1,
+        total_lines: 1,
+        lines: [
+          { ingredient_id: chicken.id, name: chicken.name, cost: 1.29, whole_package: true, product: null },
+        ],
+      });
+      renderApp("/recipes/1");
+      await screen.findByText("est. $1.29");
+
+      const cost = rowFor("chicken thighs").querySelector(".line-cost")!;
+      expect(cost.textContent).toBe("$1.29 whole");
+      expect(cost).toHaveAttribute("title", expect.stringMatching(/whole package/));
+    });
+
+    it("shows no cost at all without pricing, or when nothing priced", async () => {
+      withCost(null);
+      renderApp("/recipes/1");
+
+      await screen.findByRole("heading", { name: "Weeknight chicken curry" });
+      expect(screen.queryByText(/est\. \$/)).not.toBeInTheDocument();
+      expect(document.querySelector(".line-cost")).toBeNull();
+    });
   });
 });

@@ -15,6 +15,8 @@ import {
   Toolbar,
 } from "../components/ui";
 import { formatQuantity } from "../quantity";
+
+const money = (n: number) => `$${n.toFixed(2)}`;
 import { highlightedIngredients } from "../recipeLink";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
@@ -26,6 +28,10 @@ export default function RecipeDetailPage() {
   const { data: recipe, error, reload } = useLoad(
     useCallback(() => api.getRecipe(Number(id)), [id]),
   );
+  // Absent for a household without pricing, and absent again if Kroger is
+  // unreachable: a recipe page without a price is the ordinary page, so a
+  // failure here is not reported.
+  const { data: cost } = useLoad(useCallback(() => api.recipeCost(Number(id)), [id]));
   const action = useAction();
   // Cook-time scaling of the displayed ingredient amounts.
   const [scaledServings, setScaledServings] = useState<number | null>(null);
@@ -79,6 +85,10 @@ export default function RecipeDetailPage() {
     );
   }
   if (!recipe) return null;
+
+  const costFactor =
+    scaledServings != null && recipe?.servings ? scaledServings / recipe.servings : 1;
+  const lineCost = new Map((cost?.lines ?? []).filter((l) => l.cost !== null).map((l) => [l.ingredient_id, l]));
 
   const steps = recipe.instructions
     .split("\n")
@@ -134,6 +144,21 @@ export default function RecipeDetailPage() {
               </Chip>
             ))}
           </Chips>
+          {cost && cost.priced > 0 && (
+            // Coverage is part of the number, not a footnote: "$8.40" with
+            // three ingredients unpriced reads exactly like "$8.40" priced in
+            // full. Scaled with the stepper, since the shares scale with it.
+            <p className="recipe-cost">
+              <span className="total">est. {money(cost.total * costFactor)}</span>
+              {cost.per_serving !== null && (
+                <span className="per-serving">{money(cost.per_serving)} a serving</span>
+              )}
+              <span className="coverage">
+                {cost.priced} of {cost.total_lines} ingredient
+                {cost.total_lines === 1 ? "" : "s"} priced · {cost.store.name}
+              </span>
+            </p>
+          )}
         </div>
       </div>
 
@@ -192,6 +217,24 @@ export default function RecipeDetailPage() {
                 >
                   <span className="qty">{formatQuantity(quantity, ing.unit)}</span>
                   <span>{ing.name}</span>
+                  {lineCost.get(ing.id!) && (
+                    <span
+                      className="line-cost"
+                      // A whole package rather than the share used, because
+                      // the amount could not be related to the package. Said
+                      // in the row rather than folded silently into the total.
+                      title={
+                        lineCost.get(ing.id!)!.whole_package
+                          ? "Priced as a whole package: the amount could not be related to it"
+                          : undefined
+                      }
+                    >
+                      {money(lineCost.get(ing.id!)!.cost! * factor)}
+                      {lineCost.get(ing.id!)!.whole_package && (
+                        <span className="whole"> whole</span>
+                      )}
+                    </span>
+                  )}
                 </li>
               );
             })}

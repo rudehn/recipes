@@ -132,6 +132,8 @@ export interface ItemPrice {
   /** Present only when the item is actually on offer. */
   promo: number | null;
   aisle: string;
+  /** False when Kroger says the shelf is empty today. Still the right product, still priced. */
+  in_stock: boolean;
   /**
    * What covering the week's requirement costs - ours, not Kroger's.
    *
@@ -177,6 +179,91 @@ export interface RecipeOnSale {
   recipe: RecipeSummary;
   on_sale: SaleItem[];
   ingredient_count: number;
+}
+
+/** A recipe costing less per serving than the median across the recipe box. */
+export interface CheapRecipe {
+  recipe: RecipeSummary;
+  per_serving: number;
+  priced: number;
+  total_lines: number;
+}
+
+/** A recipe most of whose ingredients the pantry has in stock. */
+export interface PantryRecipe {
+  recipe: RecipeSummary;
+  in_pantry: number;
+  total_lines: number;
+}
+
+/**
+ * Reasons to cook something this week. `median_per_serving` is what `cheap`
+ * is measured against, so the page can say "under $2.10 a serving"; null when
+ * too little of the box has been costed to have one.
+ */
+export interface Suggestions {
+  on_sale: RecipeOnSale[];
+  cheap: CheapRecipe[];
+  median_per_serving: number | null;
+  pantry: PantryRecipe[];
+}
+
+/**
+ * What one ingredient costs a recipe. `cost` is null when it could not be
+ * priced. `whole_package` says the figure is a whole package rather than the
+ * share used, because the amount could not be related to the package.
+ */
+export interface CostLine {
+  ingredient_id: number;
+  name: string;
+  cost: number | null;
+  whole_package: boolean;
+  product: ItemPrice | null;
+}
+
+/**
+ * What a recipe costs to cook. `priced` against `total_lines` is part of the
+ * number: "$8.40" with three ingredients unpriced reads exactly like "$8.40"
+ * fully priced.
+ */
+export interface RecipeCost {
+  store: Store;
+  total: number;
+  per_serving: number | null;
+  priced: number;
+  total_lines: number;
+  lines: CostLine[];
+}
+
+export interface DayCost {
+  plan_date: string;
+  total: number;
+  priced: number;
+  total_lines: number;
+}
+
+/**
+ * What a range of planned meals costs to cook, and what shopping for it
+ * costs. `total` prices the share of each package the meals use;
+ * `grocery_total` prices the whole packages the list would buy. The gap is
+ * the pantry surplus.
+ */
+export interface PlanCost {
+  store: Store;
+  total: number;
+  priced: number;
+  total_lines: number;
+  days: DayCost[];
+  grocery_total: number | null;
+}
+
+/** One ingredient's remembered product at the chosen store. */
+export interface RememberedPick {
+  key: string;
+  name: string;
+  product: ItemPrice | null;
+  hand_picked: boolean;
+  resolved_at: string;
 }
 
 /**
@@ -267,14 +354,31 @@ export interface CartLine {
 }
 
 /**
+ * A line an earlier send this trip already put in the cart. A fact about
+ * this app's request, not the cart, which cannot be read: it is "sent",
+ * never "in your cart".
+ */
+export interface SentLine {
+  key: string;
+  name: string;
+  description: string;
+  quantity: number;
+  sent_at: string;
+}
+
+/**
  * What sending the list would order, and what it would leave behind.
  *
  * `skipped` names the lines rather than counting them, because a count is not
- * something you can shop from.
+ * something you can shop from. `out_of_stock` are matched and priced and still
+ * not orderable today. `sent` already went this trip and are left out unless
+ * asked for again.
  */
 export interface CartPlan {
   lines: CartLine[];
   skipped: string[];
+  out_of_stock: string[];
+  sent: SentLine[];
 }
 
 /**
@@ -438,8 +542,15 @@ export const api = {
   newGroceryTrip: () => request<void>("/api/grocery-list/new-trip", { method: "POST" }),
 
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
-  /** Recipes with an ingredient on offer this week, most on offer first. */
-  recipesOnSale: () => request<RecipeOnSale[]>("/api/pricing/sales"),
+  /** Reasons to cook something this week. Answered from picks already made, never a search. */
+  suggestions: () => request<Suggestions>("/api/recipes/suggestions"),
+  /** What a recipe costs to cook. Null when there is nothing to price it with. */
+  recipeCost: (id: number) => request<RecipeCost | null>(`/api/recipes/${id}/cost`),
+  /** What the meals in a range cost to cook, day by day. Null when pricing is off. */
+  planCost: (start: string, end: string) =>
+    request<PlanCost | null>(`/api/meal-plan/cost${queryString({ start, end })}`),
+  /** Every ingredient the chosen store has a remembered answer for. */
+  rememberedPicks: () => request<RememberedPick[]>("/api/pricing/matches"),
   matchAlternatives: (key: string) =>
     request<ItemPrice[]>(`/api/pricing/alternatives?key=${encodeURIComponent(key)}`),
   /** `product_id` null marks the line as one not to price. */
@@ -482,13 +593,16 @@ export const api = {
     end: string,
     modality: Modality,
     quantities: Record<string, number> = {},
+    resend: string[] = [],
   ) =>
     request<CartResult>("/api/cart/add", {
       method: "POST",
-      body: JSON.stringify(
-        Object.keys(quantities).length > 0
-          ? { start, end, modality, quantities }
-          : { start, end, modality },
-      ),
+      body: JSON.stringify({
+        start,
+        end,
+        modality,
+        ...(Object.keys(quantities).length > 0 ? { quantities } : {}),
+        ...(resend.length > 0 ? { resend } : {}),
+      }),
     }),
 };

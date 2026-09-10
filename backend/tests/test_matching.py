@@ -17,7 +17,7 @@ from app.models import IngredientProductMatch
 from app.services.kroger import client as kroger
 from app.services.kroger import matching
 from app.services.kroger.products import _product as _product_from
-from app.services.kroger.units import measure
+from app.services.kroger.units import measure, packages_to_cover, parse_size
 
 LOCATION = "01400765"
 
@@ -496,3 +496,81 @@ async def test_a_pick_says_who_made_it(catalog):
         picked = await matching.picks(session, ["all-purpose-flour"], LOCATION)
 
     assert picked["all-purpose-flour"] == matching.Pick("0007101201050", True)
+
+
+# ------------------------------------------------------ older rules ---
+
+
+async def test_an_automatic_pick_from_older_rules_is_remade(catalog):
+    """Rows are pinned, so without this "avocado" would have stayed a bottle
+    of oil for as long as the row existed, however the ranking improved."""
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="avocado", location_id=LOCATION, product_id="0001",
+                matcher_version=1,
+            )
+        )
+        await session.commit()
+    catalog.results = [
+        produce("0001", "Avocado Oil", ["Baking Goods"]),
+        produce("0002", "Large Hass Avocado"),
+    ]
+
+    resolved = await resolve(["avocado"])
+
+    assert resolved["avocado"] == "0002"
+    assert catalog.searched == ["avocado"]
+    rows = await stored_rows()
+    assert rows[0].matcher_version == matching.MATCHER_VERSION
+
+
+async def test_a_hand_pick_from_older_rules_is_left_alone(catalog):
+    """It was not this module's decision to remake."""
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="avocado", location_id=LOCATION, product_id="0001",
+                user_confirmed=True, matcher_version=1,
+            )
+        )
+        await session.commit()
+    catalog.results = [produce("0002", "Large Hass Avocado")]
+
+    assert (await resolve(["avocado"]))["avocado"] == "0001"
+    assert catalog.searched == []
+
+
+async def test_a_product_the_store_is_out_of_is_passed_over(catalog):
+    """Pinning it would price the list against something that cannot be
+    bought, and the row would outlast the gap on the shelf."""
+    empty = {**produce("0001", "Large Hass Avocado")}
+    empty["items"][0]["inventory"] = {"stockLevel": "TEMPORARILY_OUT_OF_STOCK"}
+    catalog.results = [empty, produce("0002", "Fresh Medium Ripe Avocado")]
+
+    assert (await resolve(["avocado"]))["avocado"] == "0002"
+
+
+def test_a_single_piece_of_produce_counts_as_the_recipes_piece():
+    """Three avocados against "1 each" in Produce is three, so the bag of
+    four covers it more cheaply than three singles. Garlic in the same
+    department is a bulb against a count of cloves, and stays at one."""
+    single = _product_from({
+        **produce("0001", "Fresh Hass Avocado"),
+        "items": [{"size": "1 each", "soldBy": "UNIT", "price": {"regular": 1.25}}],
+    })
+    bag = _product_from({
+        **produce("0002", "Hass Avocados Bag"),
+        "items": [{"size": "4 ct", "soldBy": "UNIT", "price": {"regular": 3.49}}],
+    })
+    assert single.sold_by_piece is True
+    assert bag.sold_by_piece is True
+    assert matching.choose([single, bag], "avocado", measure(3, None)).product_id == "0002"
+    # Six cloves against a bulb: produce, counted by the piece, and still
+    # not the same piece.
+    bulb = _product_from({
+        **produce("0003", "Garlic"),
+        "items": [{"size": "1 ct", "soldBy": "UNIT", "price": {"regular": 0.79}}],
+    })
+    assert bulb.sold_by_piece is True
+    assert packages_to_cover(parse_size("1 ct"), measure(6, None), "garlic-clove", None, True) == 1

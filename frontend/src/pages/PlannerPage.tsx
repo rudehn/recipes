@@ -30,6 +30,8 @@ interface EntryActions {
   onChangeServings: (entry: MealPlanEntry, delta: number) => void;
 }
 
+const money = (n: number) => `$${n.toFixed(2)}`;
+
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(null);
@@ -44,6 +46,17 @@ export default function PlannerPage() {
     useCallback(
       () => api.listMealPlan(toISODate(weekStart), toISODate(weekEnd)),
       [weekStart, weekEnd],
+    ),
+  );
+  // Asked once the entries are in, and again whenever they change, since
+  // adding a meal changes the answer. Null for a household without pricing,
+  // and a failure is not reported: a planner without a price is the
+  // ordinary planner.
+  const { data: cost } = useLoad(
+    useCallback(
+      async () =>
+        entries ? api.planCost(toISODate(weekStart), toISODate(weekEnd)) : null,
+      [weekStart, weekEnd, entries],
     ),
   );
   const action = useAction();
@@ -138,6 +151,25 @@ export default function PlannerPage() {
           </LinkButton>
         </div>
       </PageHead>
+
+      {cost && cost.priced > 0 && (
+        // Two numbers on purpose. Cooking prices the share of each package the
+        // meals use; shopping prices whole packages. The gap is what is left in
+        // the cupboard after the week, and is worth seeing rather than hiding.
+        <div className="pricing-summary">
+          <span className="total">est. {money(cost.total)} to cook</span>
+          <span className="coverage">
+            {cost.priced} of {cost.total_lines} ingredient
+            {cost.total_lines === 1 ? "" : "s"} priced
+          </span>
+          {cost.grocery_total !== null && (
+            <span className="coverage">
+              about {money(cost.grocery_total)} to shop for, in whole packages
+            </span>
+          )}
+          <span className="store">{cost.store.name}</span>
+        </div>
+      )}
 
       {action.error && (
         <Banner tone="error" spaced>

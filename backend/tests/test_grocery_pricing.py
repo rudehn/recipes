@@ -24,6 +24,7 @@ from app.models import (
     Recipe,
 )
 from app.services.kroger import client as kroger
+from app.services.kroger import matching
 
 LOCATION = "01400765"
 DAY = date(2026, 8, 17)
@@ -31,7 +32,15 @@ DAY = date(2026, 8, 17)
 _real_get = httpx.AsyncClient.get
 
 
-def catalog_entry(product_id: str, description: str, regular: float, promo: float | None = None):
+def catalog_entry(
+    product_id: str,
+    description: str,
+    regular: float,
+    promo: float | None = None,
+    size: str = "5 lb",
+    sold_by: str = "UNIT",
+    categories: list[str] | None = None,
+):
     price: dict = {"regular": regular}
     if promo is not None:
         price["promo"] = promo
@@ -39,7 +48,8 @@ def catalog_entry(product_id: str, description: str, regular: float, promo: floa
         "productId": product_id,
         "upc": f"upc-{product_id}",
         "description": description,
-        "items": [{"size": "5 lb", "soldBy": "UNIT", "price": price}],
+        "categories": categories or ["Baking Goods"],
+        "items": [{"size": size, "soldBy": sold_by, "price": price}],
         "aisleLocations": [{"description": "AISLE 18"}],
     }
 
@@ -47,6 +57,13 @@ def catalog_entry(product_id: str, description: str, regular: float, promo: floa
 CATALOG = {
     "flour": catalog_entry("0001", "Kroger® All Purpose Flour", 2.59),
     "sugar": catalog_entry("0002", "Kroger® Granulated Sugar", 3.99, promo=2.99),
+    # A bunch is not a size anything can read, so a recipe's share of it is
+    # unknowable and it is costed whole.
+    "parsley": catalog_entry("0003", "Parsley", 1.29, size="1 bunch", categories=["Produce"]),
+    "chicken thigh": catalog_entry(
+        "0004", "Fresh Chicken Thighs", 4.00, size="1 lb", sold_by="WEIGHT",
+        categories=["Meat & Seafood"],
+    ),
     "saffron": None,
 }
 
@@ -55,12 +72,14 @@ class FakeCatalog:
     def __init__(self) -> None:
         self.error = False
         self.calls = 0
+        self.searches: list[dict] = []
 
     def respond(self, params: dict | None) -> httpx.Response:
         if self.error:
             raise httpx.ConnectError("no route to host")
         self.calls += 1
         params = params or {}
+        self.searches.append(params)
         request = httpx.Request("GET", kroger.API_BASE + "/v1/products")
 
         if "filter.productId" in params:
@@ -236,6 +255,12 @@ async def test_a_trip_with_no_offers_saved_nothing(client, catalog):
     assert (await fetch(client))["pricing"]["saved"] == 0.0
 
 
+async def suggestions(client) -> dict:
+    resp = await client.get("/api/recipes/suggestions")
+    assert resp.status_code == 200
+    return resp.json()
+
+
 async def test_offers_are_listed_as_the_recipes_they_would_go_into(client, catalog):
     """Built from matches that exist only because a list was opened. Nothing
     is searched for, so this notices an offer rather than gathering a
@@ -244,10 +269,7 @@ async def test_offers_are_listed_as_the_recipes_they_would_go_into(client, catal
     await seed(["flour", "sugar"])
     await fetch(client)
 
-    resp = await client.get("/api/pricing/sales")
-
-    assert resp.status_code == 200
-    body = resp.json()
+    body = (await suggestions(client))["on_sale"]
     assert [r["recipe"]["title"] for r in body] == ["Test bake"]
     # Flour is matched but not discounted, so only sugar is an offer.
     assert [s["name"] for s in body[0]["on_sale"]] == ["sugar"]
@@ -271,7 +293,7 @@ async def test_recipes_with_more_of_themselves_on_offer_come_first(client, catal
             session.add(recipe)
         await session.commit()
 
-    body = (await client.get("/api/pricing/sales")).json()
+    body = (await suggestions(client))["on_sale"]
 
     assert [r["recipe"]["title"] for r in body] == ["Sugar cookies", "Test bake"]
 
@@ -366,13 +388,249 @@ async def test_offers_are_empty_before_anything_has_been_matched(client, catalog
     re-price - not an error, just an empty shelf."""
     await seed(["flour"], store=True)
 
-    assert (await client.get("/api/pricing/sales")).json() == []
+    assert (await suggestions(client))["on_sale"] == []
 
 
 async def test_offers_are_empty_rather_than_an_error_without_a_store(client, catalog):
     await seed(["flour"], store=False)
 
-    resp = await client.get("/api/pricing/sales")
+    assert (await suggestions(client))["on_sale"] == []
+
+
+# ---------------------------------------------------------- recipe cost ---
+
+
+async def make_recipe(title: str, ingredients: list[tuple], servings: int | None = 4) -> int:
+    async with session_factory() as session:
+        recipe = Recipe(title=title, servings=servings)
+        recipe.ingredients = [
+            Ingredient(name=name, quantity=quantity, unit=unit, position=i)
+            for i, (name, quantity, unit) in enumerate(ingredients)
+        ]
+        session.add(recipe)
+        await session.flush()
+        recipe_id = recipe.id
+        await session.commit()
+        return recipe_id
+
+
+async def cost_of(client, recipe_id: int) -> dict | None:
+    resp = await client.get(f"/api/recipes/{recipe_id}/cost")
+    assert resp.status_code == 200
+    return resp.json()
+
+
+async def test_a_recipe_is_costed_by_the_share_of_each_package_it_uses(client, catalog):
+    """Two cups of flour is 250 g of a 2268 g bag: 11% of $2.59. A pound
+    and a half of chicken sold by the pound is a pound and a half at the
+    rate, with no floor - a costing is not a purchase."""
+    await seed([])
+    recipe_id = await make_recipe(
+        "Chicken pie",
+        [("flour", 2, "cup"), ("chicken thigh", 1.5, "lb")],
+        servings=4,
+    )
+
+    body = await cost_of(client, recipe_id)
+
+    by_name = {line["name"]: line for line in body["lines"]}
+    assert by_name["flour"]["cost"] == 0.29
+    assert by_name["flour"]["whole_package"] is False
+    assert by_name["chicken thigh"]["cost"] == 6.0
+    assert body["total"] == 6.29
+    assert body["per_serving"] == 1.57
+    assert body["priced"] == 2
+    assert body["total_lines"] == 2
+    assert body["store"]["name"] == "Kroger - Kroger Riverside"
+
+
+async def test_an_amount_that_cannot_be_related_is_costed_whole_and_says_so(client, catalog):
+    """"1 bunch parsley" against a bunch is right costed whole; "2 sprigs"
+    against the same bunch would be ten times too much. Nothing can tell
+    them apart, so the line carries the reason rather than hiding it."""
+    await seed([])
+    recipe_id = await make_recipe("Tabbouleh", [("parsley", 1, "bunch")])
+
+    body = await cost_of(client, recipe_id)
+
+    assert body["lines"][0]["cost"] == 1.29
+    assert body["lines"][0]["whole_package"] is True
+
+
+async def test_an_ingredient_with_no_amount_is_not_priced(client, catalog):
+    """"Sugar, to taste" costed as a four pound bag would be wrong by a
+    factor of a thousand, and the total would still look plausible."""
+    await seed([])
+    recipe_id = await make_recipe("Tea", [("sugar", None, None), ("flour", 1, "cup")])
+
+    body = await cost_of(client, recipe_id)
+
+    by_name = {line["name"]: line for line in body["lines"]}
+    assert by_name["sugar"]["cost"] is None
+    assert body["priced"] == 1
+    assert body["total_lines"] == 2
+
+
+async def test_a_recipe_without_servings_has_a_total_but_no_per_serving(client, catalog):
+    await seed([])
+    recipe_id = await make_recipe("Stock", [("flour", 1, "cup")], servings=None)
+
+    body = await cost_of(client, recipe_id)
+
+    assert body["total"] == 0.14
+    assert body["per_serving"] is None
+
+
+async def test_a_recipe_cost_is_null_without_a_store(client, catalog):
+    await seed([], store=False)
+    recipe_id = await make_recipe("Bread", [("flour", 1, "cup")])
+
+    assert await cost_of(client, recipe_id) is None
+
+
+# ------------------------------------------------------------ plan cost ---
+
+
+async def plan_cost(client, start=DAY, end=DAY) -> dict | None:
+    resp = await client.get(f"/api/meal-plan/cost?start={start}&end={end}")
+    assert resp.status_code == 200
+    return resp.json()
+
+
+async def test_a_week_of_meals_is_costed_at_its_planned_servings(client, catalog):
+    """The recipe serves four and is planned for eight, so the week uses
+    twice the flour. The grocery total for the same days rides along: it
+    buys the whole bag, and the gap is what stays in the cupboard."""
+    await seed([])
+    recipe_id = await make_recipe("Bread", [("flour", 2, "cup")], servings=4)
+    async with session_factory() as session:
+        session.add(
+            MealPlanEntry(plan_date=DAY, meal="dinner", recipe_id=recipe_id, servings=8)
+        )
+        await session.commit()
+
+    body = await plan_cost(client)
+
+    assert body["total"] == 0.57
+    assert body["priced"] == 1
+    assert body["total_lines"] == 1
+    assert body["days"] == [
+        {"plan_date": str(DAY), "total": 0.57, "priced": 1, "total_lines": 1}
+    ]
+    assert body["grocery_total"] == 2.59
+
+
+async def test_plan_cost_is_null_without_a_store(client, catalog):
+    await seed([], store=False)
+
+    assert await plan_cost(client) is None
+
+
+async def test_plan_cost_refuses_a_range_that_runs_backwards(client, catalog):
+    await seed([])
+
+    resp = await client.get(f"/api/meal-plan/cost?start={DAY}&end=2026-08-01")
+
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------- suggestions ---
+
+
+async def test_cheap_recipes_are_those_under_the_median_per_serving(client, catalog):
+    """Below the median across the box, never against a price history. Only
+    answered from products already decided on: nothing here searches."""
+    await seed(["flour", "sugar"])
+    await fetch(client)
+    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
+    await make_recipe("Cake", [("flour", 2, "cup"), ("sugar", 2, "cup")], servings=4)
+    await make_recipe("Candy", [("sugar", 4, "cup")], servings=2)
+    searches_before = catalog.calls
+    requests_before = len(catalog.searches)
+
+    body = await suggestions(client)
+
+    # Per serving: Flatbread $0.04, "Test bake" from `seed` at a cup of each
+    # $0.10, Cake $0.20, Candy $0.53 (200 g of sugar a cup against a 5 lb bag
+    # at the sale price). The median of four is $0.15, so two are under it.
+    assert [c["recipe"]["title"] for c in body["cheap"]] == ["Flatbread", "Test bake"]
+    assert body["cheap"][0]["per_serving"] == 0.04
+    assert body["median_per_serving"] == 0.15
+    # One batched price lookup, and not one search.
+    assert catalog.calls - searches_before <= 2
+    assert all("filter.term" not in c for c in catalog.searches[requests_before:])
+
+
+async def test_a_half_costed_recipe_is_not_called_cheap(client, catalog):
+    """Saffron never matches, so Risotto is half priced - which is not the
+    same as half price."""
+    await seed(["flour", "sugar", "saffron"])
+    await fetch(client)
+    await make_recipe("Risotto", [("saffron", 1, "g"), ("flour", 1, "cup")], servings=4)
+    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
+    await make_recipe("Cake", [("flour", 2, "cup"), ("sugar", 2, "cup")], servings=4)
+
+    body = await suggestions(client)
+
+    assert "Risotto" not in [c["recipe"]["title"] for c in body["cheap"]]
+
+
+async def test_too_few_costed_recipes_means_no_median(client, catalog):
+    """"Below the median of two" is just "the cheaper one"."""
+    await seed(["flour"])
+    await fetch(client)
+    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
+
+    body = await suggestions(client)
+
+    assert body["cheap"] == []
+    assert body["median_per_serving"] is None
+
+
+async def test_recipes_mostly_in_the_pantry_are_suggested_without_kroger(client, monkeypatch):
+    """The one signal that needs no price at all, so it answers even when
+    pricing is off."""
+    monkeypatch.setattr(config, "KROGER_CLIENT_ID", "")
+    monkeypatch.setattr(config, "KROGER_CLIENT_SECRET", "")
+    await make_recipe("Pasta", [("pasta", 1, "lb"), ("olive oil", 2, "tbsp"), ("garlic", 2, None)])
+    await make_recipe(
+        "Curry", [("chicken", 1, "lb"), ("rice", 1, "cup"), ("curry paste", 2, "tbsp")]
+    )
+    async with session_factory() as session:
+        for name in ["Pasta", "Olive oil", "garlic", "rice"]:
+            session.add(PantryItem(name=name, in_stock=True))
+        await session.commit()
+
+    body = await suggestions(client)
+
+    assert [p["recipe"]["title"] for p in body["pantry"]] == ["Pasta"]
+    assert body["pantry"][0]["in_pantry"] == 3
+    assert body["pantry"][0]["total_lines"] == 3
+    assert body["on_sale"] == []
+    assert body["cheap"] == []
+
+
+# ------------------------------------------------------ remembered picks ---
+
+
+async def test_every_remembered_pick_can_be_seen_together(client, catalog):
+    await seed(["flour", "sugar", "saffron"])
+    await fetch(client)
+    async with session_factory() as session:
+        await matching.confirm(session, "sugar", LOCATION, "0002")
+
+    resp = await client.get("/api/pricing/matches")
 
     assert resp.status_code == 200
-    assert resp.json() == []
+    body = {p["key"]: p for p in resp.json()}
+    assert body["flour"]["hand_picked"] is False
+    assert body["flour"]["product"]["description"] == "Kroger® All Purpose Flour"
+    assert body["sugar"]["hand_picked"] is True
+    assert body["saffron"]["product"] is None
+    assert body["saffron"]["name"] == "saffron"
+
+
+async def test_remembered_picks_need_a_store(client, catalog):
+    await seed([], store=False)
+
+    assert (await client.get("/api/pricing/matches")).status_code == 409

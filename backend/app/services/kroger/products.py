@@ -22,6 +22,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from . import client
+from .units import COUNT, parse_size
+
+# Kroger's word for a shelf with nothing on it. The other values seen are
+# "HIGH" and "LOW", and an item can carry no inventory at all.
+OUT_OF_STOCK = "TEMPORARILY_OUT_OF_STOCK"
 
 # The API's own ceiling, for both filter.limit and the number of comma
 # separated ids accepted by filter.productId. 51 ids is a 400.
@@ -44,6 +49,32 @@ class Product:
     promo: float | None
     aisle: str
     categories: tuple[str, ...] = ()
+    # Kroger's own reading of the shelf, or "" when it says nothing.
+    stock_level: str = ""
+
+    @property
+    def in_stock(self) -> bool:
+        """Not known to be out. Silence counts as stocked."""
+        return self.stock_level != OUT_OF_STOCK
+
+    @property
+    def sold_by_piece(self) -> bool:
+        """Produce counted out by the piece: one avocado, a bag of four limes.
+
+        Sized as a count, sold as a unit, and from the produce department.
+        That is the one place a recipe's count and the shop's count are the
+        same object without a list saying so - three avocados are three of
+        the "1 each", or one of the "4 ct" bag - where "1 ct" on a jar of
+        garlic powder is not. It vouches for the product only; whether the
+        recipe counts the same piece is `units.comparable`'s question.
+        """
+        size = parse_size(self.size)
+        return (
+            self.sold_by == "UNIT"
+            and size is not None
+            and size.dimension == COUNT
+            and any("produce" in c.casefold() for c in self.categories)
+        )
 
     @property
     def on_sale(self) -> bool:
@@ -71,6 +102,8 @@ def _product(raw: dict[str, Any]) -> Product | None:
     aisles = raw.get("aisleLocations") or []
     aisle = aisles[0].get("description", "") if aisles and isinstance(aisles[0], dict) else ""
     categories = tuple(c for c in raw.get("categories") or [] if isinstance(c, str))
+    inventory = item.get("inventory") or {}
+    stock_level = inventory.get("stockLevel", "") if isinstance(inventory, dict) else ""
     return Product(
         product_id=product_id,
         upc=raw.get("upc", ""),
@@ -82,6 +115,7 @@ def _product(raw: dict[str, Any]) -> Product | None:
         promo=_number(price.get("promo")),
         aisle=aisle,
         categories=categories,
+        stock_level=stock_level if isinstance(stock_level, str) else "",
     )
 
 

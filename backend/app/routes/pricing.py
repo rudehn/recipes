@@ -19,7 +19,7 @@ from ..schemas import (
     ItemPrice,
     MatchSelection,
     PricingStatus,
-    RecipeOnSale,
+    RememberedPick,
     StoreOut,
     StoreSelection,
 )
@@ -116,16 +116,19 @@ async def alternatives(
     return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
 
 
-@router.get("/sales", response_model=list[RecipeOnSale])
-async def sales(session: AsyncSession = Depends(get_session)):
-    """Recipes with an ingredient on offer this week.
+@router.get("/matches", response_model=list[RememberedPick])
+async def remembered_picks(session: AsyncSession = Depends(get_session)):
+    """Every ingredient this store has an answer for, and what the answer is.
 
-    Re-prices products already chosen rather than searching for anything, so
-    it costs one batched call and stays clear of gathering a catalogue.
-    Returns an empty list rather than an error when pricing is off or no
-    store is set, since an offers panel with nothing in it is a normal sight.
+    The one place the remembered picks can be seen together: which were a
+    person's, which the matcher's, and which are "price nothing". Costs one
+    batched lookup for the products, never a search.
     """
-    return await pricing.recipes_on_sale(session)
+    store = await _require_store(session)
+    try:
+        return await pricing.remembered_picks(session, store.location_id)
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
 
 @router.put("/match", status_code=204)

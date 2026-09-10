@@ -118,12 +118,13 @@ async def _plan_for(
     start: date,
     end: date,
     quantities: dict[str, int] | None = None,
+    resend: list[str] | None = None,
 ) -> CartPlan:
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
     grocery_list = await build_grocery_list(session, start, end)
     try:
-        return await cart.plan(session, grocery_list, quantities)
+        return await cart.plan(session, grocery_list, quantities, resend)
     except kroger.KrogerError:
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
@@ -163,7 +164,7 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     if await settings_service.cart_connection(session) is None:
         raise HTTPException(status_code=409, detail="No Kroger account is connected")
 
-    plan = await _plan_for(session, data.start, data.end, data.quantities)
+    plan = await _plan_for(session, data.start, data.end, data.quantities, data.resend)
     if not plan.lines:
         # Nothing was sent, so nothing is recorded. Stamping a send here would
         # make the page warn that a list is already in the cart when none is.
@@ -176,5 +177,6 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     except kroger.KrogerError:
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
+    await cart.record_sent(session, plan.lines)
     sent_at = await settings_service.record_cart_send(session)
     return CartResult(added=len(plan.lines), skipped=plan.skipped, sent_at=sent_at)

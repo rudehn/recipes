@@ -35,6 +35,7 @@ const flour = groceryItem({
     regular: 2.59,
     promo: null,
     aisle: "AISLE 18",
+    in_stock: true,
     estimated: null,
   },
 });
@@ -49,6 +50,7 @@ const sugar = groceryItem({
     regular: 3.99,
     promo: 2.99,
     aisle: "AISLE 18",
+    in_stock: true,
     estimated: null,
   },
 });
@@ -65,6 +67,7 @@ const onion = groceryItem({
     regular: 1.19,
     promo: null,
     aisle: "PRODUCE",
+    in_stock: true,
     estimated: null,
   },
 });
@@ -78,6 +81,7 @@ const ALTERNATIVES = [
     regular: 1.19,
     promo: null,
     aisle: "PRODUCE",
+    in_stock: true,
     estimated: null,
   },
   {
@@ -87,6 +91,7 @@ const ALTERNATIVES = [
     regular: 1.29,
     promo: null,
     aisle: "PRODUCE TABLE 6",
+    in_stock: true,
     estimated: null,
   },
 ];
@@ -168,6 +173,7 @@ describe("grocery list pricing", () => {
               regular: 4.49,
               promo: null,
               aisle: "MEAT",
+              in_stock: true,
               estimated: 13.47,
             },
           }),
@@ -456,6 +462,66 @@ describe("remembered picks", () => {
 
     await screen.findByText("sugar");
     expect(screen.queryByText(/^On sale/)).not.toBeInTheDocument();
-    expect(backend.requestsTo("GET /api/pricing/sales")).toHaveLength(0);
+    expect(backend.requestsTo("GET /api/recipes/suggestions")).toHaveLength(0);
+  });
+
+  it("says when the store is out of a line's product today", async () => {
+    withList(
+      groceryList({
+        items: [groceryItem({ ...flour, price: { ...flour.price!, in_stock: false } })],
+        pricing: { store: STORE, total: 2.59, saved: 0, priced: 1, total_lines: 1 },
+      }),
+    );
+
+    renderApp(WEEK);
+
+    const row = (await screen.findByText("flour")).closest(".grocery-item")!;
+    expect(within(row as HTMLElement).getByText("out of stock today")).toBeInTheDocument();
+    // Still priced: it is the right product, just not on the shelf this morning.
+    expect(within(row as HTMLElement).getByText("$2.59")).toBeInTheDocument();
+  });
+});
+
+describe("walking the store", () => {
+  const meat = groceryItem({
+    key: "chicken",
+    name: "chicken",
+    price: { ...flour.price!, description: "Chicken Thighs", aisle: "MEAT" },
+  });
+  const bread = groceryItem({
+    key: "bread-flour",
+    name: "bread flour",
+    price: { ...flour.price!, aisle: "AISLE 3" },
+  });
+  const salt = groceryItem({ key: "salt", name: "salt" });
+
+  function rowNames(): string[] {
+    return [...document.querySelectorAll(".grocery-item .name")].map((n) => n.textContent ?? "");
+  }
+
+  it("orders by name until asked, then by aisle with the aisles named", async () => {
+    // Numbered aisles first and in order, departments after, and lines with
+    // no aisle last under a heading that says so.
+    withList(groceryList({ items: [meat, salt, bread, flour] }));
+    const { user } = renderApp(WEEK);
+    await screen.findByText("flour");
+
+    expect(screen.queryByText("MEAT")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "By aisle" }));
+
+    expect(rowNames()).toEqual(["bread flour", "flour", "chicken", "salt"]);
+    const heads = [...document.querySelectorAll(".aisle-head")].map((h) => h.textContent);
+    expect(heads).toEqual(["AISLE 3", "AISLE 18", "MEAT", "Elsewhere"]);
+
+    await user.click(screen.getByRole("button", { name: "By name" }));
+    expect(screen.queryByText("MEAT")).not.toBeInTheDocument();
+  });
+
+  it("offers no ordering when no line has an aisle", async () => {
+    withList(groceryList({ items: [salt] }));
+    renderApp(WEEK);
+
+    await screen.findByText("salt");
+    expect(screen.queryByRole("button", { name: "By aisle" })).not.toBeInTheDocument();
   });
 });

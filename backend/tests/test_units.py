@@ -18,6 +18,7 @@ from app.services.kroger.units import (
     measure,
     packages_to_cover,
     parse_size,
+    share_of_package,
     to_cents,
 )
 
@@ -214,3 +215,26 @@ def test_a_count_is_only_a_count_of_the_same_thing():
 )
 def test_money_rounds_the_way_a_till_does(amount, expected):
     assert to_cents(amount) == expected
+
+
+def test_a_count_compares_when_the_caller_vouches_for_the_piece():
+    """The curated list is one way for a count to count; a product that is
+    a single piece of produce is the other, and the caller says so."""
+    assert packages_to_cover(parse_size("1 each"), measure(3, None), "avocado") == 1
+    assert packages_to_cover(parse_size("1 each"), measure(3, None), "avocado", None, True) == 3
+
+
+def test_a_recipe_uses_a_share_of_a_package_not_the_whole():
+    """Two cups of flour is 250 g of a five pound bag, so 11% of its price.
+    A rate has no floor here: a costing is not a purchase."""
+    two_cups = measure(2, "cup")
+    assert share_of_package(2.59, parse_size("5 lb"), "UNIT", two_cups, "flour") == (
+        pytest.approx(0.2855, rel=1e-3)
+    )
+    teaspoon = measure(1, "tsp")
+    assert share_of_package(10.99, parse_size("1 lb"), "WEIGHT", teaspoon, "brown-sugar") == (
+        pytest.approx(0.111, rel=1e-2)
+    )
+    # Unrelatable amounts are the caller's problem, and said so.
+    bunch = parse_size("1 bunch")
+    assert share_of_package(1.29, bunch, "UNIT", measure(2, None), "parsley") is None

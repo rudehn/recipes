@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from .density import grams_per_cup, sold_by_the_piece
+from .density import counts_parts_of_a_piece, grams_per_cup, sold_by_the_piece
 
 WEIGHT = "weight"
 VOLUME = "volume"
@@ -125,6 +125,7 @@ def comparable(
     need: Measure | None,
     canonical_key: str = "",
     grams: float | None = None,
+    by_the_piece: bool = False,
 ) -> tuple[Measure, Measure] | None:
     """A package and a requirement in one dimension, or None if there is none.
 
@@ -133,8 +134,12 @@ def comparable(
     weight needs the ingredient's density, which is looked up unless given.
     Counts are the exception: a recipe's six cloves of garlic and Kroger's
     "1 ct" bulb are both counts, of different things, and relating them
-    bought six bulbs. So a count compares only for the ingredients a recipe
-    counts in the shop's own pieces - eggs, tortillas, buns.
+    bought six bulbs. So a count compares only where the recipe's piece is
+    the shop's piece: for the ingredients on the curated list - eggs,
+    tortillas, buns - and where the caller vouches for the product, which
+    `Product.sold_by_piece` does for produce sold by count. Even then a
+    recipe that counts parts of the piece - cloves, stalks, sprigs - is
+    refused, because garlic is produce and a bulb is not a clove.
 
     None is a real answer. It means the two cannot be related, and every
     caller falls back to one package rather than to a guess.
@@ -142,8 +147,10 @@ def comparable(
     if size is None or need is None or size.base <= 0:
         return None
     if size.dimension == need.dimension:
-        if size.dimension == COUNT and not sold_by_the_piece(canonical_key):
-            return None
+        if size.dimension == COUNT:
+            vouched = by_the_piece and not counts_parts_of_a_piece(canonical_key)
+            if not (vouched or sold_by_the_piece(canonical_key)):
+                return None
         return size, need
     if {size.dimension, need.dimension} != {WEIGHT, VOLUME}:
         return None
@@ -163,6 +170,7 @@ def cost_to_cover(
     need: Measure | None,
     canonical_key: str = "",
     grams: float | None = None,
+    by_the_piece: bool = False,
 ) -> float:
     """What covering `need` actually costs, as against one package's price.
 
@@ -175,7 +183,7 @@ def cost_to_cover(
     Whether the two can be related at all is `comparable`'s decision. Where
     they cannot, this is the price of one package.
     """
-    related = comparable(size, need, canonical_key, grams)
+    related = comparable(size, need, canonical_key, grams, by_the_piece)
     if related is None:
         return price
     size, need = related
@@ -194,6 +202,7 @@ def packages_to_cover(
     need: Measure | None,
     canonical_key: str = "",
     grams: float | None = None,
+    by_the_piece: bool = False,
 ) -> int:
     """How many of a product to order to cover `need`.
 
@@ -209,7 +218,7 @@ def packages_to_cover(
     named after. The two therefore disagree by up to one unit on weight-sold
     lines, which is why the quantity is shown before anything is sent.
     """
-    related = comparable(size, need, canonical_key, grams)
+    related = comparable(size, need, canonical_key, grams, by_the_piece)
     if related is None:
         return 1
     size, need = related
@@ -248,3 +257,33 @@ def to_cents(amount: float) -> float:
     """
     settled = Decimal(str(round(amount, 6)))
     return float(settled.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def share_of_package(
+    price: float,
+    size: Measure | None,
+    sold_by: str,
+    need: Measure | None,
+    canonical_key: str = "",
+    grams: float | None = None,
+    by_the_piece: bool = False,
+) -> float | None:
+    """What the part of a package a recipe uses costs, or None if unknowable.
+
+    The other half of `cost_to_cover`. The grocery list buys whole packages,
+    so that rounds up; a recipe consumes two cups of a five pound bag, so
+    this takes the fraction. A weight-sold rate is charged at the rate with
+    no floor: the floor in `cost_to_cover` exists because a shop will not
+    sell five grams of bacon, and a recipe costing is not a purchase.
+
+    None where the two cannot be related. A recipe cost that silently priced
+    "a bunch of parsley" as a whole bunch would be right, and one that priced
+    "2 sprigs" that way would be wrong by a factor of ten, and nothing here
+    can tell them apart - so the caller decides what an unrelatable line
+    counts as, and says so.
+    """
+    related = comparable(size, need, canonical_key, grams, by_the_piece)
+    if related is None:
+        return None
+    size, need = related
+    return price * need.base / size.base

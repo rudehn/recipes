@@ -8,7 +8,7 @@ from ..db import get_session
 from ..models import GroceryCheck, PantryItem
 from ..schemas import GroceryList, GroceryMark
 from ..services.grocery import build_grocery_list, item_key
-from ..services.kroger import pricing
+from ..services.kroger import cart, pricing
 
 router = APIRouter(prefix="/grocery-list", tags=["grocery-list"])
 
@@ -56,11 +56,15 @@ async def mark_item(data: GroceryMark, session: AsyncSession = Depends(get_sessi
 
 @router.post("/new-trip", status_code=204)
 async def new_trip(session: AsyncSession = Depends(get_session)):
-    """Clear every mark, bought and at-home alike.
+    """Clear every mark, bought and at-home alike, and the record of what went
+    to the cart.
 
-    Both are statements about one trip. "Have it" in particular is only true
-    of the week it was said in - the avocados that were on the counter are
-    gone by the next list - so it is not allowed to outlive the ticks.
+    All three are statements about one trip. "Have it" in particular is only
+    true of the week it was said in - the avocados that were on the counter
+    are gone by the next list - so it is not allowed to outlive the ticks.
+    And a new trip is a new cart, so what the old one was sent no longer
+    holds anything back.
     """
     await session.execute(delete(GroceryCheck))
     await session.commit()
+    await cart.forget_sent(session)

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import {
@@ -33,6 +33,50 @@ type Unsaved = ReadonlyMap<string, GroceryStatus>;
 const itemCount = (n: number) => `${n} item${n === 1 ? "" : "s"}`;
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * How the list is ordered: by name, or by the aisle the product is in.
+ *
+ * By aisle turns the list into a route through the store, which is what a
+ * list read in an aisle is for. A per-device convenience rather than a
+ * setting, so it lives in local storage and every read is guarded: it can
+ * be absent, and in some contexts the store itself throws.
+ */
+type Order = "name" | "aisle";
+const ORDER_KEY = "grocery-order";
+
+function storedOrder(): Order {
+  try {
+    return localStorage.getItem(ORDER_KEY) === "aisle" ? "aisle" : "name";
+  } catch {
+    return "name";
+  }
+}
+
+/** Where a line is found, as Kroger words it, or "" when unknown. */
+const aisleOf = (item: GroceryItem) => item.price?.aisle ?? "";
+
+/**
+ * Lines grouped by aisle, aisles in the order they are walked.
+ *
+ * Kroger names them "AISLE 18", "PRODUCE", "MEAT"; sorting the names puts the
+ * numbered aisles in order and the departments after them, which is near
+ * enough a walk. Lines with no aisle - unpriced, or a product Kroger gives
+ * no location for - come last, together, under a heading that says so.
+ */
+function byAisle(items: GroceryItem[]): { aisle: string; items: GroceryItem[] }[] {
+  const groups = new Map<string, GroceryItem[]>();
+  for (const item of items) {
+    const aisle = aisleOf(item);
+    groups.set(aisle, [...(groups.get(aisle) ?? []), item]);
+  }
+  const named = [...groups.keys()].filter(Boolean).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true }),
+  );
+  const ordered = named.map((aisle) => ({ aisle, items: groups.get(aisle)! }));
+  if (groups.has("")) ordered.push({ aisle: "", items: groups.get("")! });
+  return ordered;
+}
 
 function withStatus(list: GroceryList, key: string, status: GroceryStatus): GroceryList {
   const set = (item: GroceryItem) => (item.key === key ? { ...item, status } : item);
@@ -72,7 +116,16 @@ export default function GroceryPage() {
 
   const [unsaved, setUnsaved] = useState<Unsaved>(new Map());
   const [saving, setSaving] = useState(false);
+  const [order, setOrder] = useState<Order>(storedOrder);
   const action = useAction();
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ORDER_KEY, order);
+    } catch {
+      // A per-device convenience; nothing is lost if it cannot be kept.
+    }
+  }, [order]);
 
   const list = useMemo(() => applyUnsaved(loaded, unsaved), [loaded, unsaved]);
 
@@ -173,6 +226,36 @@ export default function GroceryPage() {
     list.in_pantry.length === 0 &&
     list.pantry_restock.length === 0;
 
+  // Offered only when there is an aisle to order by: a toggle that changes
+  // nothing is a puzzle.
+  const hasAisles = Boolean(
+    list && [...list.items, ...list.pantry_restock].some((item) => aisleOf(item)),
+  );
+  const grouped = hasAisles && order === "aisle";
+
+  const rows = (items: GroceryItem[]) =>
+    items.map((item) => (
+      <GroceryRow
+        key={item.key}
+        item={item}
+        onToggle={toggle}
+        onHaveIt={haveIt}
+        canPrice={canPrice}
+        onMatched={reload}
+      />
+    ));
+
+  /** The rows of a section, walked by aisle when asked to. */
+  const section = (items: GroceryItem[]) =>
+    grouped
+      ? byAisle(items).map((group) => (
+          <Fragment key={group.aisle || "elsewhere"}>
+            <h3 className="aisle-head">{group.aisle || "Elsewhere"}</h3>
+            {rows(group.items)}
+          </Fragment>
+        ))
+      : rows(items);
+
   return (
     <div className="grocery-layout">
       <PageHead
@@ -248,17 +331,31 @@ export default function GroceryPage() {
 
       {list && list.items.length > 0 && (
         <section className="grocery-section">
-          <SectionHeading title="To buy" items={list.items} />
-          {list.items.map((item) => (
-            <GroceryRow
-              key={item.key}
-              item={item}
-              onToggle={toggle}
-              onHaveIt={haveIt}
-              canPrice={canPrice}
-              onMatched={reload}
-            />
-          ))}
+          <SectionHeading
+            title="To buy"
+            items={list.items}
+            control={
+              hasAisles ? (
+                <div className="order-toggle" role="group" aria-label="Sort the list">
+                  <button
+                    type="button"
+                    aria-pressed={order === "name"}
+                    onClick={() => setOrder("name")}
+                  >
+                    By name
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={order === "aisle"}
+                    onClick={() => setOrder("aisle")}
+                  >
+                    By aisle
+                  </button>
+                </div>
+              ) : undefined
+            }
+          />
+          {section(list.items)}
         </section>
       )}
 
@@ -285,16 +382,7 @@ export default function GroceryPage() {
       {list && list.pantry_restock.length > 0 && (
         <section className="grocery-section">
           <SectionHeading title="Restock pantry" items={list.pantry_restock} />
-          {list.pantry_restock.map((item) => (
-            <GroceryRow
-              key={item.key}
-              item={item}
-              onToggle={toggle}
-              onHaveIt={haveIt}
-              canPrice={canPrice}
-              onMatched={reload}
-            />
-          ))}
+          {section(list.pantry_restock)}
         </section>
       )}
     </div>
@@ -309,7 +397,15 @@ export default function GroceryPage() {
  * count does not include them. Saying how many were set aside keeps the
  * heading honest about the rows under it.
  */
-function SectionHeading({ title, items }: { title: string; items: GroceryItem[] }) {
+function SectionHeading({
+  title,
+  items,
+  control,
+}: {
+  title: string;
+  items: GroceryItem[];
+  control?: React.ReactNode;
+}) {
   const have = items.filter((item) => item.status === "have").length;
   return (
     <h2>
@@ -318,6 +414,7 @@ function SectionHeading({ title, items }: { title: string; items: GroceryItem[] 
         {itemCount(items.length - have)}
         {have > 0 && ` · ${have} you have`}
       </span>
+      {control}
     </h2>
   );
 }
@@ -519,6 +616,8 @@ function CartReview({
   } = useLoad(useCallback(() => api.cartPreview(start, end), [start, end]));
   const [modality, setModality] = useState<Modality>("PICKUP");
   const [quantities, setQuantities] = useState<ReadonlyMap<string, number>>(new Map());
+  // Lines already sent this trip that the shopper wants again anyway.
+  const [resend, setResend] = useState<ReadonlySet<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
 
@@ -547,7 +646,9 @@ function CartReview({
     setSending(true);
     setSendError(null);
     try {
-      onSent(await api.addToCart(start, end, modality, Object.fromEntries(quantities)));
+      onSent(
+        await api.addToCart(start, end, modality, Object.fromEntries(quantities), [...resend]),
+      );
     } catch (cause) {
       setSendError(errorMessage(cause, "Nothing was sent to your Kroger cart."));
       setSending(false);
@@ -562,15 +663,67 @@ function CartReview({
   }
   if (!plan) return null;
 
+  const sendingCount = plan.lines.length + resend.size;
+
+  /**
+   * What already went, with a way to send it again on purpose.
+   *
+   * "Sent", never "in your cart": the cart cannot be read, and the shopper
+   * may have taken the thing out again on kroger.com. Leaving these out is
+   * the only guard there is against ordering the first send twice, so a
+   * second bag is asked for by name.
+   */
+  const alreadySent = plan.sent.length > 0 && (
+    <div className="cart-sent">
+      <p className="section-note">
+        Already sent this trip, so left out unless you tick them:
+      </p>
+      <ul className="cart-sent-lines">
+        {plan.sent.map((line) => (
+          <li key={line.key}>
+            <label>
+              <input
+                type="checkbox"
+                checked={resend.has(line.key)}
+                onChange={(e) => {
+                  const next = new Set(resend);
+                  if (e.target.checked) next.add(line.key);
+                  else next.delete(line.key);
+                  setResend(next);
+                }}
+              />
+              <span className="name">{line.name}</span>
+            </label>
+            <span className="product" title={line.description}>
+              {line.quantity}× {line.description} · sent {formatWhen(new Date(line.sent_at))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  // A shelf that is empty this morning is not a line nothing matched, and
+  // "buy it the usual way" is the wrong advice for it.
+  const outOfStock = plan.out_of_stock.length > 0 && (
+    <p className="section-note">
+      Out of stock at your store today: {plan.out_of_stock.join(", ")}. Kroger may have
+      them back by collection, or buy them the usual way.
+    </p>
+  );
+
   return (
     <div className="cart-review">
       {sendError && <Banner tone="error">{sendError}</Banner>}
 
-      {plan.lines.length === 0 ? (
-        <p className="list-status">
-          Nothing here can be ordered from Kroger yet. Pick a product for these lines
-          from the price beside them, and they will be ready to send.
-        </p>
+      {plan.lines.length === 0 && plan.sent.length === 0 ? (
+        <>
+          <p className="list-status">
+            Nothing here can be ordered from Kroger yet. Pick a product for these lines
+            from the price beside them, and they will be ready to send.
+          </p>
+          {outOfStock}
+        </>
       ) : (
         <>
           <ul className="cart-lines">
@@ -614,12 +767,16 @@ function CartReview({
             })}
           </ul>
 
+          {alreadySent}
+
           {plan.skipped.length > 0 && (
             <p className="section-note">
               Not sent, because nothing at your store is matched to them:{" "}
               {plan.skipped.join(", ")}. Buy these the usual way.
             </p>
           )}
+
+          {outOfStock}
 
           <div className="cart-send">
             <label>
@@ -632,8 +789,12 @@ function CartReview({
                 <option value="DELIVERY">Delivery</option>
               </select>
             </label>
-            <Button variant="primary" onClick={send} disabled={sending}>
-              {sending ? "Sending…" : `Send ${itemCount(plan.lines.length)} to Kroger`}
+            <Button variant="primary" onClick={send} disabled={sending || sendingCount === 0}>
+              {sending
+                ? "Sending…"
+                : sendingCount === 0
+                  ? "Nothing new to send"
+                  : `Send ${itemCount(sendingCount)} to Kroger`}
             </Button>
           </div>
         </>
@@ -652,7 +813,7 @@ function CartReview({
  */
 function ItemPriceTag({ item }: { item: GroceryItem }) {
   if (!item.price) return null;
-  const { regular, promo, description, size, estimated } = item.price;
+  const { regular, promo, description, size, estimated, in_stock } = item.price;
   const onSale = promo !== null;
   const shelf = onSale ? promo : regular;
   const cost = estimated ?? shelf;
@@ -671,6 +832,7 @@ function ItemPriceTag({ item }: { item: GroceryItem }) {
         {scaled ? ` · ${money(shelf)}${size ? ` / ${size}` : ""}` : size ? ` · ${size}` : ""}
       </span>
       {item.hand_picked && <span className="pick-tag">your pick</span>}
+      {!in_stock && <span className="stock-tag">out of stock today</span>}
     </span>
   );
 }

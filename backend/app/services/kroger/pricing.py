@@ -35,6 +35,7 @@ from ...schemas import (
     ItemPrice,
     RecipeOnSale,
     RecipeSummary,
+    RememberedPick,
     SaleItem,
 )
 from .. import settings as settings_service
@@ -60,6 +61,7 @@ def as_item_price(product: Product) -> ItemPrice:
         regular=product.regular or 0.0,
         promo=product.promo if product.on_sale else None,
         aisle=product.aisle,
+        in_stock=product.in_stock,
     )
 
 
@@ -284,7 +286,8 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             continue
         need = needed(line)
         size = parse_size(product.size)
-        cost = cost_to_cover(product.price, size, product.sold_by, need, line.key)
+        each = product.sold_by_piece
+        cost = cost_to_cover(product.price, size, product.sold_by, need, line.key, None, each)
         line.price = as_item_price(product)
         line.price.estimated = to_cents(cost)
         if line.status == "have":
@@ -295,7 +298,7 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             # What the same trip would have cost at the regular price, scaled
             # the same way, so a saving on a weight-sold item is not quoted
             # per pound while its cost is quoted for three of them.
-            was = cost_to_cover(product.regular, size, product.sold_by, need, line.key)
+            was = cost_to_cover(product.regular, size, product.sold_by, need, line.key, None, each)
             saved += was - cost
 
     if not priced:
@@ -314,3 +317,39 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         total_lines=len(paying),
     )
     return grocery_list
+
+
+async def remembered_picks(session: AsyncSession, location_id: str) -> list[RememberedPick]:
+    """Every ingredient with a remembered answer at this store, by name.
+
+    Read straight from the rows rather than re-resolved: this is a view of
+    what has been decided, and looking must not decide anything.
+    """
+    rows = (
+        await session.execute(
+            select(IngredientProductMatch).where(
+                IngredientProductMatch.location_id == location_id
+            )
+        )
+    ).scalars().all()
+    if not rows:
+        return []
+    wanted = sorted({row.product_id for row in rows if row.product_id})
+    found = await products.by_ids(wanted, location_id) if wanted else {}
+    names = await _ingredient_names(session)
+    picks = [
+        RememberedPick(
+            key=row.canonical_key,
+            name=names.get(row.canonical_key) or row.canonical_key.replace("-", " "),
+            product=(
+                as_item_price(product)
+                if (product := found.get(row.product_id or "")) is not None
+                else None
+            ),
+            hand_picked=row.user_confirmed,
+            resolved_at=row.resolved_at,
+        )
+        for row in rows
+    ]
+    picks.sort(key=lambda p: p.name.casefold())
+    return picks

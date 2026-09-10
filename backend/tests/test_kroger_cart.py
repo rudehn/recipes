@@ -21,7 +21,14 @@ import pytest
 
 from app import config
 from app.db import session_factory
-from app.models import AppSettings, GroceryCheck, Ingredient, MealPlanEntry, Recipe
+from app.models import (
+    AppSettings,
+    GroceryCheck,
+    Ingredient,
+    IngredientProductMatch,
+    MealPlanEntry,
+    Recipe,
+)
 from app.services.kroger import cart
 from app.services.kroger import client as kroger
 
@@ -34,12 +41,23 @@ _real_put = httpx.AsyncClient.put
 _real_post = httpx.AsyncClient.post
 
 
-def catalog_entry(product_id: str, description: str, size: str = "5 lb", sold_by: str = "UNIT"):
+def catalog_entry(
+    product_id: str,
+    description: str,
+    size: str = "5 lb",
+    sold_by: str = "UNIT",
+    categories: list[str] | None = None,
+    stock: str | None = None,
+):
+    item: dict = {"size": size, "soldBy": sold_by, "price": {"regular": 2.59}}
+    if stock is not None:
+        item["inventory"] = {"stockLevel": stock}
     return {
         "productId": product_id,
         "upc": f"00011110{product_id}",
         "description": description,
-        "items": [{"size": size, "soldBy": sold_by, "price": {"regular": 2.59}}],
+        "categories": categories or ["Baking Goods"],
+        "items": [item],
     }
 
 
@@ -50,7 +68,14 @@ CATALOG = {
     "yeast": {**catalog_entry("0003", "Kroger® Active Dry Yeast"), "upc": ""},
     "milk": catalog_entry("0004", "Kroger® Whole Milk", size="1 gal"),
     "egg": catalog_entry("0005", "Kroger® Grade A Large Eggs", size="12 ct"),
-    "garlic": catalog_entry("0006", "Garlic", size="1 ct"),
+    # Produce too, and its "1 ct" is a bulb where a recipe counts cloves.
+    # Kroger's search answers "garlic clove" with garlic, and so does this.
+    "garlic": catalog_entry("0006", "Garlic", size="1 ct", categories=["Produce"]),
+    "garlic clove": catalog_entry("0006", "Garlic", size="1 ct", categories=["Produce"]),
+    # Produce sold by the each: the shop's piece is the recipe's piece.
+    "avocado": catalog_entry("0007", "Fresh Hass Avocado", size="1 each", categories=["Produce"]),
+    # Matched, priced, and not on the shelf today.
+    "butter": catalog_entry("0008", "Kroger® Butter", stock="TEMPORARILY_OUT_OF_STOCK"),
     "saffron": None,
 }
 
@@ -374,10 +399,22 @@ async def test_a_week_needing_more_than_one_package_orders_more_than_one(client,
     assert fake.carts[0]["items"][0]["quantity"] == 3
 
 
+async def test_produce_sold_by_the_each_is_counted(client, fake):
+    """Three avocados against "1 each" in Produce is three, without a list
+    having to say so. Garlic is in the same department but its "1 ct" is a
+    bulb, and a recipe counts cloves - so it stays at one below."""
+    await seed(["avocado"], quantity=3, unit=None)
+
+    await send(client)
+
+    assert fake.carts[0]["items"][0]["quantity"] == 3
+
+
 async def test_a_countable_ingredient_is_not_multiplied_by_default(client, fake):
     """Six cloves against Kroger's "1 ct" bulb is not six bulbs - the two
-    count different things - so the fallback is one."""
-    await seed(["garlic"], quantity=6, unit=None)
+    count different things - so the fallback is one. Garlic is produce, so
+    this is the produce rule being refused rather than never reached."""
+    await seed(["garlic cloves"], quantity=6, unit=None)
 
     await send(client)
 
@@ -544,10 +581,101 @@ async def test_a_refused_token_is_renewed_and_the_send_retried(client, fake):
     await send(client)
     fake.reject_access.add(f"access-{fake.issued}")
 
-    resp = await send(client)
+    resp = await send(client, resend=["flour"])
 
     assert resp.status_code == 200
     assert len(fake.carts) == 2
+
+
+# ------------------------------------------------------- already sent ---
+
+
+async def test_a_second_send_leaves_out_what_the_first_one_sent(client, fake):
+    """The cart cannot be read, so this record is the only thing standing
+    between a second send and two of everything."""
+    await seed(["flour", "sugar"])
+    await send(client)
+
+    preview = (await client.get(f"/api/cart/preview?{RANGE}")).json()
+    assert preview["lines"] == []
+    assert sorted(line["name"] for line in preview["sent"]) == ["flour", "sugar"]
+    assert preview["sent"][0]["quantity"] == 1
+    assert preview["sent"][0]["sent_at"] is not None
+
+    resp = await send(client)
+
+    assert resp.json()["added"] == 0
+    assert len(fake.carts) == 1
+
+
+async def test_a_line_added_since_is_sent_while_the_rest_are_held_back(client, fake):
+    await seed(["flour"])
+    await send(client)
+    async with session_factory() as session:
+        recipe = Recipe(title="Second bake", servings=4)
+        recipe.ingredients = [Ingredient(name="sugar", quantity=1, unit="cup", position=0)]
+        session.add(recipe)
+        await session.flush()
+        session.add(MealPlanEntry(plan_date=DAY, meal="lunch", recipe_id=recipe.id))
+        await session.commit()
+
+    resp = await send(client)
+
+    assert resp.json()["added"] == 1
+    assert [i["upc"] for i in fake.carts[1]["items"]] == ["000111100002"]
+
+
+async def test_the_shopper_can_send_a_line_again_on_purpose(client, fake):
+    """A second bag of flour is a decision, not a slip, when it is asked
+    for by name."""
+    await seed(["flour", "sugar"])
+    await send(client)
+
+    resp = await send(client, resend=["flour"])
+
+    assert resp.json()["added"] == 1
+    assert [i["upc"] for i in fake.carts[1]["items"]] == ["000111100001"]
+
+
+async def test_a_new_trip_forgets_what_was_sent(client, fake):
+    """A new trip is a new cart."""
+    await seed(["flour"])
+    await send(client)
+
+    await client.post("/api/grocery-list/new-trip")
+    resp = await send(client)
+
+    assert resp.json()["added"] == 1
+    assert len(fake.carts) == 2
+
+
+# ------------------------------------------------------- out of stock ---
+
+
+async def test_a_product_the_store_is_out_of_is_named_rather_than_sent(client, fake):
+    """Matched and priced and still not orderable. "Buy it the usual way"
+    is the wrong advice for a shelf that is merely empty this morning, so
+    it is told apart from a line nothing matched."""
+    # Chosen by hand while it was on the shelf; the matcher itself would
+    # pass an empty shelf over.
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="butter", location_id=LOCATION, product_id="0008",
+                user_confirmed=True,
+            )
+        )
+        await session.commit()
+    await seed(["flour", "butter"])
+
+    preview = (await client.get(f"/api/cart/preview?{RANGE}")).json()
+    assert preview["out_of_stock"] == ["butter"]
+    assert preview["skipped"] == []
+
+    resp = await send(client)
+
+    assert resp.json()["added"] == 1
+    assert [i["upc"] for i in fake.carts[0]["items"]] == ["000111100001"]
 
 
 async def test_the_rotated_refresh_token_is_kept(client, fake):

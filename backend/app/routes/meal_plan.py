@@ -11,7 +11,9 @@ from ..schemas import (
     MealPlanEntryIn,
     MealPlanEntryOut,
     MealPlanEntryUpdate,
+    PlanCost,
 )
+from ..services.kroger import costing
 
 router = APIRouter(prefix="/meal-plan", tags=["meal-plan"])
 
@@ -28,6 +30,18 @@ async def list_entries(
         .order_by(MealPlanEntry.plan_date, MealPlanEntry.id)
     )
     return result.scalars().all()
+
+
+@router.get("/cost", response_model=PlanCost | None)
+async def plan_cost(start: date, end: date, session: AsyncSession = Depends(get_session)):
+    """What the meals in a date range cost to cook, day by day.
+
+    Declared above /{entry_id} so that path does not swallow it. Null when
+    pricing is off or no store is set, which is the ordinary planner.
+    """
+    if end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    return await costing.plan_cost(session, start, end)
 
 
 @router.post("", response_model=MealPlanEntryOut, status_code=201)

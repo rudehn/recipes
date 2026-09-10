@@ -12,6 +12,7 @@ import type {
   CartStatus,
   GroceryItem,
   GroceryList,
+  ItemPrice,
   Meal,
   MealPlanEntry,
   Page,
@@ -151,5 +152,19 @@ export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
 }
 
 export function cartPlan(overrides: Partial<CartPlan> = {}): CartPlan {
-  return { lines: [], skipped: [], ...overrides };
+  return { lines: [], skipped: [], out_of_stock: [], sent: [], ...overrides };
+}
+
+export function itemPrice(overrides: Partial<ItemPrice> = {}): ItemPrice {
+  return {
+    product_id: "0001",
+    description: "Kroger® All Purpose Flour",
+    size: "5 lb",
+    regular: 2.59,
+    promo: null,
+    aisle: "AISLE 18",
+    in_stock: true,
+    estimated: null,
+    ...overrides,
+  };
 }

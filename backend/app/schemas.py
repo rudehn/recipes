@@ -191,6 +191,10 @@ class ItemPrice(BaseModel):
     regular: float
     promo: float | None = None
     aisle: str = ""
+    # False when Kroger says the shelf is empty today. The product is still
+    # the right one and still priced; it just cannot be ordered until it is
+    # back, and the line says so rather than quietly sending nothing.
+    in_stock: bool = True
     # What covering the week's requirement costs, which is ours rather than
     # Kroger's: a weight-sold item's price is a rate, so three pounds of it is
     # three times the figure on the shelf, and a package smaller than the
@@ -217,6 +221,111 @@ class RecipeOnSale(BaseModel):
     recipe: RecipeSummary
     on_sale: list[SaleItem]
     ingredient_count: int
+
+
+class RememberedPick(BaseModel):
+    """One ingredient's remembered product at the chosen store.
+
+    `product` is absent for a line that matched nothing or was marked as not
+    to be priced; `hand_picked` says which of those, and whether a present
+    product was the shopper's choice or the matcher's.
+    """
+
+    key: str
+    name: str
+    product: ItemPrice | None = None
+    hand_picked: bool
+    resolved_at: datetime
+
+
+class CostLine(BaseModel):
+    """What one ingredient costs a recipe.
+
+    `cost` is absent when the line could not be priced. `whole_package`
+    says the figure is the price of a package rather than the share the
+    recipe uses, which happens when the amount cannot be related to the
+    package - "1 bunch parsley" against a bunch is right that way, "2 sprigs"
+    is not, and nothing can tell them apart, so the figure is shown with
+    the reason beside it rather than hidden inside the total.
+    """
+
+    ingredient_id: int
+    name: str
+    cost: float | None = None
+    whole_package: bool = False
+    product: ItemPrice | None = None
+
+
+class RecipeCost(BaseModel):
+    """What a recipe costs to cook, and how much of it that figure covers.
+
+    Never a total that implies completeness. `priced` against `total_lines`
+    travels with every figure, because "$8.40" for a recipe with three
+    unpriced ingredients reads exactly like "$8.40" for one fully priced.
+    """
+
+    store: StoreOut
+    total: float
+    per_serving: float | None = None
+    priced: int
+    total_lines: int
+    lines: list[CostLine]
+
+
+class DayCost(BaseModel):
+    plan_date: date
+    total: float
+    priced: int
+    total_lines: int
+
+
+class PlanCost(BaseModel):
+    """What a range of planned meals costs, and what the shopping for it costs.
+
+    The two are different numbers on purpose. `total` prices the share of a
+    package each meal uses, scaled to its planned servings; `grocery_total`
+    prices the whole packages the grocery list would buy for the same days.
+    The gap between them is the pantry surplus the shopper is left holding,
+    which is worth seeing rather than hiding.
+    """
+
+    store: StoreOut
+    total: float
+    priced: int
+    total_lines: int
+    days: list[DayCost]
+    grocery_total: float | None = None
+
+
+class CheapRecipe(BaseModel):
+    """A recipe that costs less per serving than the median across the box."""
+
+    recipe: RecipeSummary
+    per_serving: float
+    priced: int
+    total_lines: int
+
+
+class PantryRecipe(BaseModel):
+    """A recipe most of whose ingredients the pantry already has in stock."""
+
+    recipe: RecipeSummary
+    in_pantry: int
+    total_lines: int
+
+
+class Suggestions(BaseModel):
+    """Reasons to cook something this week, each list most compelling first.
+
+    `median_per_serving` is what `cheap` is measured against, so the page can
+    say "under $2.10 a serving" rather than just "cheap". Absent when nothing
+    could be costed.
+    """
+
+    on_sale: list[RecipeOnSale]
+    cheap: list[CheapRecipe]
+    median_per_serving: float | None = None
+    pantry: list[PantryRecipe]
 
 
 class MatchSelection(BaseModel):
@@ -351,15 +460,36 @@ class CartLine(BaseModel):
 MAX_CART_QUANTITY = 99
 
 
+class SentLine(BaseModel):
+    """A line this app already sent to the cart this trip.
+
+    A fact about this app's request, not about the cart, which cannot be
+    read: the shopper may have taken it out again on kroger.com. So it is
+    "sent" and never "in your cart".
+    """
+
+    key: str
+    name: str
+    description: str
+    quantity: int
+    sent_at: datetime
+
+
 class CartPlan(BaseModel):
     """What sending the list would order, and what it would leave behind.
 
     `skipped` holds names rather than a count, because a number is not
-    something a shopper can do anything about and a list of names is.
+    something a shopper can do anything about and a list of names is. The
+    same goes for `out_of_stock`, which are lines whose product the store
+    has none of today - matched, priced, and still not orderable - and for
+    `sent`, the lines a previous send this trip already put in the cart and
+    this one therefore leaves out unless asked.
     """
 
     lines: list[CartLine]
     skipped: list[str]
+    out_of_stock: list[str] = []
+    sent: list[SentLine] = []
 
 
 class CartRequest(BaseModel):
@@ -380,6 +510,10 @@ class CartRequest(BaseModel):
     # behind the automatic count is bounded by the density table, and a
     # person reading "1 × 12 ct, for 24 eggs" can do the sum it could not.
     quantities: dict[str, int] = {}
+    # Lines already sent this trip that the shopper wants sent again anyway,
+    # by key. Without this a second send leaves them out, which is the only
+    # guard there is against ordering the first send twice.
+    resend: list[str] = []
 
     @field_validator("quantities")
     @classmethod

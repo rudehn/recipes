@@ -28,9 +28,11 @@ function recipesBackend(recipes: RouteHandler | object, tags: unknown = TAGS) {
   return mockBackend({
     "GET /api/recipes/tags": tags,
     "GET /api/recipes": recipes,
-    "GET /api/pricing/sales": [],
+    "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
   });
 }
+
+const NOTHING_TO_SUGGEST = { on_sale: [], cheap: [], median_per_serving: null, pantry: [] };
 
 const SUGAR_ON_SALE = {
   key: "granulated-sugar",
@@ -42,6 +44,7 @@ const SUGAR_ON_SALE = {
     regular: 3.99,
     promo: 2.99,
     aisle: "AISLE 18",
+    in_stock: true,
     estimated: null,
   },
 };
@@ -307,14 +310,15 @@ describe("RecipesPage", () => {
     expect(screen.queryByText(/Couldn't load/)).not.toBeInTheDocument();
   });
 
-  describe("what is on sale this week", () => {
+  describe("suggestions", () => {
     it("lists the recipes with an ingredient on offer, most on offer first", async () => {
       mockBackend({
         "GET /api/recipes/tags": TAGS,
         "GET /api/recipes": page([curry, bread]),
-        "GET /api/pricing/sales": [
-          { recipe: bread, on_sale: [SUGAR_ON_SALE], ingredient_count: 3 },
-        ],
+        "GET /api/recipes/suggestions": {
+          ...NOTHING_TO_SUGGEST,
+          on_sale: [{ recipe: bread, on_sale: [SUGAR_ON_SALE], ingredient_count: 3 }],
+        },
       });
       const { user } = renderApp("/recipes");
 
@@ -330,12 +334,51 @@ describe("RecipesPage", () => {
       expect(within(offer as HTMLElement).getByText(/\$2\.99/)).toBeInTheDocument();
     });
 
-    it("stays out of the way when nothing is on offer", async () => {
+    it("names the recipes under the median cost per serving, with the number", async () => {
+      // "Cheap" with a figure attached: below the median across the box,
+      // never against a price history.
+      mockBackend({
+        "GET /api/recipes/tags": TAGS,
+        "GET /api/recipes": page([curry, bread]),
+        "GET /api/recipes/suggestions": {
+          ...NOTHING_TO_SUGGEST,
+          cheap: [{ recipe: bread, per_serving: 0.42, priced: 5, total_lines: 6 }],
+          median_per_serving: 2.1,
+        },
+      });
+      const { user } = renderApp("/recipes");
+
+      await user.click(await screen.findByText(/under \$2\.10 a serving/i));
+
+      const offer = screen.getByText("$0.42 a serving").closest(".offer")!;
+      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toBeInTheDocument();
+      expect(within(offer as HTMLElement).getByText("5 of 6 ingredients priced")).toBeInTheDocument();
+    });
+
+    it("names the recipes the pantry mostly covers", async () => {
+      mockBackend({
+        "GET /api/recipes/tags": TAGS,
+        "GET /api/recipes": page([curry, bread]),
+        "GET /api/recipes/suggestions": {
+          ...NOTHING_TO_SUGGEST,
+          pantry: [{ recipe: curry, in_pantry: 3, total_lines: 4 }],
+        },
+      });
+      const { user } = renderApp("/recipes");
+
+      await user.click(await screen.findByText(/mostly in your pantry/i));
+
+      expect(screen.getByText("3 of 4 ingredients in stock")).toBeInTheDocument();
+    });
+
+    it("stays out of the way when there is nothing to suggest", async () => {
       recipesBackend(page([curry]));
       renderApp("/recipes");
 
       await screen.findByText("Weeknight chicken curry");
       expect(screen.queryByText(/on sale this week/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/a serving/i)).not.toBeInTheDocument();
+      expect(screen.queryByText(/in your pantry/i)).not.toBeInTheDocument();
     });
   });
 });

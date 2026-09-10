@@ -131,6 +131,22 @@ SOLD_BY_THE_PIECE: frozenset[str] = frozenset({
 })
 
 
+# Words that say a recipe counts parts of the shop's piece rather than the
+# piece. Garlic is sold as a bulb and counted in cloves; celery as a bunch
+# and counted in stalks. A count of these against a count of the packages
+# they come in is a count of different things, whatever department the
+# package is from.
+SUB_PIECE_WORDS: frozenset[str] = frozenset({
+    "clove", "stalk", "rib", "sprig", "leaf", "slice", "wedge", "segment",
+    "floret", "kernel", "seed", "piece",
+})
+
+
+def counts_parts_of_a_piece(canonical_key: str) -> bool:
+    """Whether the recipe's count is of parts, not of what the shop packs."""
+    return any(t in SUB_PIECE_WORDS for t in canonical_key.split("-"))
+
+
 def _walk(canonical_key: str) -> list[str]:
     """The name, then each shorter tail of it: most specific first."""
     tokens = [t for t in canonical_key.split("-") if t]

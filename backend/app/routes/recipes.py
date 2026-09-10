@@ -10,13 +10,22 @@ from sqlalchemy.orm import noload
 from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
 from ..models import Ingredient, Recipe, RecipeTag
-from ..schemas import ImageFromUrl, RecipeIn, RecipeOut, RecipePage, TagCount
+from ..schemas import (
+    ImageFromUrl,
+    RecipeCost,
+    RecipeIn,
+    RecipeOut,
+    RecipePage,
+    Suggestions,
+    TagCount,
+)
 from ..services.images import (
     ImageTooLarge,
     declared_length_exceeds,
     read_capped,
     upload_chunks,
 )
+from ..services.kroger import costing
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -124,6 +133,17 @@ async def list_tags(session: AsyncSession = Depends(get_session)):
     return [{"name": name, "count": count} for name, count in result.all()]
 
 
+@router.get("/suggestions", response_model=Suggestions)
+async def suggestions(session: AsyncSession = Depends(get_session)):
+    """Reasons to cook something this week.
+
+    Declared above /{recipe_id} so that path does not swallow it. Answered
+    from products already decided on, never a search, so a page that is
+    merely being read costs one batched lookup at most.
+    """
+    return await costing.suggestions(session)
+
+
 @router.post("", response_model=RecipeOut, status_code=201)
 async def create_recipe(data: RecipeIn, session: AsyncSession = Depends(get_session)):
     recipe = Recipe(
@@ -171,6 +191,17 @@ def _sync_tags(recipe: Recipe, wanted: list[str]) -> None:
     for name in wanted:
         if name not in existing:
             recipe.tag_rows.append(RecipeTag(name=name))
+
+
+@router.get("/{recipe_id}/cost", response_model=RecipeCost | None)
+async def recipe_cost(recipe_id: int, session: AsyncSession = Depends(get_session)):
+    """What the recipe costs to cook, and how much of it that figure covers.
+
+    Null rather than an error when there is nothing to price with: pricing
+    is opt-in and a recipe page without a price is the ordinary page.
+    """
+    recipe = await _get_recipe(session, recipe_id)
+    return await costing.recipe_cost(session, recipe)
 
 
 @router.put("/{recipe_id}", response_model=RecipeOut)

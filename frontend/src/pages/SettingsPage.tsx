@@ -155,6 +155,8 @@ export default function SettingsPage() {
 
       {/* Only once pricing is on. Ordering needs everything pricing needs and
           a sign-in on top, so offering it first would be a dead end. */}
+      {status?.enabled && store && <RememberedPicks />}
+
       {status?.enabled && <CartPanel />}
 
       {action.error && (
@@ -350,6 +352,66 @@ function CartPanel() {
             account.
           </p>
         </div>
+      )}
+    </Panel>
+  );
+}
+
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * Every ingredient the chosen store has a remembered answer for.
+ *
+ * The one place the picks can be seen together: which were a person's, which
+ * the matcher's, and which are "price nothing". Forgetting one drops the row,
+ * so the next list to need that ingredient searches afresh - the way back
+ * from a hand pick, and the way to remake an automatic one.
+ */
+function RememberedPicks() {
+  const { data: picks, error, reload } = useLoad(useCallback(() => api.rememberedPicks(), []));
+  const action = useAction();
+
+  async function forget(key: string) {
+    if (await action.run(() => api.forgetMatch(key))) reload();
+  }
+
+  return (
+    <Panel title="Remembered products">
+      <p className="page-note">
+        Which Kroger product each ingredient means at your store. Picks are made as
+        grocery lists are priced, and kept until forgotten here or changed from the
+        list.
+      </p>
+      {action.error && <Banner tone="error">{action.error}</Banner>}
+      {error && <p className="list-status">{error}</p>}
+      {picks && picks.length === 0 && (
+        <p className="list-status">Nothing remembered yet. Price a grocery list first.</p>
+      )}
+      {picks && picks.length > 0 && (
+        <ul className="picks">
+          {picks.map((pick) => (
+            <li key={pick.key} className="pick">
+              <span className="pick-name">{pick.name}</span>
+              <span className="pick-product">
+                {pick.product ? (
+                  <>
+                    {pick.product.description}
+                    {pick.product.size && ` · ${pick.product.size}`} ·{" "}
+                    {money(pick.product.promo ?? pick.product.regular)}
+                  </>
+                ) : pick.hand_picked ? (
+                  "not priced, by choice"
+                ) : (
+                  "nothing matched"
+                )}
+                {pick.hand_picked && <span className="pick-tag">your pick</span>}
+              </span>
+              <Button size="small" onClick={() => forget(pick.key)} aria-label={`Forget ${pick.name}`}>
+                Forget
+              </Button>
+            </li>
+          ))}
+        </ul>
       )}
     </Panel>
   );
