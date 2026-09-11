@@ -6,12 +6,15 @@
  * rest stays valid.
  */
 
+import { mockBackend, type RouteHandler, type Routes } from "./backend";
+
 import type {
   CartLine,
   CartPlan,
   CartStatus,
   GroceryItem,
   GroceryList,
+  GroceryPrices,
   ItemPrice,
   Meal,
   MealPlanEntry,
@@ -104,6 +107,7 @@ export function groceryItem(overrides: Partial<GroceryItem> = {}): GroceryItem {
     status: "to_buy",
     from_pantry: false,
     pantry_item_id: null,
+    issue: null,
     // Unpriced by default: pricing is opt-in, so this is the ordinary line.
     price: null,
     hand_picked: false,
@@ -147,6 +151,7 @@ export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
     size: "5 lb",
     quantity: 1,
     amounts: ["2 cups"],
+    issue: null,
     ...overrides,
   };
 }
@@ -167,4 +172,58 @@ export function itemPrice(overrides: Partial<ItemPrice> = {}): ItemPrice {
     estimated: null,
     ...overrides,
   };
+}
+
+/**
+ * A priced list as the server actually serves it: the list without prices,
+ * and the prices for it separately.
+ *
+ * Tests build a list with prices inline because that is the shape a reader
+ * thinks in; this splits it into the two responses the page fetches, so no
+ * test mocks a list that carries prices, which the server never sends.
+ */
+export function splitPrices(list: GroceryList): { list: GroceryList; prices: GroceryPrices } {
+  const lines = [...list.items, ...list.pantry_restock].map((item) => ({
+    key: item.key,
+    price: item.price,
+    hand_picked: item.hand_picked,
+    issue: item.issue,
+  }));
+  const strip = (item: GroceryItem): GroceryItem => ({
+    ...item,
+    price: null,
+    hand_picked: false,
+    issue: item.issue && ["amount_in_name", "no_amount", "check_line"].includes(item.issue)
+      ? item.issue
+      : null,
+  });
+  return {
+    list: {
+      ...list,
+      items: list.items.map(strip),
+      in_pantry: list.in_pantry.map(strip),
+      pantry_restock: list.pantry_restock.map(strip),
+      pricing: null,
+    },
+    prices: { pricing: list.pricing, lines },
+  };
+}
+
+/**
+ * `mockBackend`, with any "GET /api/grocery-list" route given as a priced
+ * list split into the list and prices routes. A prices route given
+ * explicitly wins.
+ */
+export function pricedBackend(routes: Routes) {
+  const given = routes["GET /api/grocery-list"];
+  if (given === undefined || routes["GET /api/grocery-list/prices"] !== undefined) {
+    return mockBackend(routes);
+  }
+  const resolve = (): GroceryList =>
+    (typeof given === "function" ? (given as RouteHandler)(undefined as never) : given) as GroceryList;
+  return mockBackend({
+    ...routes,
+    "GET /api/grocery-list": () => splitPrices(resolve()).list,
+    "GET /api/grocery-list/prices": () => splitPrices(resolve()).prices,
+  });
 }

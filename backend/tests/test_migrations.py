@@ -167,3 +167,58 @@ async def test_downgrade_returns_to_the_initial_schema(db_url):
 
     assert "servings" not in await run(db_url, columns_of("meal_plan_entries"))
     assert await run(db_url, current_revision) == INITIAL_SCHEMA
+
+
+async def test_misparsed_ingredients_are_re_read_and_their_keys_moved(db_url):
+    """A row saved with the amount inside its name is parsed again, and the
+    product remembered under its old key follows it to the new one."""
+    before = "e3a9c5d17b04"
+    await run(db_url, upgrade_to(before))
+
+    def seed(conn: Connection) -> None:
+        conn.execute(
+            text(
+                "INSERT INTO recipes "
+                "(id, title, description, instructions, created_at, updated_at) "
+                "VALUES (1, 'Salsa', '', '', '2026-09-01', '2026-09-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO ingredients (id, recipe_id, name, quantity, unit, position) VALUES "
+                "(1, 1, 'Optional: 1 diced ripe avocado', NULL, NULL, 0), "
+                "(2, 1, 'salt', NULL, NULL, 1)"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO ingredient_product_matches (canonical_key, location_id, "
+                "product_id, user_confirmed, matcher_version, resolved_at) "
+                "VALUES ('1-avocado', '01400765', '0002', 1, 2, '2026-09-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO grocery_checks (key, status, updated_at) "
+                "VALUES ('1-avocado', 'have', '2026-09-01')"
+            )
+        )
+
+    await run(db_url, seed)
+    await run(db_url, upgrade_to("head"))
+
+    def check(conn: Connection) -> None:
+        row = conn.execute(
+            text("SELECT name, quantity, unit, source_line FROM ingredients WHERE id = 1")
+        ).one()
+        assert row == ("diced ripe avocado (optional)", 1.0, None, "Optional: 1 diced ripe avocado")
+        # Untouched: nothing to re-read.
+        assert conn.execute(text("SELECT name, quantity FROM ingredients WHERE id = 2")).one() == (
+            "salt", None
+        )
+        assert conn.execute(
+            text("SELECT canonical_key FROM ingredient_product_matches")
+        ).scalars().all() == ["avocado"]
+        assert conn.execute(text("SELECT key FROM grocery_checks")).scalars().all() == ["avocado"]
+
+    await run(db_url, check)

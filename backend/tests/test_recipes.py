@@ -112,3 +112,26 @@ async def test_image_upload_rejects_bad_type(client):
         files={"file": ("evil.svg", b"<svg/>", "image/svg+xml")},
     )
     assert resp.status_code == 415
+
+
+async def test_a_recipe_says_which_rows_need_a_look(client):
+    """The recipe page is where the fix is, so the reason rides on the row."""
+    resp = await client.post(
+        "/api/recipes",
+        json={
+            "title": "Salsa",
+            "ingredients": [
+                {"name": "Optional: 1 diced ripe avocado", "quantity": None, "unit": None},
+                {"name": "salt", "quantity": None, "unit": None},
+                {"name": "corn", "quantity": 3, "unit": "cup", "source_line": "3 cups corn"},
+            ],
+        },
+    )
+
+    assert resp.status_code == 201, resp.text
+    rows = {i["name"]: i for i in resp.json()["ingredients"]}
+    assert rows["Optional: 1 diced ripe avocado"]["issue"] == "amount_in_name"
+    assert rows["salt"]["issue"] is None
+    assert rows["corn"]["issue"] is None
+    # The line as imported is kept for a later re-parse.
+    assert rows["corn"]["source_line"] == "3 cups corn"

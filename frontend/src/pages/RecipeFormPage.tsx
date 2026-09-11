@@ -24,9 +24,11 @@ interface IngredientDraft {
   quantity: string;
   unit: string;
   name: string;
+  /** The line as imported, carried through untouched so it is not lost on save. */
+  source_line: string | null;
 }
 
-const EMPTY_ROW: IngredientDraft = { quantity: "", unit: "", name: "" };
+const EMPTY_ROW: IngredientDraft = { quantity: "", unit: "", name: "", source_line: null };
 
 /** Ingredients as editable text, quantities shown as the fractions the rest of
  *  the app displays so editing a recipe doesn't turn "¾" into "0.75". */
@@ -36,6 +38,7 @@ function toRows(ingredients: Omit<Ingredient, "id">[]): IngredientDraft[] {
     quantity: i.quantity != null ? formatAmount(i.quantity) : "",
     unit: i.unit ?? "",
     name: i.name,
+    source_line: i.source_line ?? null,
   }));
 }
 
@@ -132,6 +135,9 @@ export default function RecipeFormPage() {
         name: r.name.trim(),
         quantity: parseQuantity(r.quantity),
         unit: r.unit.trim() === "" ? null : r.unit.trim(),
+        // Only rows that came from an import have one; a typed row sends
+        // nothing rather than a null the server would store as nothing.
+        ...(r.source_line ? { source_line: r.source_line } : {}),
       }));
     if (ingredients.some((i) => i.quantity !== null && !Number.isFinite(i.quantity))) {
       setError("Ingredient quantities must be numbers or fractions like 1 1/2.");

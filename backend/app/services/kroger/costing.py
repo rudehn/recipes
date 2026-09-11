@@ -27,13 +27,15 @@ from statistics import median
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import MealPlanEntry, PantryItem, Recipe
+from ...models import IngredientProductMatch, MealPlanEntry, PantryItem, Recipe
 from ...schemas import (
     CheapRecipe,
     CostLine,
     DayCost,
+    IngredientIssue,
     PantryRecipe,
     PlanCost,
+    RecipeAttention,
     RecipeCost,
     RecipeSummary,
     StoreOut,
@@ -285,3 +287,43 @@ async def suggestions(session: AsyncSession) -> Suggestions:
         pantry=from_pantry[:SUGGESTION_LIMIT],
     )
 
+
+async def attention(session: AsyncSession) -> list[RecipeAttention]:
+    """Recipes whose ingredient rows will price or shop wrongly, most first.
+
+    The recipe-side checks need nothing but the rows. "Nothing matched" is
+    added from the picks already made at the chosen store - never a search,
+    for the same reason the suggestions never search.
+    """
+    unmatched: set[str] = set()
+    store = await settings_service.selected_store(session)
+    if enabled() and store is not None:
+        rows = (
+            await session.execute(
+                select(IngredientProductMatch.canonical_key).where(
+                    IngredientProductMatch.location_id == store.location_id,
+                    IngredientProductMatch.product_id.is_(None),
+                    IngredientProductMatch.user_confirmed.is_(False),
+                )
+            )
+        ).scalars().all()
+        unmatched = set(rows)
+
+    recipes = (await session.execute(select(Recipe))).scalars().unique().all()
+    found: list[RecipeAttention] = []
+    for recipe in recipes:
+        issues: list[IngredientIssue] = []
+        for ing in recipe.ingredients:
+            issue = ing.issue
+            if issue is None and canonical_key(ing.name) in unmatched:
+                issue = "no_match"
+            if issue is not None:
+                issues.append(
+                    IngredientIssue(ingredient_id=ing.id, name=ing.name, issue=issue)
+                )
+        if issues:
+            found.append(
+                RecipeAttention(recipe=RecipeSummary.model_validate(recipe), issues=issues)
+            )
+    found.sort(key=lambda r: (-len(r.issues), r.recipe.title.casefold()))
+    return found

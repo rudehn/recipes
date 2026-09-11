@@ -321,9 +321,12 @@ async def plan(
         if not product.in_stock:
             out_of_stock.append(line.name)
             continue
-        worked_out = packages_to_cover(
-            parse_size(product.size), pricing.needed(line), line.key, None, product.sold_by_piece
-        )
+        need = pricing.needed(line)
+        size = parse_size(product.size)
+        worked_out = packages_to_cover(size, need, line.key, None, product.sold_by_piece)
+        # A count that could not be worked out is one by default, and says so:
+        # the stepper is the shopper's to use, knowingly.
+        unsized = not pricing.sized(line, product)
         sending.append(
             CartLine(
                 key=line.key,
@@ -333,6 +336,7 @@ async def plan(
                 size=product.size,
                 quantity=overrides.get(line.key, worked_out),
                 amounts=line.amounts,
+                issue="unsized" if unsized else line.issue,
             )
         )
     return CartPlan(lines=sending, skipped=skipped, out_of_stock=out_of_stock, sent=sent)

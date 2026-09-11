@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import GroceryCheck, MealPlanEntry, PantryItem, Recipe
-from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse, GroceryStatus
+from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse, GroceryStatus, LineIssue
 from .canonical import best_display, canonical_key
 from .quantity import format_quantity
 
@@ -134,6 +134,9 @@ async def build_grocery_list(
     quantities: dict[str, dict[str | None, float]] = defaultdict(lambda: defaultdict(float))
     no_quantity_uses: dict[str, int] = defaultdict(int)
     uses: dict[str, list[GroceryRecipeUse]] = defaultdict(list)
+    # The first recipe-side problem seen among a line's uses. A line merges
+    # several recipes' rows, and one bad row is enough to doubt the total.
+    issues: dict[str, LineIssue] = {}
 
     for entry in entries:
         factor = scale_factor(entry)
@@ -142,6 +145,8 @@ async def build_grocery_list(
             if not key:
                 continue
             name_variants[key].append(ing.name.strip())
+            if key not in issues and (issue := ing.issue) is not None:
+                issues[key] = issue
             unit = normalize_unit(ing.unit)
             scaled = ing.quantity * factor if ing.quantity is not None else None
             if scaled is not None:
@@ -170,6 +175,7 @@ async def build_grocery_list(
             status=status_of.get(key, "to_buy"),
             from_pantry=pantry is not None,
             pantry_item_id=pantry.id if pantry is not None else None,
+            issue=issues.get(key),
         )
         # An ingredient already in the pantry is set aside, not dropped: "in
         # stock" says nothing about whether there is enough for the week being

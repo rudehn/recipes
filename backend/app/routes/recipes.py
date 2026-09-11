@@ -12,6 +12,7 @@ from ..db import get_session
 from ..models import Ingredient, Recipe, RecipeTag
 from ..schemas import (
     ImageFromUrl,
+    RecipeAttention,
     RecipeCost,
     RecipeIn,
     RecipeOut,
@@ -144,6 +145,18 @@ async def suggestions(session: AsyncSession = Depends(get_session)):
     return await costing.suggestions(session)
 
 
+@router.get("/attention", response_model=list[RecipeAttention])
+async def attention(session: AsyncSession = Depends(get_session)):
+    """Recipes with ingredient rows that will price or shop wrongly.
+
+    Declared above /{recipe_id} so that path does not swallow it. String
+    checks over every ingredient row, plus "nothing matched" from picks
+    already made at the chosen store - never a search - so it costs one
+    query and no Kroger call.
+    """
+    return await costing.attention(session)
+
+
 @router.post("", response_model=RecipeOut, status_code=201)
 async def create_recipe(data: RecipeIn, session: AsyncSession = Depends(get_session)):
     recipe = Recipe(
@@ -154,7 +167,13 @@ async def create_recipe(data: RecipeIn, session: AsyncSession = Depends(get_sess
         cook_minutes=data.cook_minutes,
         servings=data.servings,
         ingredients=[
-            Ingredient(name=i.name, quantity=i.quantity, unit=i.unit, position=pos)
+            Ingredient(
+                name=i.name,
+                quantity=i.quantity,
+                unit=i.unit,
+                position=pos,
+                source_line=i.source_line,
+            )
             for pos, i in enumerate(data.ingredients)
         ],
         tag_rows=[RecipeTag(name=t) for t in data.normalized_tags()],
@@ -216,7 +235,9 @@ async def update_recipe(
     recipe.cook_minutes = data.cook_minutes
     recipe.servings = data.servings
     recipe.ingredients = [
-        Ingredient(name=i.name, quantity=i.quantity, unit=i.unit, position=pos)
+        Ingredient(
+            name=i.name, quantity=i.quantity, unit=i.unit, position=pos, source_line=i.source_line
+        )
         for pos, i in enumerate(data.ingredients)
     ]
     _sync_tags(recipe, data.normalized_tags())

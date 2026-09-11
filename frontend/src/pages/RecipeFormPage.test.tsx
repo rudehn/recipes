@@ -232,6 +232,37 @@ describe("RecipeFormPage: editing a recipe", () => {
     expect(payload.tags).toEqual(["quick", "dinner"]);
   });
 
+  it("keeps the line a row was imported from, so it can be parsed again later", async () => {
+    const backend = mockBackend({
+      "GET /api/recipes/:id": recipe({
+        id: 7,
+        ingredients: [
+          {
+            id: 1,
+            name: "diced ripe avocado (optional)",
+            quantity: 1,
+            unit: null,
+            source_line: "Optional: 1 diced ripe avocado",
+          },
+        ],
+      }),
+      "PUT /api/recipes/:id": recipe({ id: 7 }),
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Weeknight chicken curry"));
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").ingredients).toEqual([
+      {
+        name: "diced ripe avocado (optional)",
+        quantity: 1,
+        unit: null,
+        source_line: "Optional: 1 diced ripe avocado",
+      },
+    ]);
+  });
+
   it("updates the recipe named in the URL rather than creating a new one", async () => {
     const backend = mockBackend({
       "GET /api/recipes/:id": stored,

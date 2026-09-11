@@ -11,8 +11,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { mockBackend } from "../test/backend";
-import { groceryItem, groceryList } from "../test/fixtures";
+import { groceryItem, groceryList, pricedBackend } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 const NOW = new Date(2026, 6, 29, 12, 0);
@@ -55,7 +54,8 @@ const sugar = groceryItem({
   },
 });
 
-const saffron = groceryItem({ key: "saffron", name: "saffron" });
+// Nothing at the store matched it, which the prices response says.
+const saffron = groceryItem({ key: "saffron", name: "saffron", issue: "no_match" });
 
 const onion = groceryItem({
   key: "onion",
@@ -106,7 +106,7 @@ afterEach(() => {
 });
 
 function withList(list: unknown) {
-  return mockBackend({
+  return pricedBackend({
     "GET /api/pricing/status": { enabled: true, store: STORE },
     "GET /api/grocery-list": list,
   });
@@ -206,7 +206,7 @@ describe("grocery list pricing", () => {
   });
 
   it("offers alternatives when the price is tapped, and pins the one chosen", async () => {
-    const backend = mockBackend({
+    const backend = pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
@@ -237,7 +237,7 @@ describe("grocery list pricing", () => {
   });
 
   it("marks the product in force among the alternatives", async () => {
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
@@ -270,7 +270,7 @@ describe("grocery list pricing", () => {
      * a narrower search for the same term does not return. Without this the
      * panel shows nothing marked as chosen.
      */
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [onion],
@@ -293,7 +293,7 @@ describe("grocery list pricing", () => {
   });
 
   it("lets a line with no match be given one", async () => {
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [saffron],
@@ -314,7 +314,7 @@ describe("grocery list pricing", () => {
   });
 
   it("can mark a line as one not to price", async () => {
-    const backend = mockBackend({
+    const backend = pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [saffron],
@@ -338,7 +338,7 @@ describe("grocery list pricing", () => {
   });
 
   it("offers no product choice when no store is set", async () => {
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/grocery-list": groceryList({ items: [saffron], pricing: null }),
     });
@@ -371,7 +371,7 @@ describe("remembered picks", () => {
   it("says when the product was the shopper's own choice", async () => {
     // The choice is remembered either way. A remembered choice nobody can
     // see is indistinguishable from a guess.
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [handPicked, flour],
@@ -388,10 +388,13 @@ describe("remembered picks", () => {
   });
 
   it("tells a line left unpriced on purpose apart from a miss", async () => {
-    mockBackend({
+    pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
-        items: [groceryItem({ ...saffron, hand_picked: true }), groceryItem({ name: "bay leaf" })],
+        items: [
+          groceryItem({ ...saffron, hand_picked: true, issue: null }),
+          groceryItem({ name: "bay leaf", issue: "no_match" }),
+        ],
         pricing: { store: STORE, total: 0, saved: 0, priced: 0, total_lines: 2 },
       }),
     });
@@ -406,7 +409,7 @@ describe("remembered picks", () => {
   });
 
   it("offers a way back to the automatic pick, and only on a hand-picked line", async () => {
-    const backend = mockBackend({
+    const backend = pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },
       "GET /api/grocery-list": groceryList({
         items: [handPicked, flour],
@@ -523,5 +526,126 @@ describe("walking the store", () => {
 
     await screen.findByText("salt");
     expect(screen.queryByRole("button", { name: "By aisle" })).not.toBeInTheDocument();
+  });
+
+  it("says why a number is doubtful, in the price column", async () => {
+    // Nine cups of corn against a 10 oz can cannot be sized, so the count
+    // is one by default; the column says so rather than showing a figure
+    // that reads as worked out.
+    withList(
+      groceryList({
+        items: [
+          groceryItem({
+            key: "corn",
+            name: "corn",
+            amounts: ["9 cups"],
+            issue: "unsized",
+            price: { ...flour.price!, description: "Whole Kernel Corn", size: "10 oz" },
+          }),
+        ],
+        pricing: { store: STORE, total: 0.99, saved: 0, priced: 1, total_lines: 1 },
+      }),
+    );
+
+    renderApp(WEEK);
+
+    const row = (await screen.findByText("corn")).closest(".grocery-item")!;
+    expect(
+      within(row as HTMLElement).getByText("can't size 9 cups against 10 oz"),
+    ).toBeInTheDocument();
+  });
+
+  it("points at the recipe line when the recipe is what is wrong", async () => {
+    // The product is not the problem: the amount ended up in the name. The
+    // popover says so above the products and links to the row.
+    withList(
+      groceryList({
+        items: [
+          groceryItem({
+            key: "1-avocado",
+            name: "1 avocado",
+            amounts: [],
+            issue: "amount_in_name",
+            uses: [
+              {
+                recipe_id: 15,
+                recipe_title: "Fresh Corn Salsa",
+                ingredient_id: 77,
+                quantity: null,
+                unit: null,
+              },
+            ],
+          }),
+        ],
+        pricing: null,
+      }),
+    );
+
+    const { user } = renderApp(WEEK);
+    const row = (await screen.findByText("1 avocado")).closest(".grocery-item")!;
+    expect(within(row as HTMLElement).getByText("amount is in the name")).toBeInTheDocument();
+
+    await user.click(within(row as HTMLElement).getByRole("button", { name: /not priced/ }));
+
+    const fix = await screen.findByRole("link", { name: /fix the recipe line/ });
+    expect(fix).toHaveAttribute("href", expect.stringMatching(/^\/recipes\/15\?/));
+  });
+
+  it("splits the shortfall by cause in the summary", async () => {
+    withList(
+      groceryList({
+        items: [
+          flour,
+          saffron,
+          groceryItem({ key: "lettuce", name: "lettuce", amounts: [], issue: "no_amount" }),
+        ],
+        pricing: { store: STORE, total: 2.59, saved: 0, priced: 1, total_lines: 3 },
+      }),
+    );
+
+    renderApp(WEEK);
+
+    expect(await screen.findByText(/1 of 3 priced/)).toBeInTheDocument();
+    expect(screen.getByText(/1 not matched/)).toBeInTheDocument();
+    expect(screen.getByText(/1 need a look/)).toBeInTheDocument();
+  });
+
+  it("shows the list before the prices arrive", async () => {
+    // The list is served from the database alone; prices fill in when
+    // Kroger answers. Held open, the page must already show what to buy.
+    let release: () => void = () => {};
+    pricedBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({ items: [groceryItem({ ...flour, price: null })] }),
+      "GET /api/grocery-list/prices": () =>
+        new Promise((r) => {
+          release = () =>
+            r({
+              pricing: { store: STORE, total: 2.59, saved: 0, priced: 1, total_lines: 1 },
+              lines: [{ key: flour.key, price: flour.price, hand_picked: false, issue: null }],
+            });
+        }),
+    });
+
+    renderApp(WEEK);
+
+    expect(await screen.findByText("flour")).toBeInTheDocument();
+    expect(screen.queryByText("est. $2.59")).not.toBeInTheDocument();
+    release();
+    expect(await screen.findByText("est. $2.59")).toBeInTheDocument();
+  });
+
+  it("carries a recipe-side reason on the row when there is no store to price at", async () => {
+    pricedBackend({
+      "GET /api/pricing/status": { enabled: false, store: null },
+      "GET /api/grocery-list": groceryList({
+        items: [groceryItem({ key: "lettuce", name: "lettuce", amounts: [], issue: "no_amount" })],
+      }),
+    });
+
+    renderApp(WEEK);
+
+    const row = (await screen.findByText("lettuce")).closest(".grocery-item")!;
+    expect(within(row as HTMLElement).getByText("no amount")).toBeInTheDocument();
   });
 });

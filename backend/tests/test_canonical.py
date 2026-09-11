@@ -106,3 +106,18 @@ def test_best_display_drops_prep_words_from_single_variant():
     # Words that change what you buy stay.
     sausage = ["ground pork sausage (cooked, crumbled, and drained)"]
     assert best_display(sausage) == "ground pork sausage"
+
+
+def test_a_comma_inside_the_name_does_not_cut_it_short():
+    """"boneless, skinless chicken breasts" is one name; keeping only the
+    part before the comma priced a recipe as "boneless"."""
+    name = "boneless, skinless chicken breasts"
+    assert clean_display(name) == "boneless skinless chicken breasts"
+    assert canonical_key(name) == "boneless-skinless-chicken-breast"
+    # A real prep note after the comma is still dropped.
+    assert clean_display("chicken breasts, cut into strips") == "chicken breasts"
+
+
+def test_packing_words_are_not_the_ingredient():
+    """"firmly packed brown sugar" is brown sugar."""
+    assert canonical_key("firmly packed brown sugar") == "brown-sugar"

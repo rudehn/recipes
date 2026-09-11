@@ -12,8 +12,15 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { HttpError, mockBackend, type Routes } from "../test/backend";
-import { cartLine, cartPlan, cartStatus, groceryItem, groceryList } from "../test/fixtures";
+import { HttpError, type Routes } from "../test/backend";
+import {
+  cartLine,
+  cartPlan,
+  cartStatus,
+  groceryItem,
+  groceryList,
+  pricedBackend,
+} from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 const NOW = new Date(2026, 6, 29, 12, 0);
@@ -41,7 +48,7 @@ afterEach(() => {
 });
 
 function withCart(routes: Routes = {}) {
-  return mockBackend({
+  return pricedBackend({
     "GET /api/pricing/status": { enabled: true, store: STORE },
     "GET /api/grocery-list": groceryList({ items: [flour, sugar] }),
     "GET /api/cart/status": CONNECTED,
@@ -399,5 +406,27 @@ describe("sending the grocery list to a Kroger cart", () => {
 
     expect(await screen.findByText(/out of stock at your store today: butter/i)).toBeInTheDocument();
     expect(screen.getByText(/nothing at your store is matched to them: saffron/i)).toBeInTheDocument();
+  });
+
+  it("says when a count is one by default rather than worked out", async () => {
+    withCart({
+      "GET /api/cart/preview": cartPlan({
+        lines: [
+          cartLine({
+            name: "corn",
+            description: "Whole Kernel Corn",
+            size: "10 oz",
+            quantity: 1,
+            amounts: ["9 cups"],
+            issue: "unsized",
+          }),
+        ],
+      }),
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+
+    expect(await screen.findByText(/can't size 9 cups against 10 oz/)).toBeInTheDocument();
   });
 });

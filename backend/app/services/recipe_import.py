@@ -24,8 +24,25 @@ KNOWN_UNITS = (
     set(UNIT_ALIASES) | set(UNIT_ALIASES.values())
     | {"pinch", "dash", "stick", "sticks", "head", "heads", "sprig", "sprigs",
        "stalk", "stalks", "jar", "jars", "bottle", "bottles", "quart", "quarts",
-       "pint", "pints", "gallon", "gallons", "packet", "packets"}
+       "pint", "pints", "gallon", "gallons", "packet", "packets", "bag", "bags",
+       "box", "boxes", "container", "containers", "carton", "cartons", "tub", "tubs"}
 )
+
+# A package size written straight after the amount without brackets, as in
+# "1 22-ounce bag frozen waffle fries" or "2 15 oz cans black beans". Noise
+# on a shopping list for the same reason the bracketed form is: what you buy
+# is one bag, and left in place it hides the unit and pollutes the name.
+_BARE_SIZE = re.compile(
+    r"^\d+(?:\.\d+)?-?(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|ml|inch|in)\.?$",
+    re.IGNORECASE,
+)
+_SIZE_UNIT = re.compile(r"^(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|ml)\.?$", re.I)
+
+# A label a site puts before the line: "Optional: 1 avocado", "For the sauce:
+# 1 cup ketchup". Read past, so the number after it is found. "Optional" is
+# worth keeping and is moved to the end of the name in brackets, where the
+# grocery key ignores it and the cook can still see it.
+_LABEL = re.compile(r"^\s*([A-Za-z][A-Za-z ]{0,24}):\s*(?=\S)")
 
 # Adjectives recipes slip between the amount and the unit ("2 heaping
 # teaspoons minced garlic"). Only ever skipped when a real unit follows them,
@@ -167,6 +184,10 @@ def _token_to_number(token: str) -> float | None:
     return None
 
 
+def _is_fraction(token: str) -> bool:
+    return token in UNICODE_FRACTIONS or re.fullmatch(r"\d+/\d+", token) is not None
+
+
 def _skip_package_size(tokens: list[str], index: int) -> int:
     """Index past a package size in parentheses right after the amount.
 
@@ -176,17 +197,40 @@ def _skip_package_size(tokens: list[str], index: int) -> int:
     drop it. Only a parenthetical that opens immediately after the number
     counts; trailing notes like "(optional)" are part of the name.
     """
-    if index >= len(tokens) or not tokens[index].startswith("("):
+    if index >= len(tokens):
         return index
-    for end in range(index, len(tokens)):
-        if tokens[end].endswith(")"):
-            return end + 1
-    return index  # Unclosed: leave the text alone.
+    if tokens[index].startswith("("):
+        for end in range(index, len(tokens)):
+            if tokens[end].endswith(")"):
+                return end + 1
+        return index  # Unclosed: leave the text alone.
+    # The same size without its brackets: "22-ounce" or "15 oz".
+    if _BARE_SIZE.match(tokens[index]):
+        return index + 1
+    if (
+        index + 1 < len(tokens)
+        and re.fullmatch(r"\d+(?:\.\d+)?", tokens[index])
+        and _SIZE_UNIT.match(tokens[index + 1])
+        and index + 2 < len(tokens)
+        and tokens[index + 2].lower().rstrip(".,") in KNOWN_UNITS
+    ):
+        return index + 2
+    return index
 
 
 def parse_ingredient_line(line: str) -> IngredientIn:
-    """Best-effort split of "1 ½ cups flour" into quantity/unit/name."""
+    """Best-effort split of "1 ½ cups flour" into quantity/unit/name.
+
+    The line is kept on the result as `source_line`, so a better parser can
+    be run over it later without importing the recipe again.
+    """
     text = _strip_html(line)
+    suffix = ""
+    label = _LABEL.match(text)
+    if label:
+        if label.group(1).strip().casefold() == "optional":
+            suffix = " (optional)"
+        text = text[label.end() :]
     # Normalize "1½" -> "1 ½" and ranges "1-2" / "1 to 2" -> "1".
     text = re.sub(r"(\d)([½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞])", r"\1 \2", text)
     text = re.sub(r"(\d)\s*[-–]\s*(\d)", r"\1 - \2", text)
@@ -199,6 +243,11 @@ def parse_ingredient_line(line: str) -> IngredientIn:
     while index < len(tokens):
         value = _token_to_number(tokens[index])
         if value is None:
+            break
+        # A mixed number is a whole and a fraction, "1 1/2". A second whole
+        # number is something else - "2 15 oz cans" is two cans - and is
+        # left for the size check below.
+        if quantity is not None and not _is_fraction(tokens[index]):
             break
         quantity = value if quantity is None else quantity + value
         index += 1
@@ -233,7 +282,10 @@ def parse_ingredient_line(line: str) -> IngredientIn:
     if not name:
         # Line was only a quantity/unit ("1 pinch"): treat the unit as the name.
         name, unit = (unit or text), None
-    return IngredientIn(name=name[:200], quantity=quantity, unit=unit)
+    name = (name + suffix)[:200]
+    return IngredientIn(
+        name=name, quantity=quantity, unit=unit, source_line=_strip_html(line)[:300] or None
+    )
 
 
 def parse_recipe_html(html: str, source_url: str) -> RecipeDraft:

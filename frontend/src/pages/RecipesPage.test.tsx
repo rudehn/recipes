@@ -29,6 +29,7 @@ function recipesBackend(recipes: RouteHandler | object, tags: unknown = TAGS) {
     "GET /api/recipes/tags": tags,
     "GET /api/recipes": recipes,
     "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
+    "GET /api/recipes/attention": [],
   });
 }
 
@@ -379,6 +380,47 @@ describe("RecipesPage", () => {
       expect(screen.queryByText(/on sale this week/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/a serving/i)).not.toBeInTheDocument();
       expect(screen.queryByText(/in your pantry/i)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("needs a look", () => {
+    it("lists the recipes with rows that will shop wrongly, each row linked", async () => {
+      mockBackend({
+        "GET /api/recipes/tags": TAGS,
+        "GET /api/recipes": page([curry, bread]),
+        "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
+        "GET /api/recipes/attention": [
+          {
+            recipe: bread,
+            issues: [
+              { ingredient_id: 9, name: "Optional: 1 diced ripe avocado", issue: "amount_in_name" },
+              { ingredient_id: 10, name: "paprica", issue: "no_match" },
+            ],
+          },
+        ],
+      });
+      const { user } = renderApp("/recipes");
+
+      await user.click(await screen.findByText(/needs a look/i));
+
+      const offer = screen.getByText("2 ingredients").closest(".offer")!;
+      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
+        "href",
+        "/recipes/2",
+      );
+      expect(
+        within(offer as HTMLElement).getByRole("link", { name: "Optional: 1 diced ripe avocado" }),
+      ).toHaveAttribute("href", expect.stringMatching(/^\/recipes\/2\?/));
+      expect(within(offer as HTMLElement).getByText("amount is in the name")).toBeInTheDocument();
+      expect(within(offer as HTMLElement).getByText("nothing matched at your store")).toBeInTheDocument();
+    });
+
+    it("is absent when every recipe is in order", async () => {
+      recipesBackend(page([curry]));
+      renderApp("/recipes");
+
+      await screen.findByText("Weeknight chicken curry");
+      expect(screen.queryByText(/needs a look/i)).not.toBeInTheDocument();
     });
   });
 });

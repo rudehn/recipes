@@ -43,7 +43,7 @@ from ..canonical import best_display, canonical_key
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
-from .units import Measure, cost_to_cover, measure, parse_size, to_cents
+from .units import Measure, comparable, cost_to_cover, measure, parse_size, to_cents
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +82,23 @@ def needed(line: GroceryItem) -> Measure | None:
         return None
     dimension, base = next(iter(totals.items()))
     return Measure(dimension, base)
+
+
+def sized(line: GroceryItem, product: Product) -> bool:
+    """Whether the line's amount can be related to the product's package.
+
+    False is the case worth naming: the count sent to the cart is then one
+    by default rather than worked out, and the shopper should know before
+    trusting it. A line with no amount at all is not this problem - it is
+    the recipe's, and is named there.
+    """
+    if not any(use.quantity for use in line.uses):
+        return True
+    need = needed(line)
+    if need is None:
+        return False
+    size = parse_size(product.size)
+    return comparable(size, need, line.key, None, product.sold_by_piece) is not None
 
 
 async def _discounted(session: AsyncSession) -> dict[str, Product]:
@@ -282,11 +299,23 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             continue
         line.hand_picked = choice.hand_picked
         product = choice.product
-        if product is None or product.price is None:
+        if product is None:
+            # Nothing matched, or a person said not to price it. Only the
+            # first is a problem, and a recipe-side one outranks it.
+            if not choice.hand_picked and line.issue is None:
+                line.issue = "no_match"
             continue
         need = needed(line)
         size = parse_size(product.size)
         each = product.sold_by_piece
+        if line.issue is None:
+            # The product side of the arithmetic, most serious first.
+            if not sized(line, product):
+                line.issue = "unsized"
+            elif not product.in_stock:
+                line.issue = "out_of_stock"
+        if product.price is None:
+            continue
         cost = cost_to_cover(product.price, size, product.sold_by, need, line.key, None, each)
         line.price = as_item_price(product)
         line.price.estimated = to_cents(cost)

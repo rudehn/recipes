@@ -18,8 +18,12 @@ from app.main import app  # noqa: E402
 @pytest.fixture(autouse=True)
 async def clean_db():
     from app.config import IMAGES_DIR
+    from app.services.kroger import products
 
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    # Prices are remembered in memory for a few minutes, which is longer than
+    # a test run; one test's catalog must not answer the next test's list.
+    products.forget_prices()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)

@@ -50,10 +50,21 @@ PREP_WORDS = {
     "sifted", "rinsed", "drained", "cooked", "crumbled", "toasted", "warmed",
     "chilled", "thawed", "zested", "juiced", "pitted", "stemmed", "deveined",
     "finely", "coarsely", "roughly", "thinly", "thickly", "lightly",
-    "freshly", "very",
+    "freshly", "very", "firmly", "loosely", "tightly",
     "large", "medium", "small", "jumbo", "extra-large", "xl",
     "ripe", "overripe", "raw", "cold", "warm", "hot", "cooled",
     "optional",
+}
+
+# Words that describe an ingredient without being one. When the part of a
+# name before a comma is made only of these, the comma is not separating the
+# name from a prep note but splitting the name itself: "boneless, skinless
+# chicken breasts" is one name, and keeping only "boneless" lost the chicken.
+DESCRIPTORS = {
+    "boneless", "skinless", "bone-in", "fresh", "frozen", "canned", "dried",
+    "ground", "whole", "lean", "extra-lean", "firm", "soft", "unsalted",
+    "salted", "sweet", "mild", "plain", "organic", "low-sodium", "reduced-fat",
+    "fat-free", "nonfat", "light", "heavy", "thick", "thin", "extra",
 }
 
 # Trailing qualifiers that aren't part of the item name.
@@ -83,7 +94,13 @@ def clean_display(name: str) -> str:
     """Human-facing cleanup: drop parentheticals, prices, and the trailing
     prep clause after a comma, but keep casing and plurality."""
     s = _drop_parentheticals(name)
-    s = s.split(",")[0]
+    head, _, tail = s.partition(",")
+    head_words = [w for w in re.split(r"[^a-z0-9-]+", head.casefold()) if w]
+    if tail and head_words and all(w in DESCRIPTORS or w in PREP_WORDS for w in head_words):
+        # The comma split the name, not the prep note.
+        s = f"{head.strip()} {tail.strip()}"
+    else:
+        s = head
     s = re.sub(r"^\s*optional[:,]?\s+", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip(" .,;")
     return s or name.strip()

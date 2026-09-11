@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import GroceryCheck, PantryItem
-from ..schemas import GroceryList, GroceryMark
+from ..schemas import GroceryList, GroceryMark, GroceryPrices, LinePricing
 from ..services.grocery import build_grocery_list, item_key
 from ..services.kroger import cart, pricing
 
@@ -17,13 +17,44 @@ router = APIRouter(prefix="/grocery-list", tags=["grocery-list"])
 async def get_grocery_list(
     start: date, end: date, session: AsyncSession = Depends(get_session)
 ):
+    """The list, from the database alone.
+
+    No Kroger call is made here, so the page shows what to buy at once and
+    asks for prices separately. The list is the product; prices are a
+    garnish that must never be able to delay it.
+    """
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
-    grocery_list = await build_grocery_list(session, start, end)
-    # Prices are attached after the fact and never in the way: attach_prices
-    # returns the list unchanged if pricing is off, no store is set, or Kroger
-    # is unreachable.
-    return await pricing.attach_prices(session, grocery_list)
+    return await build_grocery_list(session, start, end)
+
+
+@router.get("/prices", response_model=GroceryPrices)
+async def get_grocery_prices(
+    start: date, end: date, session: AsyncSession = Depends(get_session)
+):
+    """The prices for the same list, fetched after it.
+
+    Rebuilt from the same range so the total honours the same marks. Empty
+    rather than an error when pricing is off, no store is set, or Kroger is
+    unreachable: a list without prices is the ordinary list.
+    """
+    if end < start:
+        raise HTTPException(status_code=422, detail="end must be on or after start")
+    grocery_list = await pricing.attach_prices(
+        session, await build_grocery_list(session, start, end)
+    )
+    return GroceryPrices(
+        pricing=grocery_list.pricing,
+        lines=[
+            LinePricing(
+                key=line.key,
+                price=line.price,
+                hand_picked=line.hand_picked,
+                issue=line.issue,
+            )
+            for line in [*grocery_list.items, *grocery_list.pantry_restock]
+        ],
+    )
 
 
 @router.post("/mark", status_code=204)

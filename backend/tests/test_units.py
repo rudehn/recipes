@@ -238,3 +238,10 @@ def test_a_recipe_uses_a_share_of_a_package_not_the_whole():
     # Unrelatable amounts are the caller's problem, and said so.
     bunch = parse_size("1 bunch")
     assert share_of_package(1.29, bunch, "UNIT", measure(2, None), "parsley") is None
+
+
+def test_vegetables_have_a_density_too():
+    """Nine cups of corn against a 10 oz can was one can for want of a
+    number: 165 g a cup makes it five."""
+    assert packages_to_cover(parse_size("10 oz"), measure(9, "cup"), "corn-kernel") == 6
+    assert packages_to_cover(parse_size("10 oz"), measure(3, "cup"), "raw-corn-kernel") == 2

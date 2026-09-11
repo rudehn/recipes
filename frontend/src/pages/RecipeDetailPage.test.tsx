@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { HttpError, mockBackend } from "../test/backend";
@@ -154,13 +154,14 @@ describe("RecipeDetailPage", () => {
   it("deletes after confirming, then returns to the recipe list", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const backend = mockBackend({
-      // Before the ":id" route, which would otherwise answer it with a recipe.
+      // Before the ":id" route, which would otherwise answer them with a recipe.
       "GET /api/recipes/suggestions": {
         on_sale: [],
         cheap: [],
         median_per_serving: null,
         pantry: [],
       },
+      "GET /api/recipes/attention": [],
       "GET /api/recipes/:id": curry,
       "DELETE /api/recipes/:id": undefined,
       "GET /api/recipes": page([]),
@@ -417,5 +418,22 @@ describe("RecipeDetailPage", () => {
       expect(screen.queryByText(/est\. \$/)).not.toBeInTheDocument();
       expect(document.querySelector(".line-cost")).toBeNull();
     });
+  });
+
+  it("marks a row that will shop wrongly, where the fix is", async () => {
+    mockBackend({
+      "GET /api/recipes/:id": recipe({
+        id: 1,
+        ingredients: [
+          { id: 1, name: "Optional: 1 diced ripe avocado", quantity: null, unit: null, issue: "amount_in_name" },
+          { id: 2, name: "salt", quantity: null, unit: null, issue: null },
+        ],
+      }),
+    });
+    renderApp("/recipes/1");
+
+    const row = await screen.findByText(/Optional: 1 diced ripe avocado/);
+    expect(within(row.closest("li")!).getByText("amount is in the name")).toBeInTheDocument();
+    expect(within(rowFor("salt")).queryByText(/amount|no amount|check/)).not.toBeInTheDocument();
   });
 });

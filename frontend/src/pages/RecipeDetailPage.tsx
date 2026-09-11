@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api } from "../api";
+import { api, type LineIssue } from "../api";
 import { RecipePhoto } from "../components/RecipeBits";
 import {
   Banner,
@@ -17,6 +17,15 @@ import {
 import { formatQuantity } from "../quantity";
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+const ROW_ISSUES: Record<LineIssue, string> = {
+  amount_in_name: "amount is in the name",
+  no_amount: "no amount",
+  check_line: "check this line",
+  no_match: "nothing matched",
+  unsized: "can't size the amount",
+  out_of_stock: "out of stock",
+};
 import { highlightedIngredients } from "../recipeLink";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
@@ -216,7 +225,14 @@ export default function RecipeDetailPage() {
                   aria-current={marked ? "true" : undefined}
                 >
                   <span className="qty">{formatQuantity(quantity, ing.unit)}</span>
-                  <span>{ing.name}</span>
+                  <span>
+                    {ing.name}
+                    {ing.issue && (
+                      // The reason this row will shop wrongly, where the fix
+                      // is: the Edit button is at the top of the page.
+                      <span className="issue-tag">{ROW_ISSUES[ing.issue]}</span>
+                    )}
+                  </span>
                   {lineCost.get(ing.id!) && (
                     <span
                       className="line-cost"

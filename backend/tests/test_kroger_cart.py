@@ -517,6 +517,7 @@ async def test_the_preview_says_what_would_be_sent_without_sending_it(client, fa
             # The amount the count is meant to cover, so "3" can be checked
             # against "12 lb" rather than trusted.
             "amounts": ["12 lb"],
+            "issue": None,
         }
     ]
 
@@ -735,3 +736,24 @@ async def test_the_access_token_is_not_reminted_for_every_send(client, fake):
     await send(client)
 
     assert sum(1 for t in fake.tokens if t["grant_type"] == "refresh_token") == refreshes
+
+
+async def test_a_count_that_could_not_be_worked_out_says_so(client, fake):
+    """Six packets of ramen against "4 packs of 3 oz" cannot be related, so
+    the count is one by default - and the review says so, so the stepper is
+    used knowingly rather than the one being trusted."""
+    await seed(["flour"], quantity=6, unit="packet")
+
+    body = (await client.get(f"/api/cart/preview?{RANGE}")).json()
+
+    assert body["lines"][0]["quantity"] == 1
+    assert body["lines"][0]["issue"] == "unsized"
+
+
+async def test_a_worked_out_count_carries_no_issue(client, fake):
+    await seed(["flour"], quantity=12, unit="lb")
+
+    body = (await client.get(f"/api/cart/preview?{RANGE}")).json()
+
+    assert body["lines"][0]["quantity"] == 3
+    assert body["lines"][0]["issue"] is None

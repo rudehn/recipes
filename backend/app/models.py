@@ -137,8 +137,18 @@ class Ingredient(Base):
     quantity: Mapped[float | None] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(50))
     position: Mapped[int] = mapped_column(Integer, default=0)
+    # The line as the recipe's page wrote it, for re-parsing later. Absent
+    # for rows typed by hand and for everything imported before it existed.
+    source_line: Mapped[str | None] = mapped_column(String(300))
 
     recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
+
+    @property
+    def issue(self) -> str | None:
+        """The recipe-side problem with this row, if any. See services.lint."""
+        from .services.lint import ingredient_issue
+
+        return ingredient_issue(self.name, self.quantity, self.unit)
 
 
 class MealPlanEntry(Base):

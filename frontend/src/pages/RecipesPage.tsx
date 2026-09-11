@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type Page, type RecipeSummary } from "../api";
+import { api, type LineIssue, type Page, type RecipeSummary } from "../api";
+import { recipeIngredientPath } from "../recipeLink";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePhoto, TimeChips } from "../components/RecipeBits";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
@@ -178,6 +179,8 @@ export default function RecipesPage() {
 
       {!blank && <SuggestionPanels />}
 
+      {!blank && <NeedsALook />}
+
       {!blank && !listing && loading && <p className="list-status">Loading recipes…</p>}
 
       {!blank && listing && listing.items.length === 0 && !filtering && (
@@ -334,5 +337,54 @@ function SuggestionPanels() {
         </details>
       )}
     </>
+  );
+}
+
+const ISSUE_LABELS: Record<LineIssue, string> = {
+  amount_in_name: "amount is in the name",
+  no_amount: "no amount",
+  check_line: "check the line",
+  no_match: "nothing matched at your store",
+  unsized: "can't size the amount",
+  out_of_stock: "out of stock today",
+};
+
+/**
+ * Recipes with ingredient rows that will price or shop wrongly.
+ *
+ * The same reasons the grocery list shows on its lines, grouped by recipe,
+ * because the fix is on the recipe page. Each row links straight to itself
+ * there. Folded like the suggestions, and absent when there is nothing to
+ * say - which is the state to aim for.
+ */
+function NeedsALook() {
+  const { data } = useLoad(useCallback(() => api.recipesAttention(), []));
+  if (!data || data.length === 0) return null;
+  return (
+    <details className="offers-section attention-section">
+      <summary>
+        Needs a look <span className="count">{recipeCount(data.length)}</span>
+      </summary>
+      {data.map((entry) => (
+        <div key={entry.recipe.id} className="offer">
+          <div className="offer-recipe">
+            <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
+            <span className="offer-coverage">
+              {entry.issues.length} ingredient{entry.issues.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <ul className="offer-items attention-items">
+            {entry.issues.map((row) => (
+              <li key={row.ingredient_id}>
+                <Link to={recipeIngredientPath(entry.recipe.id, [row.ingredient_id])}>
+                  {row.name}
+                </Link>
+                <span className="issue-tag">{ISSUE_LABELS[row.issue]}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </details>
   );
 }

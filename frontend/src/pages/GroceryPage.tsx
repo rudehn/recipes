@@ -3,13 +3,16 @@ import { Link, useSearchParams } from "react-router-dom";
 
 import {
   api,
+  RECIPE_ISSUES,
   type CartLine,
   type CartResult,
   type GroceryItem,
   type GroceryList,
+  type GroceryPrices,
   type GroceryPricing,
   type GroceryRecipeUse,
   type GroceryStatus,
+  type LineIssue,
   type Modality,
 } from "../api";
 import { LoadFailure } from "../components/LoadError";
@@ -95,6 +98,51 @@ function applyUnsaved(list: GroceryList | null, unsaved: Unsaved): GroceryList |
   return applied;
 }
 
+/**
+ * The list with its prices laid over it.
+ *
+ * The two arrive separately so the list never waits on Kroger. A line's
+ * product-side issue (nothing matched, cannot be sized) comes with the
+ * prices and outranks nothing: the recipe-side one the list already carries
+ * is the more serious, and the server has already picked the one to show.
+ */
+function applyPrices(list: GroceryList | null, prices: GroceryPrices | null): GroceryList | null {
+  if (!list || !prices) return list;
+  const byKey = new Map(prices.lines.map((line) => [line.key, line]));
+  const price = (item: GroceryItem): GroceryItem => {
+    const line = byKey.get(item.key);
+    return line
+      ? { ...item, price: line.price, hand_picked: line.hand_picked, issue: line.issue ?? item.issue }
+      : item;
+  };
+  return {
+    ...list,
+    items: list.items.map(price),
+    pantry_restock: list.pantry_restock.map(price),
+    pricing: prices.pricing,
+  };
+}
+
+/** What a line's issue says on screen. */
+function issueLabel(issue: LineIssue, item?: GroceryItem): string {
+  switch (issue) {
+    case "amount_in_name":
+      return "amount is in the name";
+    case "no_amount":
+      return "no amount";
+    case "check_line":
+      return "check the recipe line";
+    case "no_match":
+      return "no match";
+    case "unsized":
+      return item?.price?.size && item.amounts.length > 0
+        ? `can't size ${item.amounts.join(" + ")} against ${item.price.size}`
+        : "can't size the amount";
+    case "out_of_stock":
+      return "out of stock today";
+  }
+}
+
 export default function GroceryPage() {
   const [params, setParams] = useSearchParams();
   const start = params.get("start") ?? toISODate(startOfWeek(new Date()));
@@ -104,8 +152,21 @@ export default function GroceryPage() {
     data: loaded,
     setData: setList,
     error,
-    reload,
+    reload: reloadList,
   } = useLoad(useCallback(() => api.groceryList(start, end), [start, end]));
+
+  // Fetched after the list, never with it: the list is served from the
+  // database alone and shown at once, and the prices fill in when Kroger
+  // answers. A failure here is not reported - a list without prices is the
+  // ordinary list, and the summary simply stays absent.
+  const { data: prices, reload: reloadPrices } = useLoad(
+    useCallback(() => api.groceryPrices(start, end), [start, end]),
+  );
+
+  const reload = useCallback(() => {
+    reloadList();
+    reloadPrices();
+  }, [reloadList, reloadPrices]);
 
   // Asked separately rather than read off list.pricing, which is absent when
   // nothing could be matched - exactly the case where the alternatives are
@@ -127,7 +188,10 @@ export default function GroceryPage() {
     }
   }, [order]);
 
-  const list = useMemo(() => applyUnsaved(loaded, unsaved), [loaded, unsaved]);
+  const list = useMemo(
+    () => applyUnsaved(applyPrices(loaded, prices), unsaved),
+    [loaded, prices, unsaved],
+  );
 
   function setRange(nextStart: string, nextEnd: string) {
     if (nextStart && nextEnd) setParams({ start: nextStart, end: nextEnd });
@@ -316,7 +380,7 @@ export default function GroceryPage() {
         />
       )}
 
-      {list?.pricing && <PricingSummary pricing={list.pricing} />}
+      {list?.pricing && <PricingSummary pricing={list.pricing} list={list} />}
 
       {list && !empty && <SendToCart start={start} end={end} list={list} />}
 
@@ -427,14 +491,21 @@ function SectionHeading({
  * complete one, and the difference is only discovered at the till - so it is
  * "est. $12.40 · 9 of 11 priced", never "$12.40".
  */
-function PricingSummary({ pricing }: { pricing: GroceryPricing }) {
-  const missing = pricing.total_lines - pricing.priced;
+function PricingSummary({ pricing, list }: { pricing: GroceryPricing; list: GroceryList }) {
+  // The shortfall split by cause, in the same words the lines use: what the
+  // store could not match, and what the recipes need a look at.
+  const lines = [...list.items, ...list.pantry_restock].filter((i) => i.status !== "have");
+  const unmatched = lines.filter((i) => i.issue === "no_match").length;
+  const needLook = lines.filter(
+    (i) => i.issue !== null && i.issue !== "no_match" && i.issue !== "out_of_stock",
+  ).length;
   return (
     <div className="pricing-summary">
       <span className="total">est. {money(pricing.total)}</span>
       <span className="coverage">
         {pricing.priced} of {pricing.total_lines} priced
-        {missing > 0 && ` · ${missing} not matched`}
+        {unmatched > 0 && ` · ${unmatched} not matched`}
+        {needLook > 0 && ` · ${needLook} need a look`}
       </span>
       {pricing.saved > 0 && (
         <span className="saved">{money(pricing.saved)} off with offers</span>
@@ -761,6 +832,14 @@ function CartReview({
                   <span className="product" title={line.description}>
                     {line.description}
                     {line.size && ` · ${line.size}`}
+                    {line.issue === "unsized" && (
+                      // The count is one by default, not worked out, and the
+                      // stepper is the shopper's to use knowingly.
+                      <span className="why">
+                        {" "}
+                        · can't size {line.amounts.join(" + ")} against {line.size || "this"}
+                      </span>
+                    )}
                   </span>
                 </li>
               );
@@ -831,8 +910,9 @@ function ItemPriceTag({ item }: { item: GroceryItem }) {
         {description}
         {scaled ? ` · ${money(shelf)}${size ? ` / ${size}` : ""}` : size ? ` · ${size}` : ""}
       </span>
+      {item.issue && <span className="issue-tag">{issueLabel(item.issue, item)}</span>}
       {item.hand_picked && <span className="pick-tag">your pick</span>}
-      {!in_stock && <span className="stock-tag">out of stock today</span>}
+      {!in_stock && !item.issue && <span className="stock-tag">out of stock today</span>}
     </span>
   );
 }
@@ -913,6 +993,17 @@ function ItemUses({ item }: { item: GroceryItem }) {
  * has already seen that pick and disagreed, so the product they want is quite
  * likely one the matcher ruled out.
  */
+/**
+ * Where to fix a recipe-side problem: the recipe, opened on the row.
+ *
+ * The first recipe that uses the line, since a merged line can come from
+ * several and one bad row is enough to doubt the total.
+ */
+function fixLink(item: GroceryItem): string | null {
+  const use = item.uses[0];
+  return use ? recipeIngredientPath(use.recipe_id, [use.ingredient_id]) : null;
+}
+
 function Alternatives({
   item,
   onPick,
@@ -945,11 +1036,27 @@ function Alternatives({
       : [current, ...data];
   }, [data, item.price]);
 
-  if (loading) return <p className="alternatives-status">Looking…</p>;
-  if (error) return <p className="alternatives-status">{error}</p>;
+  const recipeFix = item.issue && RECIPE_ISSUES.has(item.issue) ? fixLink(item) : null;
+  // The product is not the problem here: the recipe row is. Said above the
+  // products, and before they have even loaded, with a link to the row.
+  const fix = recipeFix && (
+    <Link className="alternative fix" to={recipeFix}>
+      {issueLabel(item.issue!, item)} · fix the recipe line
+    </Link>
+  );
+
+  if (loading || error) {
+    return (
+      <div className="alternatives" role="group" aria-label={`Products for ${item.name}`}>
+        {fix}
+        <p className="alternatives-status">{loading ? "Looking…" : error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="alternatives" role="group" aria-label={`Products for ${item.name}`}>
+      {fix}
       {options.length === 0 && (
         <p className="alternatives-status">Nothing at this store matches that.</p>
       )}
@@ -1037,6 +1144,11 @@ function GroceryRow({
         </div>
         {item.from_pantry && <span className="pantry-tag">pantry</span>}
         {have && <span className="have-tag">have it</span>}
+        {/* Without a store there is no price column to carry the reason, so
+            a recipe-side problem is shown on the row itself. */}
+        {!canPrice && item.issue && (
+          <span className="issue-tag">{issueLabel(item.issue, item)}</span>
+        )}
         {/* "Have it" sits beside the tick rather than being one, because it
             means the opposite: not in the trolley, and not to be paid for. */}
         <Button
@@ -1067,7 +1179,11 @@ function GroceryRow({
               <ItemPriceTag item={item} />
             ) : (
               <span className="unmatched">
-                {item.hand_picked ? "not priced" : "no match"}
+                {item.issue
+                  ? issueLabel(item.issue, item)
+                  : item.hand_picked
+                    ? "not priced"
+                    : "no match"}
                 {item.hand_picked && <span className="pick-tag">your pick</span>}
               </span>
             )}

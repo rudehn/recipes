@@ -18,11 +18,21 @@ Goods" - and are carried because they answer a question the description
 cannot: whether a thing whose name contains the ingredient is food at all.
 """
 
+import asyncio
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from . import client
 from .units import COUNT, parse_size
+
+# How long a price is trusted before it is asked for again. Long enough that
+# every reload of a grocery list during one sitting - each tick in the aisle
+# reloads it - costs no Kroger call at all, and short enough that a price
+# never outlives the visit. This is a cache of the last answer, kept in
+# memory and gone on restart; it is not the price history Kroger's terms
+# forbid, which would be prices kept over time to compare against.
+PRICE_TTL_SECONDS = 600
 
 # Kroger's word for a shelf with nothing on it. The other values seen are
 # "HIGH" and "LOW", and an item can carry no inventory at all.
@@ -142,21 +152,46 @@ async def search(term: str, location_id: str, limit: int = MAX_LIMIT) -> list[Pr
     return _products(payload)
 
 
+# (location, product id) -> (expires at, product). See PRICE_TTL_SECONDS.
+_recent: dict[tuple[str, str], tuple[float, Product]] = {}
+
+
+def forget_prices() -> None:
+    """Drop every remembered price. For tests, and for nothing else yet."""
+    _recent.clear()
+
+
+async def _batch(batch: list[str], location_id: str) -> list[Product]:
+    payload = await client.get(
+        "/v1/products",
+        {"filter.productId": ",".join(batch), "filter.locationId": location_id},
+    )
+    return _products(payload)
+
+
 async def by_ids(product_ids: list[str], location_id: str) -> dict[str, Product]:
     """Several products at once, keyed by id.
 
     `filter.productId` takes up to 50 comma separated ids, so a whole grocery
-    list is usually one call rather than one per line.
+    list is one or two calls rather than one per line, and the calls go out
+    together: each costs the better part of a second at Kroger's end
+    whatever is asked, so two in sequence is twice the wait for nothing.
+
+    A product asked for within the last few minutes is answered from memory.
     """
+    now = time.monotonic()
     found: dict[str, Product] = {}
-    for start in range(0, len(product_ids), MAX_LIMIT):
-        batch = product_ids[start : start + MAX_LIMIT]
-        if not batch:
-            continue
-        payload = await client.get(
-            "/v1/products",
-            {"filter.productId": ",".join(batch), "filter.locationId": location_id},
-        )
-        for product in _products(payload):
+    missing: list[str] = []
+    for product_id in product_ids:
+        remembered = _recent.get((location_id, product_id))
+        if remembered is not None and remembered[0] > now:
+            found[product_id] = remembered[1]
+        else:
+            missing.append(product_id)
+
+    batches = [missing[start : start + MAX_LIMIT] for start in range(0, len(missing), MAX_LIMIT)]
+    for products in await asyncio.gather(*(_batch(b, location_id) for b in batches)):
+        for product in products:
             found[product.product_id] = product
+            _recent[(location_id, product.product_id)] = (now + PRICE_TTL_SECONDS, product)
     return found

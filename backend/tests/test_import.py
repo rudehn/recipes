@@ -111,7 +111,40 @@ def test_parse_recipe_html_without_recipe_raises():
     ],
 )
 def test_parse_ingredient_line(line, expected):
-    assert parse_ingredient_line(line) == expected
+    parsed = parse_ingredient_line(line)
+    assert parsed.model_dump(exclude={"source_line"}) == expected.model_dump(
+        exclude={"source_line"}
+    )
+    # The line itself rides along, so a better parser can rerun over it.
+    assert parsed.source_line == line.strip() or parsed.source_line is not None
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        # A label before the amount used to hide the amount: the whole line
+        # became the name, the grocery list said "as needed", and the cart
+        # ordered one whatever the recipe was scaled to.
+        (
+            "Optional: 1 diced ripe avocado",
+            IngredientIn(name="diced ripe avocado (optional)", quantity=1, unit=None),
+        ),
+        ("For the sauce: 1 cup ketchup", IngredientIn(name="ketchup", quantity=1, unit="cup")),
+        # A package size without its brackets, straight after the amount.
+        (
+            "1 22-ounce bag frozen waffle fries",
+            IngredientIn(name="frozen waffle fries", quantity=1, unit="bag"),
+        ),
+        ("2 15 oz cans black beans", IngredientIn(name="black beans", quantity=2, unit="cans")),
+        # A number that is the amount, not a size, is left alone.
+        ("2 8-inch tortillas", IngredientIn(name="tortillas", quantity=2, unit=None)),
+    ],
+)
+def test_labels_and_bare_sizes_are_read_past(line, expected):
+    parsed = parse_ingredient_line(line)
+    assert parsed.model_dump(exclude={"source_line"}) == expected.model_dump(
+        exclude={"source_line"}
+    )
 
 
 def test_description_falls_back_to_meta_tag():

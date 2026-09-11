@@ -12,6 +12,7 @@ still looks perfectly plausible. So the bar to record a match at all is
 deliberately high, and no confident answer is stored as no answer.
 """
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -356,23 +357,29 @@ async def _stored(
     return {row.canonical_key: row for row in rows}
 
 
-async def _resolve(
-    session: AsyncSession,
-    canonical_key: str,
-    location_id: str,
-    need: Measure | None = None,
-) -> str | None:
-    """Search for one ingredient and record the answer, including "none"."""
-    term = canonical_key.replace("-", " ")
-    try:
-        candidates = await products.search(term, location_id, SEARCH_LIMIT)
-    except KrogerError as exc:
-        # Left unrecorded on purpose: a search that never happened is not the
-        # same as one that found nothing, and storing it as "no match" would
-        # make a transient outage permanent.
-        log.warning("Kroger product search failed for %r: %s", canonical_key, exc)
-        return None
+# How many searches go to Kroger at once when a list has several ingredients
+# nothing has matched yet. Each takes most of a second whatever is asked, so
+# ten in sequence is eight seconds and ten together is one; the cap keeps a
+# first load of a big list from looking like a flood from one client.
+SEARCH_CONCURRENCY = 6
 
+# A search that never happened. Told apart from "found nothing" because it
+# must not be recorded: storing an outage as "no match" would make it
+# permanent.
+_FAILED = object()
+
+
+async def _search(
+    canonical_key: str, location_id: str, need: Measure | None, gate: asyncio.Semaphore
+) -> Product | object | None:
+    """Kroger's answer for one ingredient: a product, None, or _FAILED."""
+    term = canonical_key.replace("-", " ")
+    async with gate:
+        try:
+            candidates = await products.search(term, location_id, SEARCH_LIMIT)
+        except KrogerError as exc:
+            log.warning("Kroger product search failed for %r: %s", canonical_key, exc)
+            return _FAILED
     chosen = choose(candidates, canonical_key, need)
     if chosen is None:
         log.info(
@@ -380,16 +387,41 @@ async def _resolve(
             canonical_key,
             len(candidates),
         )
-    session.add(
-        IngredientProductMatch(
-            canonical_key=canonical_key,
-            location_id=location_id,
-            product_id=chosen.product_id if chosen else None,
-            user_confirmed=False,
-            matcher_version=MATCHER_VERSION,
-        )
+    return chosen
+
+
+async def _resolve_all(
+    session: AsyncSession,
+    keys: list[str],
+    location_id: str,
+    needs: dict[str, Measure],
+) -> dict[str, str | None]:
+    """Search for several ingredients together and record every answer.
+
+    The searches run concurrently; the rows are written afterwards, in one
+    place, because the session is not something to share between tasks.
+    Keys whose search failed are absent, and so unrecorded.
+    """
+    gate = asyncio.Semaphore(SEARCH_CONCURRENCY)
+    answers = await asyncio.gather(
+        *(_search(key, location_id, needs.get(key), gate) for key in keys)
     )
-    return chosen.product_id if chosen else None
+    resolved: dict[str, str | None] = {}
+    for key, answer in zip(keys, answers, strict=True):
+        if answer is _FAILED:
+            continue
+        product_id = answer.product_id if isinstance(answer, Product) else None
+        session.add(
+            IngredientProductMatch(
+                canonical_key=key,
+                location_id=location_id,
+                product_id=product_id,
+                user_confirmed=False,
+                matcher_version=MATCHER_VERSION,
+            )
+        )
+        resolved[key] = product_id
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -440,10 +472,12 @@ async def picks(
     resolved: dict[str, Pick] = {
         key: Pick(row.product_id, row.user_confirmed) for key, row in stored.items()
     }
-    unseen = [key for key in canonical_keys if key and key not in stored]
-    for key in unseen:
-        product_id = await _resolve(session, key, location_id, (needs or {}).get(key))
-        resolved[key] = Pick(product_id, False)
+    unseen = sorted({key for key in canonical_keys if key and key not in stored})
+    if unseen:
+        for key, product_id in (
+            await _resolve_all(session, unseen, location_id, needs or {})
+        ).items():
+            resolved[key] = Pick(product_id, False)
     if unseen or stale:
         await session.commit()
     return resolved

@@ -7,6 +7,7 @@ much of the list it actually covers, because a total that quietly omits the
 lines it could not match reads exactly like a complete one.
 """
 
+import asyncio
 from datetime import date
 
 import httpx
@@ -24,7 +25,7 @@ from app.models import (
     Recipe,
 )
 from app.services.kroger import client as kroger
-from app.services.kroger import matching
+from app.services.kroger import matching, products
 
 LOCATION = "01400765"
 DAY = date(2026, 8, 17)
@@ -73,13 +74,22 @@ class FakeCatalog:
         self.error = False
         self.calls = 0
         self.searches: list[dict] = []
+        # How many requests were open at once, at most. Searches for unseen
+        # ingredients are meant to go out together.
+        self.in_flight = 0
+        self.peak_in_flight = 0
 
-    def respond(self, params: dict | None) -> httpx.Response:
+    async def respond(self, params: dict | None) -> httpx.Response:
         if self.error:
             raise httpx.ConnectError("no route to host")
         self.calls += 1
         params = params or {}
         self.searches.append(params)
+        self.in_flight += 1
+        self.peak_in_flight = max(self.peak_in_flight, self.in_flight)
+        # Yield, so concurrent requests overlap the way real ones would.
+        await asyncio.sleep(0)
+        self.in_flight -= 1
         request = httpx.Request("GET", kroger.API_BASE + "/v1/products")
 
         if "filter.productId" in params:
@@ -106,7 +116,7 @@ def catalog(monkeypatch):
     async def fake_get(self, path, params=None, headers=None, **kwargs):
         if not str(self.base_url).startswith(kroger.API_BASE):
             return await _real_get(self, path, params=params, headers=headers, **kwargs)
-        return fake.respond(params)
+        return await fake.respond(params)
 
     monkeypatch.setattr(httpx.AsyncClient, "post", fake_post)
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
@@ -140,9 +150,26 @@ async def seed(ingredients: list[str], store: bool = True) -> None:
 
 
 async def fetch(client) -> dict:
+    """The list with its prices merged in, the way the page assembles them.
+
+    Two requests since the split: the list itself, which makes no Kroger
+    call, and the prices for it, fetched second.
+    """
     resp = await client.get(f"/api/grocery-list?start={DAY}&end={DAY}")
     assert resp.status_code == 200
-    return resp.json()
+    grocery_list = resp.json()
+    resp = await client.get(f"/api/grocery-list/prices?start={DAY}&end={DAY}")
+    assert resp.status_code == 200
+    prices = resp.json()
+    by_key = {line["key"]: line for line in prices["lines"]}
+    for item in [*grocery_list["items"], *grocery_list["pantry_restock"]]:
+        line = by_key.get(item["key"])
+        if line is not None:
+            item["price"] = line["price"]
+            item["hand_picked"] = line["hand_picked"]
+            item["issue"] = line["issue"] or item["issue"]
+    grocery_list["pricing"] = prices["pricing"]
+    return grocery_list
 
 
 async def test_lines_carry_a_price_and_the_total_says_what_it_covers(client, catalog):
@@ -226,17 +253,43 @@ async def test_stocked_items_are_not_priced_into_the_trip(client, catalog):
 
 
 async def test_a_second_load_does_not_search_again(client, catalog):
-    """Matches are pinned, so a reload costs one batched price lookup rather
-    than a search per line."""
+    """Matches are pinned, so a reload never searches; and prices are
+    remembered for a few minutes, so a reload within them costs no Kroger
+    call at all - which is what makes each tick in the aisle instant."""
     await seed(["flour", "sugar"])
     await fetch(client)
     after_first = catalog.calls
 
     await fetch(client)
 
-    # Two searches plus one batch on the first load; one batch on the second.
+    # Two searches plus one batch on the first load; nothing on the second.
     assert after_first == 3
+    assert catalog.calls - after_first == 0
+
+
+async def test_a_price_is_asked_for_again_once_it_has_aged(client, catalog, monkeypatch):
+    """The memory is of the last answer, not a history: once it has aged the
+    price is fetched again, in one batched call."""
+    await seed(["flour", "sugar"])
+    await fetch(client)
+    monkeypatch.setattr(products, "PRICE_TTL_SECONDS", 0)
+    products.forget_prices()
+    after_first = catalog.calls
+
+    await fetch(client)
+
     assert catalog.calls - after_first == 1
+
+
+async def test_unseen_ingredients_are_searched_for_together(client, catalog):
+    """Each search takes most of a second at Kroger's end, so a first load
+    with ten new ingredients must not take eight of them."""
+    await seed(["flour", "sugar", "saffron"])
+
+    await fetch(client)
+
+    # Three searches went out before any of them was answered.
+    assert catalog.peak_in_flight == 3
 
 
 async def test_the_total_says_what_the_offers_took_off_it(client, catalog):
@@ -634,3 +687,112 @@ async def test_remembered_picks_need_a_store(client, catalog):
     await seed([], store=False)
 
     assert (await client.get("/api/pricing/matches")).status_code == 409
+
+
+# ----------------------------------------------------- list then prices ---
+
+
+async def test_the_list_itself_makes_no_kroger_call(client, catalog):
+    """The list is served from the database alone and the prices fetched
+    second, so the page never waits on Kroger to show what to buy."""
+    await seed(["flour", "sugar"])
+
+    resp = await client.get(f"/api/grocery-list?start={DAY}&end={DAY}")
+
+    assert resp.status_code == 200
+    assert catalog.calls == 0
+    assert resp.json()["pricing"] is None
+    assert all(i["price"] is None for i in resp.json()["items"])
+
+
+async def test_prices_are_keyed_to_the_lines_they_belong_to(client, catalog):
+    await seed(["flour", "sugar", "saffron"])
+
+    resp = await client.get(f"/api/grocery-list/prices?start={DAY}&end={DAY}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    by_key = {line["key"]: line for line in body["lines"]}
+    assert by_key["flour"]["price"]["regular"] == 2.59
+    assert by_key["saffron"]["price"] is None
+    assert by_key["saffron"]["issue"] == "no_match"
+    assert body["pricing"]["priced"] == 2
+
+
+async def test_prices_are_empty_rather_than_an_error_without_a_store(client, catalog):
+    await seed(["flour"], store=False)
+
+    resp = await client.get(f"/api/grocery-list/prices?start={DAY}&end={DAY}")
+
+    assert resp.status_code == 200
+    assert resp.json()["pricing"] is None
+    assert resp.json()["lines"][0]["price"] is None
+
+
+# ------------------------------------------------------------- issues ---
+
+
+async def test_a_line_says_why_its_number_is_doubtful(client, catalog):
+    """One vocabulary for both halves: the recipe side needs no store and
+    rides on the list; the product side rides on the prices."""
+    await seed([])
+    salsa = await make_recipe(
+        "Salsa",
+        [
+            ("Optional: 1 diced ripe avocado", None, None),
+            ("lettuce", None, None),
+            ("saffron", 1, "g"),
+            ("flour", 6, "packet"),
+        ],
+    )
+    async with session_factory() as session:
+        session.add(MealPlanEntry(plan_date=DAY, meal="dinner", recipe_id=salsa))
+        await session.commit()
+
+    listed = (await client.get(f"/api/grocery-list?start={DAY}&end={DAY}")).json()
+    by_key = {i["key"]: i["issue"] for i in listed["items"]}
+    assert by_key["1-avocado"] == "amount_in_name"
+    assert by_key["lettuce"] == "no_amount"
+    assert by_key["saffron"] is None
+    assert by_key["flour"] is None
+
+    body = await fetch(client)
+    by_key = {i["key"]: i["issue"] for i in body["items"]}
+    assert by_key["1-avocado"] == "amount_in_name"
+    assert by_key["saffron"] == "no_match"
+    # Six packets against a five pound bag cannot be related.
+    assert by_key["flour"] == "unsized"
+
+
+async def test_a_line_left_unpriced_on_purpose_is_not_a_problem(client, catalog):
+    await seed(["saffron"])
+    async with session_factory() as session:
+        await matching.confirm(session, "saffron", LOCATION, None)
+
+    body = await fetch(client)
+
+    assert body["items"][0]["issue"] is None
+
+
+async def test_recipes_needing_a_look_are_listed_with_their_rows(client, catalog):
+    """The same checks grouped by recipe, plus what the store could not match
+    - from picks already made, never a search."""
+    await seed(["flour", "saffron"])
+    await fetch(client)
+    salsa = await make_recipe(
+        "Salsa", [("Optional: 1 diced ripe avocado", None, None), ("flour", 1, "cup")]
+    )
+    await make_recipe("Bread", [("flour", 2, "cup")])
+    calls_before = catalog.calls
+
+    resp = await client.get("/api/recipes/attention")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [r["recipe"]["title"] for r in body] == ["Salsa", "Test bake"]
+    assert body[0]["recipe"]["id"] == salsa
+    assert [(i["name"], i["issue"]) for i in body[0]["issues"]] == [
+        ("Optional: 1 diced ripe avocado", "amount_in_name")
+    ]
+    assert [(i["name"], i["issue"]) for i in body[1]["issues"]] == [("saffron", "no_match")]
+    assert catalog.calls == calls_before

@@ -2019,6 +2019,43 @@ body.has-install-hint .page {
 
 .unmatched .pick-tag { margin-left: var(--space-6); }
 
+/* Why a number is doubtful, in the price column, on a recipe row, or in the
+   "needs a look" fold. One look everywhere, so the same reason reads the same
+   wherever it is met. Amber rather than red: it is a thing to check, not a
+   failure. */
+.issue-tag {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--accent-ink);
+  white-space: normal;
+  text-align: right;
+}
+
+.ingredient-list .issue-tag,
+.attention-items .issue-tag {
+  margin-left: var(--space-8);
+  white-space: nowrap;
+}
+
+/* The row itself carries the tag when there is no price column to. */
+.grocery-item > .issue-tag { margin-top: var(--space-4); text-align: left; }
+
+/* The fix, above the products, when the recipe row is what is wrong. */
+.alternative.fix {
+  text-decoration: none;
+  color: var(--accent-ink);
+  font-weight: var(--weight-semibold);
+}
+
+.cart-lines .why { color: var(--accent-ink); }
+
+.attention-items li {
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.attention-items a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); }
+
 /* Kroger says the shelf is empty today. Muted rather than alarming: the
    product is still the right one, it just cannot be ordered this morning. */
 .stock-tag {
@@ -2781,6 +2818,10 @@ body.has-install-hint .page {
   .cart-sent-lines li { flex-wrap: wrap; }
 
   .cart-sent-lines .product { flex: 1 0 100%; text-align: left; }
+
+  /* The toggle drops to its own row under the heading rather than squeezing
+     "To buy" into three lines beside it. */
+  .grocery-section h2 { flex-wrap: wrap; }
 
   .order-toggle { margin-left: 0; flex: 0 0 100%; }
 

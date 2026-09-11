@@ -21,11 +21,37 @@ export interface PricingStatus {
   store: Store | null;
 }
 
+/**
+ * Why a line's number is doubtful, when it is. One vocabulary for both halves
+ * of the arithmetic: the recipe side (amount in the name, no amount, a row
+ * that is not an ingredient) and the product side (nothing matched, the
+ * amount cannot be sized against the package, the shelf is empty today).
+ * Ordered most serious first; a line shows only the first that applies.
+ */
+export type LineIssue =
+  | "amount_in_name"
+  | "no_amount"
+  | "check_line"
+  | "no_match"
+  | "unsized"
+  | "out_of_stock";
+
+/** The recipe-side issues: the fix is on the recipe page, not the shop. */
+export const RECIPE_ISSUES: ReadonlySet<LineIssue> = new Set<LineIssue>([
+  "amount_in_name",
+  "no_amount",
+  "check_line",
+]);
+
 export interface Ingredient {
   id?: number;
   name: string;
   quantity: number | null;
   unit: string | null;
+  /** The line as imported, kept so a better parser can rerun over it. */
+  source_line?: string | null;
+  /** Set by the server on rows it reads back. */
+  issue?: LineIssue | null;
 }
 
 export interface RecipeSummary {
@@ -257,6 +283,18 @@ export interface PlanCost {
   grocery_total: number | null;
 }
 
+export interface IngredientIssue {
+  ingredient_id: number;
+  name: string;
+  issue: LineIssue;
+}
+
+/** A recipe with ingredient rows that will price or shop wrongly. */
+export interface RecipeAttention {
+  recipe: RecipeSummary;
+  issues: IngredientIssue[];
+}
+
 /** One ingredient's remembered product at the chosen store. */
 export interface RememberedPick {
   key: string;
@@ -284,6 +322,11 @@ export interface GroceryItem {
   status: GroceryStatus;
   from_pantry: boolean;
   pantry_item_id: number | null;
+  /**
+   * Why the number is doubtful. The list carries the recipe-side reasons,
+   * which need no store; the prices response adds the product-side ones.
+   */
+  issue: LineIssue | null;
   /** Absent when pricing is off, or when nothing confident matched this line. */
   price: ItemPrice | null;
   /**
@@ -292,6 +335,25 @@ export interface GroceryItem {
    * is what lets the page say so.
    */
   hand_picked: boolean;
+}
+
+/** What the store says about one grocery line, keyed to the list. */
+export interface LinePricing {
+  key: string;
+  price: ItemPrice | null;
+  hand_picked: boolean;
+  issue: LineIssue | null;
+}
+
+/**
+ * The prices for a list, fetched after the list itself.
+ *
+ * The list is served from the database alone and shown at once; this is the
+ * garnish, and the page never waits on Kroger to show what to buy.
+ */
+export interface GroceryPrices {
+  pricing: GroceryPricing | null;
+  lines: LinePricing[];
 }
 
 export interface GroceryList {
@@ -351,6 +413,8 @@ export interface CartLine {
    * be trusted.
    */
   amounts: string[];
+  /** Why the count is one by default rather than worked out, when it is. */
+  issue: LineIssue | null;
 }
 
 /**
@@ -532,6 +596,9 @@ export const api = {
 
   groceryList: (start: string, end: string) =>
     request<GroceryList>(`/api/grocery-list?start=${start}&end=${end}`),
+  /** The prices for the same list, fetched after it. Empty when pricing is off. */
+  groceryPrices: (start: string, end: string) =>
+    request<GroceryPrices>(`/api/grocery-list/prices?start=${start}&end=${end}`),
   /** Say what a line is this trip. "to_buy" takes any mark off it. */
   markGroceryItem: (key: string, status: GroceryStatus) =>
     request<void>("/api/grocery-list/mark", {
@@ -544,6 +611,8 @@ export const api = {
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
   /** Reasons to cook something this week. Answered from picks already made, never a search. */
   suggestions: () => request<Suggestions>("/api/recipes/suggestions"),
+  /** Recipes with ingredient rows that will price or shop wrongly, most first. */
+  recipesAttention: () => request<RecipeAttention[]>("/api/recipes/attention"),
   /** What a recipe costs to cook. Null when there is nothing to price it with. */
   recipeCost: (id: number) => request<RecipeCost | null>(`/api/recipes/${id}/cost`),
   /** What the meals in a range cost to cook, day by day. Null when pricing is off. */

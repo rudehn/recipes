@@ -34,16 +34,31 @@ class PricingStatus(BaseModel):
     store: StoreOut | None = None
 
 
+# Why a line's number is what it is, when the reason is a problem. One
+# vocabulary for both halves of the arithmetic: the recipe side
+# (`services.lint`) and the product side (`kroger.pricing`). Ordered most
+# serious first; a line shows only the first that applies.
+LineIssue = Literal[
+    "amount_in_name", "no_amount", "check_line", "no_match", "unsized", "out_of_stock"
+]
+
+
 class IngredientIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     quantity: float | None = Field(default=None, ge=0)
     unit: str | None = Field(default=None, max_length=50)
+    # The line as the recipe's page wrote it, kept so a better parser can be
+    # run over it later without importing the recipe again. Absent for rows
+    # typed by hand.
+    source_line: str | None = Field(default=None, max_length=300)
 
 
 class IngredientOut(IngredientIn):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # The recipe-side problem with this row, if any. See services.lint.
+    issue: LineIssue | None = None
 
 
 class RecipeIn(BaseModel):
@@ -297,6 +312,19 @@ class PlanCost(BaseModel):
     grocery_total: float | None = None
 
 
+class IngredientIssue(BaseModel):
+    ingredient_id: int
+    name: str
+    issue: LineIssue
+
+
+class RecipeAttention(BaseModel):
+    """A recipe with ingredient rows that will price or shop wrongly."""
+
+    recipe: RecipeSummary
+    issues: list[IngredientIssue]
+
+
 class CheapRecipe(BaseModel):
     """A recipe that costs less per serving than the median across the box."""
 
@@ -375,6 +403,10 @@ class GroceryItem(BaseModel):
     # True when this line comes from the pantry restock list, not a recipe.
     from_pantry: bool = False
     pantry_item_id: int | None = None
+    # Why the number is doubtful, when it is. The list endpoint fills in the
+    # recipe-side reasons, which need no store; the prices endpoint adds the
+    # product-side ones. The most serious one is kept.
+    issue: LineIssue | None = None
     # Absent when pricing is off, or when nothing confident matched.
     price: ItemPrice | None = None
     # Whether a person chose the product for this line - or chose that it
@@ -394,6 +426,28 @@ class GroceryList(BaseModel):
     pantry_restock: list[GroceryItem]
     # Absent whenever prices could not be attached, for any reason.
     pricing: GroceryPricing | None = None
+
+
+class LinePricing(BaseModel):
+    """What the store says about one grocery line, keyed to the list."""
+
+    key: str
+    price: ItemPrice | None = None
+    hand_picked: bool = False
+    issue: LineIssue | None = None
+
+
+class GroceryPrices(BaseModel):
+    """The prices for a list, served after the list itself.
+
+    The list is the product and is served at once, from the database alone.
+    This is the garnish, fetched second, so the page never waits on Kroger
+    to show what to buy. `pricing` is absent for the same reasons it is
+    absent from a list - off, no store, unreachable, nothing matched.
+    """
+
+    pricing: GroceryPricing | None = None
+    lines: list[LinePricing]
 
 
 class GroceryMark(BaseModel):
@@ -453,6 +507,10 @@ class CartLine(BaseModel):
     quantity: int
     # The week's requirement as the grocery list shows it, one entry per unit.
     amounts: list[str] = []
+    # Why the count is what it is, when it could not be worked out: the
+    # amount could not be related to the package, so it is one, and the
+    # stepper is the shopper's to use knowingly.
+    issue: LineIssue | None = None
 
 
 # The most of one product a single send will order. There is no recipe that
