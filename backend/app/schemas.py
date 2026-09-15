@@ -266,9 +266,14 @@ class CostLine(BaseModel):
 
     ingredient_id: int
     name: str
+    # The identity a product is chosen under, so the recipe page can offer
+    # the same correction the grocery list does.
+    key: str = ""
     cost: float | None = None
     whole_package: bool = False
     product: ItemPrice | None = None
+    # Whether a person chose the product, or chose that there is none.
+    hand_picked: bool = False
 
 
 class RecipeCost(BaseModel):
@@ -303,6 +308,13 @@ class NutrientsOut(BaseModel):
     sodium_mg: float
 
 
+class RecipeRef(BaseModel):
+    """A recipe named where something reaches it."""
+
+    id: int
+    title: str
+
+
 class FoodOut(BaseModel):
     """A USDA food, described in USDA's words."""
 
@@ -333,7 +345,12 @@ class NutritionLine(BaseModel):
     # The identity a food is chosen under; see nutrition.defaults.nutrition_key.
     key: str
     measured: bool = True
-    food: FoodOut | None = None
+    # A person said this ingredient does not count. Left out of the figure
+    # like one left to taste, and named beside it the same way.
+    skipped: bool = False
+    # With its figures per 100 g, so the food picker can list the food in
+    # force first even when a search does not turn it up.
+    food: FoodChoice | None = None
     hand_picked: bool = False
     grams: float | None = None
     # For the recipe's whole amount of this ingredient, not a serving.
@@ -359,10 +376,13 @@ class RecipeNutrition(BaseModel):
 
 
 class FoodMatchSelection(BaseModel):
-    """Say which food an ingredient means, for every recipe that uses it."""
+    """Say which food an ingredient means, for every recipe that uses it.
+
+    A null `fdc_id` says it does not count at all.
+    """
 
     key: str = Field(min_length=1, max_length=300)
-    fdc_id: int
+    fdc_id: int | None
 
 
 class DayCost(BaseModel):

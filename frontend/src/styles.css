@@ -2176,6 +2176,25 @@ body.has-install-hint .page {
 
 .ingredient-list .line-cost .whole { font-size: var(--text-2xs); }
 
+/* A button, since it opens the product the line was priced as. */
+.ingredient-list button.line-cost:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+/* Nothing priced it: the accent ink of the row tags, and still the way in. */
+.ingredient-list .line-cost.unmatched {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  color: var(--accent-ink);
+}
+
+/* Words of the shopper's own, above the grocery list's alternatives. */
+.alternatives-search { padding: var(--space-10) var(--space-16); }
+
+.alternatives-search input { width: 100%; }
+
 /* Nutrition per serving, under the cost: the same kind of line, answering the
    same kind of question about the same recipe. */
 .recipe-nutrition {
@@ -2279,6 +2298,18 @@ body.has-install-hint .page {
 .modal-food .description { min-width: 0; overflow-wrap: anywhere; }
 
 .modal-food .per { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+
+/* What else a shared choice changes, said before it is made. Above the search,
+   on the search field's own edges. */
+.modal .modal-reach {
+  margin: 0;
+  padding: 0 var(--space-20) var(--space-12);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+/* Not a food or product at all: the way to say none applies. */
+.modal-food.skip { color: var(--muted); font-size: var(--text-sm); }
 
 .modal-food.chosen {
   font-weight: var(--weight-semibold);
@@ -2775,6 +2806,9 @@ body.has-install-hint .page {
   .nutrition-lines .what { grid-column: 1 / -1; }
 
   .nutrition-lines .figures { text-align: left; }
+
+  /* The price opens its product, so it needs more to hit than its text. */
+  .ingredient-list .line-cost { padding-block: var(--space-6); }
 
   /*
    * A column of full-width 4:3 photos put about one recipe on a screen, so

@@ -541,6 +541,28 @@ async def test_a_recipe_cost_is_null_without_a_store(client, catalog):
     assert await cost_of(client, recipe_id) is None
 
 
+async def test_a_recipe_cost_line_names_its_ingredient_and_who_chose_its_product(
+    client, catalog
+):
+    """So the recipe page can offer the grocery list's correction: each line
+    says which ingredient it is, and whether a person has already decided."""
+    await seed([])
+    recipe_id = await make_recipe("Paella", [("flour", 1, "cup"), ("saffron", 1, "tsp")])
+
+    by_name = {line["name"]: line for line in (await cost_of(client, recipe_id))["lines"]}
+    assert by_name["saffron"]["key"] == "saffron"
+    assert by_name["saffron"]["product"] is None
+    assert by_name["saffron"]["hand_picked"] is False
+
+    resp = await client.put(
+        "/api/pricing/match", json={"canonical_key": "saffron", "product_id": None}
+    )
+    assert resp.status_code == 204
+
+    by_name = {line["name"]: line for line in (await cost_of(client, recipe_id))["lines"]}
+    assert by_name["saffron"]["hand_picked"] is True
+
+
 # ------------------------------------------------------------ plan cost ---
 
 

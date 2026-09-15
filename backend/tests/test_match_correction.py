@@ -15,6 +15,7 @@ from app import config
 from app.db import session_factory
 from app.models import AppSettings, IngredientProductMatch
 from app.services.kroger import client as kroger
+from app.services.kroger import products
 
 LOCATION = "01400765"
 
@@ -178,3 +179,26 @@ async def test_alternatives_need_credentials(client, monkeypatch):
     resp = await client.get("/api/pricing/alternatives?key=onion")
 
     assert resp.status_code == 503
+
+
+async def test_alternatives_can_be_searched_for_in_words_of_your_own(
+    client, catalog, store, monkeypatch
+):
+    """A misspelled ingredient finds nothing under its own name. Words typed
+    instead are what is searched for, and what the results are ranked by."""
+    searched: list[str] = []
+    real_search = products.search
+
+    async def spy(term, location_id, limit):
+        searched.append(term)
+        return await real_search(term, location_id, limit)
+
+    monkeypatch.setattr(products, "search", spy)
+
+    resp = await client.get(
+        "/api/pricing/alternatives", params={"key": "paprica", "q": "yellow onion"}
+    )
+
+    assert resp.status_code == 200
+    assert searched == ["yellow onion"]
+    assert resp.json()[0]["product_id"] == "0002"

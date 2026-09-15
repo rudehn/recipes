@@ -20,6 +20,7 @@ import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, formatWhen, fromISODate, startOfWeek, toISODate } from "../dates";
 import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
+import { useDebounced } from "../useDebounced";
 import { errorMessage, useLoad } from "../useLoad";
 
 /**
@@ -1013,8 +1014,26 @@ function Alternatives({
   onPick: (productId: string | null) => void;
   onForget: () => void;
 }) {
+  // Searched for the ingredient's own name until the shopper types something
+  // else, which is the way out when that name is one the shop would never use:
+  // a misspelling, or a word only the recipe says.
+  const own = item.key.split("-").join(" ");
+  const [query, setQuery] = useState(own);
+  const search = useDebounced(query.trim());
   const { data, error, loading } = useLoad(
-    useCallback(() => api.matchAlternatives(item.key), [item.key]),
+    useCallback(
+      () => api.matchAlternatives(item.key, search && search !== own ? search : undefined),
+      [item.key, search, own],
+    ),
+  );
+  const searchBox = (
+    <div className="alternatives-search">
+      <input
+        aria-label={`Search products for ${item.name}`}
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+    </div>
   );
 
   /**
@@ -1049,6 +1068,7 @@ function Alternatives({
     return (
       <div className="alternatives" role="group" aria-label={`Products for ${item.name}`}>
         {fix}
+        {searchBox}
         <p className="alternatives-status">{loading ? "Looking…" : error}</p>
       </div>
     );
@@ -1057,6 +1077,7 @@ function Alternatives({
   return (
     <div className="alternatives" role="group" aria-label={`Products for ${item.name}`}>
       {fix}
+      {searchBox}
       {options.length === 0 && (
         <p className="alternatives-status">Nothing at this store matches that.</p>
       )}

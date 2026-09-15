@@ -80,27 +80,44 @@ def _portion(food: Food, unit: str, name: str) -> Portion | None:
     return _prefer(matching, name) if matching else None
 
 
-def _grams_per_ml(food: Food, unit: str | None, name: str, key: str, default: Default | None):
-    """What a millilitre of the food weighs, or None.
+def usda_grams_per_cup(food: Food, unit: str | None = None, name: str = "") -> float | None:
+    """What a cup of the food weighs by USDA's own kitchen portions, or None.
 
-    The food's own portion in the recipe's unit first, since USDA weighed a
-    tablespoon and a cup separately and they do not always scale; then any
-    volume it weighed; then the grocery list's density table.
+    The portion in `unit` first when one is given, since USDA weighed a
+    tablespoon and a cup separately and they do not always scale; then its
+    cup; then the largest volume it weighed, which is the most precise of what
+    is left. Portions only: the density table is not consulted here, because
+    the density table consults this.
     """
-    if default is not None and default.grams_per_cup is not None:
-        return default.grams_per_cup / _ML_PER_CUP
     volumes = [
         (p, size.base)
         for p in food.portions
         if (size := measure(1, p.unit)) is not None and size.dimension == VOLUME
     ]
-    for wanted in (unit, "cup", None):
-        candidates = [p for p, _ in volumes if wanted is None or p.unit == wanted]
+    if not volumes:
+        return None
+    for wanted in (unit, "cup"):
+        candidates = [p for p, _ in volumes if wanted is not None and p.unit == wanted]
         if candidates:
             chosen = _prefer(candidates, name)
-            return chosen.grams / next(ml for p, ml in volumes if p is chosen)
-    fallback = grams_per_cup(key)
-    return fallback / _ML_PER_CUP if fallback is not None else None
+            return chosen.grams / next(ml for p, ml in volumes if p is chosen) * _ML_PER_CUP
+    largest = max(ml for _, ml in volumes)
+    chosen = _prefer([p for p, ml in volumes if ml == largest], name)
+    return chosen.grams / largest * _ML_PER_CUP
+
+
+def _grams_per_ml(food: Food, unit: str | None, name: str, key: str, default: Default | None):
+    """What a millilitre of the food weighs, or None.
+
+    A default's own figure first, then USDA's portions for the food, then the
+    grocery list's density table.
+    """
+    if default is not None and default.grams_per_cup is not None:
+        return default.grams_per_cup / _ML_PER_CUP
+    per_cup = usda_grams_per_cup(food, unit, name)
+    if per_cup is None:
+        per_cup = grams_per_cup(key)
+    return per_cup / _ML_PER_CUP if per_cup is not None else None
 
 
 def _grams_per_piece(food: Food, name: str, key: str, default: Default | None) -> float | None:

@@ -24,6 +24,7 @@ from ..schemas import (
     StoreSelection,
 )
 from ..services import settings as settings_service
+from ..services.canonical import canonical_key
 from ..services.kroger import client as kroger
 from ..services.kroger import locations, matching, pricing, products
 
@@ -99,6 +100,7 @@ async def _require_store(session: AsyncSession) -> StoreOut:
 @router.get("/alternatives", response_model=list[ItemPrice])
 async def alternatives(
     key: str = Query(min_length=1, max_length=300),
+    q: str | None = Query(default=None, max_length=100),
     session: AsyncSession = Depends(get_session),
 ):
     """Other products that could answer an ingredient, best fit first.
@@ -106,13 +108,22 @@ async def alternatives(
     Nothing is filtered on how well it matches. Someone opening this has
     already been told the automatic pick, so the one they want is quite likely
     to be one the matcher rejected.
+
+    `q` searches for words of the person's own instead of the ingredient's
+    name, for a name the shop would never use: a misspelling ("paprica"), or
+    a word only the recipe's author says. The results are ranked against what
+    was searched for, since that is what the person is looking for.
     """
     store = await _require_store(session)
+    term = (q or "").strip()
+    rank_by = canonical_key(term) if term else key
     try:
-        found = await products.search(key.replace("-", " "), store.location_id, ALTERNATIVES)
+        found = await products.search(
+            term or key.replace("-", " "), store.location_id, ALTERNATIVES
+        )
     except kroger.KrogerError:
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
-    priced = [p for p in matching.ranked(found, key) if p.regular is not None]
+    priced = [p for p in matching.ranked(found, rank_by) if p.regular is not None]
     return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
 
 

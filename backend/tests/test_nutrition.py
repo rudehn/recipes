@@ -11,6 +11,8 @@ Expected figures are USDA's SR Legacy values per 100 g, worked by hand.
 
 import pytest
 
+from app.services.kroger.density import grams_per_cup
+from app.services.kroger.units import measure, parse_size, share_of_package
 from app.services.nutrition import foods
 from app.services.nutrition.defaults import DEFAULTS, default_for, nutrition_key
 from app.services.nutrition.weights import grams
@@ -141,6 +143,31 @@ def test_every_default_is_a_food_the_tables_hold(key, default):
         )
 
 
+# --------------------------------------------- pricing borrows the weights ---
+
+
+def test_pricing_borrows_usda_weights_for_what_its_table_does_not_list():
+    """A tablespoon of paprika against a 2.4 oz jar. The density table lists
+    no spices, so the recipe was costed the whole jar; USDA weighed a
+    tablespoon of paprika at 6.8 g, which is a tenth of it."""
+    assert grams_per_cup("paprika") == pytest.approx(108.8, abs=0.1)
+    share = share_of_package(2.49, parse_size("2.4 oz"), "UNIT", measure(1, "tbsp"), "paprika")
+    assert share == pytest.approx(0.25, abs=0.005)
+
+
+def test_the_density_table_still_comes_first():
+    # USDA weighs a cup of corn at 145 g; the table's figure was chosen for
+    # corn as recipes measure it, and it stands.
+    assert grams_per_cup("corn") == 165.0
+    # A more specific name in the table beats a general one: panko
+    # breadcrumbs weigh as panko, not as breadcrumbs.
+    assert grams_per_cup("panko-breadcrumb") == 60.0
+
+
+def test_a_name_with_no_default_borrows_no_weight():
+    assert grams_per_cup("paprica") is None
+
+
 # ---------------------------------------------------------------- search ---
 
 
@@ -198,6 +225,7 @@ async def test_a_recipe_is_counted_per_serving(client):
     flour, eggs, salt = body["lines"]
     assert flour["grams"] == 125.0
     assert flour["food"]["fdc_id"] == FLOUR
+    assert flour["food"]["per_100g"]["kcal"] == 364.0
     assert flour["nutrients"]["kcal"] == 455.0
     assert eggs["grams"] == 100.0
     assert eggs["food"]["fdc_id"] == EGG
@@ -285,3 +313,48 @@ async def test_the_food_search_answers_with_what_100_g_holds(client):
     first = resp.json()[0]
     assert first["description"] == "Garlic, raw"
     assert first["per_100g"]["kcal"] == 149.0
+
+
+async def test_an_ingredient_can_be_left_out_of_the_count(client):
+    """A garnish no food list has - a misspelled one, here - stands in the way
+    of the whole figure until a person says it does not count."""
+    recipe_id = await make(client, [*BAKE, {"name": "paprica", "quantity": 1, "unit": "tbsp"}])
+    assert (await nutrition(client, recipe_id))["lines"][-1]["issue"] == "no_food"
+
+    resp = await client.put("/api/nutrition/match", json={"key": "paprica", "fdc_id": None})
+    assert resp.status_code == 204
+
+    body = await nutrition(client, recipe_id)
+    left_out = body["lines"][-1]
+    assert left_out["skipped"] is True
+    assert left_out["hand_picked"] is True
+    assert left_out["issue"] is None
+    assert body["counted"] == body["total_lines"] == 2
+    assert body["per_serving"]["kcal"] == 149.5
+
+    resp = await client.delete("/api/nutrition/match", params={"key": "paprica"})
+    assert resp.status_code == 204
+
+    body = await nutrition(client, recipe_id)
+    assert body["lines"][-1]["skipped"] is False
+    assert body["per_serving"] is None
+
+
+async def test_the_recipes_a_choice_reaches_are_named(client):
+    """By the same key a choice is stored under, so "Almond flour, sifted" is
+    the same ingredient and plain flour is not."""
+    for title, name in [
+        ("Macarons", "almond flour"),
+        ("Almond cake", "Almond flour, sifted"),
+        ("Bread", "flour"),
+    ]:
+        resp = await client.post(
+            "/api/recipes",
+            json={"title": title, "ingredients": [{"name": name, "quantity": 1, "unit": "cup"}]},
+        )
+        assert resp.status_code == 201
+
+    resp = await client.get("/api/nutrition/uses", params={"key": "almond-flour"})
+
+    assert resp.status_code == 200
+    assert [r["title"] for r in resp.json()] == ["Almond cake", "Macarons"]

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api, type FoodChoice, type LineIssue, type NutritionLine } from "../api";
+import { api, type CostLine, type FoodChoice, type LineIssue, type NutritionLine } from "../api";
 import { FoodPickerModal, NutritionBreakdown, NutritionStatus } from "../components/Nutrition";
+import { ProductPickerModal } from "../components/ProductPicker";
 import { RecipePhoto } from "../components/RecipeBits";
 import {
   Banner,
@@ -41,7 +42,9 @@ export default function RecipeDetailPage() {
   // Absent for a household without pricing, and absent again if Kroger is
   // unreachable: a recipe page without a price is the ordinary page, so a
   // failure here is not reported.
-  const { data: cost } = useLoad(useCallback(() => api.recipeCost(Number(id)), [id]));
+  const { data: cost, reload: reloadCost } = useLoad(
+    useCallback(() => api.recipeCost(Number(id)), [id]),
+  );
   // Bundled on the server, so always answered; a failure here is the server's,
   // and the recipe is still worth showing without it.
   const { data: nutrition, reload: reloadNutrition } = useLoad(
@@ -49,6 +52,7 @@ export default function RecipeDetailPage() {
   );
   const [explaining, setExplaining] = useState(false);
   const [choosingFor, setChoosingFor] = useState<NutritionLine | null>(null);
+  const [pricingFor, setPricingFor] = useState<CostLine | null>(null);
   const nutritionSection = useRef<HTMLDetailsElement | null>(null);
   const action = useAction();
   // Cook-time scaling of the displayed ingredient amounts.
@@ -106,7 +110,7 @@ export default function RecipeDetailPage() {
 
   const costFactor =
     scaledServings != null && recipe?.servings ? scaledServings / recipe.servings : 1;
-  const lineCost = new Map((cost?.lines ?? []).filter((l) => l.cost !== null).map((l) => [l.ingredient_id, l]));
+  const costLines = new Map((cost?.lines ?? []).map((l) => [l.ingredient_id, l]));
 
   const steps = recipe.instructions
     .split("\n")
@@ -126,10 +130,23 @@ export default function RecipeDetailPage() {
     nutritionSection.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  async function chooseFood(food: FoodChoice) {
+  async function chooseFood(food: FoodChoice | null) {
     const line = choosingFor!;
     setChoosingFor(null);
-    if (await action.run(() => api.chooseFood(line.key, food.fdc_id))) reloadNutrition();
+    if (await action.run(() => api.chooseFood(line.key, food?.fdc_id ?? null))) reloadNutrition();
+  }
+
+  /** Pin a product, or say the ingredient is not to be priced. The grocery list's correction. */
+  async function pickProduct(productId: string | null) {
+    const line = pricingFor!;
+    setPricingFor(null);
+    if (await action.run(() => api.setMatch(line.key, productId))) reloadCost();
+  }
+
+  async function forgetProduct() {
+    const line = pricingFor!;
+    setPricingFor(null);
+    if (await action.run(() => api.forgetMatch(line.key))) reloadCost();
   }
 
   async function forgetFood(line: NutritionLine) {
@@ -237,6 +254,7 @@ export default function RecipeDetailPage() {
                   : 1;
               const quantity = ing.quantity != null ? ing.quantity * factor : null;
               const marked = highlighted.has(String(ing.id));
+              const costLine = costLines.get(ing.id!);
               return (
                 <li
                   key={ing.id}
@@ -259,23 +277,38 @@ export default function RecipeDetailPage() {
                       <span className="issue-tag">{ROW_ISSUES[ing.issue]}</span>
                     )}
                   </span>
-                  {lineCost.get(ing.id!) && (
-                    <span
+                  {costLine && costLine.cost !== null && (
+                    <button
+                      type="button"
                       className="line-cost"
                       // A whole package rather than the share used, because
                       // the amount could not be related to the package. Said
                       // in the row rather than folded silently into the total.
                       title={
-                        lineCost.get(ing.id!)!.whole_package
+                        costLine.whole_package
                           ? "Priced as a whole package: the amount could not be related to it"
                           : undefined
                       }
+                      aria-label={`${ing.name}: ${money(costLine.cost * factor)}${
+                        costLine.product ? `, ${costLine.product.description}` : ""
+                      }. Choose a different product`}
+                      onClick={() => setPricingFor(costLine)}
                     >
-                      {money(lineCost.get(ing.id!)!.cost! * factor)}
-                      {lineCost.get(ing.id!)!.whole_package && (
-                        <span className="whole"> whole</span>
-                      )}
-                    </span>
+                      {money(costLine.cost * factor)}
+                      {costLine.whole_package && <span className="whole"> whole</span>}
+                    </button>
+                  )}
+                  {costLine && costLine.cost === null && ing.quantity != null && !ing.issue && (
+                    // Nothing priced it. Without this the row would say
+                    // nothing at all, and offer nothing to fix it with.
+                    <button
+                      type="button"
+                      className="line-cost unmatched"
+                      aria-label={`${ing.name}: not priced. Choose a product`}
+                      onClick={() => setPricingFor(costLine)}
+                    >
+                      {costLine.hand_picked ? "not priced" : costLine.product ? "no price" : "no match"}
+                    </button>
                   )}
                 </li>
               );
@@ -309,9 +342,19 @@ export default function RecipeDetailPage() {
         />
       )}
 
+      {pricingFor && (
+        <ProductPickerModal
+          line={pricingFor}
+          onPick={pickProduct}
+          onForget={forgetProduct}
+          onClose={() => setPricingFor(null)}
+        />
+      )}
+
       {choosingFor && (
         <FoodPickerModal
           line={choosingFor}
+          recipeId={recipe.id}
           onPick={chooseFood}
           onClose={() => setChoosingFor(null)}
         />

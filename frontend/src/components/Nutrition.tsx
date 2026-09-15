@@ -1,4 +1,4 @@
-import { useCallback, useState, type Ref } from "react";
+import { useCallback, useMemo, useState, type Ref } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -27,6 +27,9 @@ const RECIPE_SIDE: ReadonlySet<NutritionIssue> = new Set<NutritionIssue>([
   "no_amount",
   "check_line",
 ]);
+
+/** How many other recipes are named before the rest are counted instead. */
+const NAMED_RECIPES = 3;
 
 /** Whole numbers: a tenth of a gram of fat is precision the data does not have. */
 const whole = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -58,7 +61,8 @@ export function NutritionStatus({
   if (nutrition.total_lines === 0) return null;
 
   const figure = nutrition.per_serving;
-  const toTaste = unmeasured(nutrition).length;
+  // Left to taste, or left out by a person: either way not in the figure.
+  const notCounted = nutrition.lines.filter((line) => !line.measured || line.skipped).length;
   if (figure) {
     return (
       <p className="recipe-nutrition">
@@ -67,8 +71,8 @@ export function NutritionStatus({
           {whole(figure.protein_g)} g protein · {whole(figure.fat_g)} g fat ·{" "}
           {whole(figure.carbs_g)} g carbs · {whole(figure.sodium_mg)} mg sodium
         </span>
-        {toTaste > 0 && (
-          <span className="coverage">not counting {plural(toTaste, "ingredient")} to taste</span>
+        {notCounted > 0 && (
+          <span className="coverage">not counting {plural(notCounted, "ingredient")}</span>
         )}
         <button type="button" className="explain" onClick={onExplain}>
           How it&rsquo;s counted
@@ -140,8 +144,9 @@ export function NutritionBreakdown({
       </summary>
       <p className="section-note">
         Each ingredient is weighed and counted as a USDA food. A food chosen here holds for every
-        recipe that uses the ingredient. An amount that can&rsquo;t be weighed - a can, a bunch - is
-        fixed by editing the recipe to give a weight.
+        recipe that uses the ingredient, and one that doesn&rsquo;t matter to the figure, like a
+        garnish, can be left out. An amount that can&rsquo;t be weighed - a can, a bunch - is fixed by
+        editing the recipe to give a weight.
       </p>
       {!nutrition.servings && (
         <p className="section-note">
@@ -157,19 +162,23 @@ export function NutritionBreakdown({
               <span className="what">
                 <span className="name">{line.name}</span>
                 <span className="food">
-                  {line.food ? line.food.description : "No food chosen"}
+                  {line.skipped ? "Not counted" : line.food ? line.food.description : "No food chosen"}
                   {line.hand_picked && <span className="chosen-by"> · your choice</span>}
                 </span>
               </span>
               <span className="figures">
-                {line.nutrients && line.grams !== null ? (
+                {line.skipped ? null : line.nutrients && line.grams !== null ? (
                   `${whole(line.grams)} g · ${whole(line.nutrients.kcal)} kcal`
                 ) : (
                   <span className="issue-tag">{NUTRITION_ISSUES[line.issue ?? "no_food"]}</span>
                 )}
               </span>
               <span className="fix">
-                {recipeSide ? (
+                {line.skipped ? (
+                  <Button size="small" onClick={() => onForget(line)}>
+                    Count it
+                  </Button>
+                ) : recipeSide ? (
                   <LinkButton size="small" to={`/recipes/${recipeId}/edit`}>
                     Edit line
                   </LinkButton>
@@ -178,7 +187,7 @@ export function NutritionBreakdown({
                     {line.food ? "Change food" : "Choose food"}
                   </Button>
                 )}
-                {line.hand_picked && (
+                {line.hand_picked && !line.skipped && (
                   <Button size="small" onClick={() => onForget(line)}>
                     Use default
                   </Button>
@@ -206,11 +215,15 @@ export function NutritionBreakdown({
  */
 export function FoodPickerModal({
   line,
+  recipeId,
   onPick,
   onClose,
 }: {
   line: NutritionLine;
-  onPick: (food: FoodChoice) => void;
+  /** The recipe the picker was opened from, which is not an "other" recipe. */
+  recipeId: number;
+  /** Null: the ingredient does not count. */
+  onPick: (food: FoodChoice | null) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState(() => line.key.split("-").join(" "));
@@ -219,9 +232,35 @@ export function FoodPickerModal({
     useCallback(() => (search ? api.searchFoods(search) : Promise.resolve([])), [search]),
   );
 
-  const found = data ?? [];
+  // A choice holds for every recipe with this ingredient, so the picker says
+  // which ones before it is made. Quiet if it cannot be asked: the choice is
+  // no less valid for the list being missing.
+  const { data: uses } = useLoad(
+    useCallback(() => api.nutritionUses(line.key), [line.key]),
+  );
+  const others = (uses ?? []).filter((recipe) => recipe.id !== recipeId);
+  const named = others.slice(0, NAMED_RECIPES).map((recipe) => recipe.title);
+  const unnamed = others.length - named.length;
+
+  // The food in force comes first, whatever the search returns: it is what
+  // the reader is deciding whether to keep, and a search ranks the plainest
+  // descriptions first, which can bury it several rows down.
+  const found = useMemo(() => {
+    const current = line.food;
+    const rest = (data ?? []).filter((food) => food.fdc_id !== current?.fdc_id);
+    return current ? [current, ...rest] : rest;
+  }, [data, line.food]);
   return (
     <Modal title={`Food for “${line.name}”`} onClose={onClose}>
+      {uses && (
+        <p className="modal-reach">
+          {others.length === 0
+            ? `No other recipe uses “${line.name}” yet. A choice here holds for any that do later.`
+            : `Also changes ${plural(others.length, "other recipe")}: ${named.join(", ")}${
+                unnamed > 0 ? ` and ${unnamed} more` : ""
+              }.`}
+        </p>
+      )}
       <div className="modal-search">
         <input
           autoFocus
@@ -252,6 +291,12 @@ export function FoodPickerModal({
             {error ?? (loading ? "Looking…" : search ? "No foods match that." : "Type to search.")}
           </p>
         )}
+        {/* For what does not matter to the figure - a garnish, a sprinkle -
+            and for what no food list has, which a misspelling makes of
+            anything. */}
+        <button type="button" className="modal-food skip" onClick={() => onPick(null)}>
+          Don&rsquo;t count this ingredient
+        </button>
       </div>
     </Modal>
   );

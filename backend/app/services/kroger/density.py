@@ -12,11 +12,15 @@ between 120 g and 125 g of flour never changes an answer.
 
 Lookup walks from the most specific name to the least, so "all-purpose-flour"
 finds its own entry, "unbleached-bread-flour" falls back to "bread-flour" and
-then to "flour", and an ingredient nobody thought of returns None rather than
-a guess. Returning None is a real answer: without a density the amount simply
-is not comparable to a package, and the caller falls back to ranking that
-does not need one.
+then to "flour". An ingredient the table does not list borrows USDA's kitchen
+weights instead, through the food nutrition counts it as, so a tablespoon of
+paprika is 6.8 g without a spice section here. An ingredient neither knows
+returns None rather than a guess. Returning None is a real answer: without a
+density the amount simply is not comparable to a package, and the caller falls
+back to ranking that does not need one.
 """
+
+from functools import cache
 
 # Grams per US cup.
 GRAMS_PER_CUP: dict[str, float] = {
@@ -30,6 +34,9 @@ GRAMS_PER_CUP: dict[str, float] = {
     "cornstarch": 128.0,
     "breadcrumb": 108.0,
     "panko": 60.0,
+    # Named for itself, since the walk would otherwise reach "breadcrumb" -
+    # which weighs nearly twice as much a cup - before it reached "panko".
+    "panko-breadcrumb": 60.0,
     "oat": 90.0,
     "rolled-oat": 90.0,
     # Sugars and syrups
@@ -203,12 +210,37 @@ def grams_per_cup(canonical_key: str) -> float | None:
     Walks from the whole name down to its last word, so a specific entry wins
     over a general one and an unlisted variety still finds its family:
     "unbleached-bread-flour" tries itself, then "bread-flour", then "flour".
+    The table comes first; USDA's portions answer only what it does not list.
     """
     for name in _walk(canonical_key):
         found = GRAMS_PER_CUP.get(name)
         if found is not None:
             return found
-    return None
+    return _usda_grams_per_cup(canonical_key)
+
+
+@cache
+def _usda_grams_per_cup(canonical_key: str) -> float | None:
+    """A cup's weight from USDA, for the food nutrition would count this as.
+
+    Only through a hand-curated default, never a hand pick: this is asked
+    without a database, and a default is the same answer for every caller.
+    So a name with no default - a misspelling, say - borrows nothing.
+
+    Imported here rather than at the top of the module, because nutrition's
+    own weighing falls back to this table and the imports would go round.
+    """
+    from ..nutrition import foods
+    from ..nutrition.defaults import default_for
+    from ..nutrition.weights import usda_grams_per_cup
+
+    default = default_for(canonical_key)
+    if default is None:
+        return None
+    if default.grams_per_cup is not None:
+        return default.grams_per_cup
+    food = foods.food(default.fdc_id)
+    return usda_grams_per_cup(food) if food is not None else None
 
 
 def sold_by_the_piece(canonical_key: str) -> bool:

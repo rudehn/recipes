@@ -123,7 +123,7 @@ def _cost_recipe(
     for ing in recipe.ingredients:
         key = canonical_key(ing.name)
         product = found.get(key)
-        line = CostLine(ingredient_id=ing.id, name=ing.name)
+        line = CostLine(ingredient_id=ing.id, name=ing.name, key=key)
         if product is not None:
             line.product = pricing.as_item_price(product)
             quantity = ing.quantity * factor if ing.quantity is not None else None
@@ -149,6 +149,13 @@ async def recipe_cost(session: AsyncSession, recipe: Recipe) -> RecipeCost | Non
         return None
 
     lines, total, priced = _cost_recipe(recipe, found)
+    # Already decided by the lookup above, so this reads the rows it wrote and
+    # searches for nothing.
+    decided = await matching.stored_picks(
+        session, sorted({line.key for line in lines if line.key}), store.location_id
+    )
+    for line in lines:
+        line.hand_picked = line.key in decided and decided[line.key].hand_picked
     return RecipeCost(
         store=StoreOut.model_validate(store),
         total=to_cents(total),

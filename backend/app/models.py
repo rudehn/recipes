@@ -228,7 +228,9 @@ class IngredientFoodMatch(Base):
 
     key: Mapped[str] = mapped_column(String(300), primary_key=True)
     # USDA FoodData Central's id, as in `services/nutrition/usda/foods.csv`.
-    fdc_id: Mapped[int] = mapped_column(Integer)
+    # None is a person saying the ingredient does not count - a garnish, a
+    # pinch of something - which is a real answer, not a missing one.
+    fdc_id: Mapped[int | None] = mapped_column(Integer)
     chosen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )

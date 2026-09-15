@@ -23,6 +23,7 @@ function line(overrides: Partial<NutritionLine>): NutritionLine {
     name: "",
     key: "",
     measured: true,
+    skipped: false,
     food: null,
     hand_picked: false,
     grams: null,
@@ -40,6 +41,7 @@ const FLOUR = line({
     fdc_id: 168894,
     description: "Wheat flour, white, all-purpose, enriched, bleached",
     category: "Cereal Grains and Pasta",
+    per_100g: { kcal: 364, protein_g: 10.3, fat_g: 1, carbs_g: 76.3, sodium_mg: 2 },
   },
   grams: 125,
   nutrients: { kcal: 455, protein_g: 12.9, fat_g: 1.2, carbs_g: 95.4, sodium_mg: 2.5 },
@@ -102,7 +104,7 @@ describe("RecipeDetailPage nutrition", () => {
     expect(await screen.findByText("321 kcal a serving")).toBeInTheDocument();
     expect(screen.getByText("11 g protein · 18 g fat · 32 g carbs · 1 mg sodium")).toBeInTheDocument();
     // Salt to taste is not counted, and the figure says so.
-    expect(screen.getByText("not counting 1 ingredient to taste")).toBeInTheDocument();
+    expect(screen.getByText("not counting 1 ingredient")).toBeInTheDocument();
   });
 
   it("keeps a complete breakdown folded until it is asked for", async () => {
@@ -175,6 +177,120 @@ describe("RecipeDetailPage nutrition", () => {
     });
     expect(await screen.findByText("321 kcal a serving")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("names the other recipes a food choice will change before it is made", async () => {
+    const backend = withNutrition(INCOMPLETE, {
+      "GET /api/nutrition/foods": [ALMONDS],
+      "GET /api/nutrition/uses": [
+        { id: 1, title: "Almond cake" },
+        { id: 7, title: "Macarons" },
+        { id: 8, title: "Frangipane tart" },
+        { id: 9, title: "Almond biscotti" },
+        { id: 10, title: "Financiers" },
+      ],
+    });
+    const { user } = renderApp("/recipes/1");
+    await screen.findByText("Nutrition unavailable");
+
+    await user.click(within(breakdownRow("almond flour")).getByRole("button", { name: "Choose food" }));
+    const dialog = await screen.findByRole("dialog");
+
+    // This recipe is not an "other" one, and a long list is cut short.
+    expect(
+      await within(dialog).findByText(
+        "Also changes 4 other recipes: Macarons, Frangipane tart, Almond biscotti and 1 more.",
+      ),
+    ).toBeInTheDocument();
+    expect(backend.requestsTo("GET /api/nutrition/uses")[0].searchParams.get("key")).toBe(
+      "almond-flour",
+    );
+  });
+
+  it("says when no other recipe uses the ingredient yet", async () => {
+    withNutrition(INCOMPLETE, {
+      "GET /api/nutrition/foods": [],
+      "GET /api/nutrition/uses": [{ id: 1, title: "Almond cake" }],
+    });
+    const { user } = renderApp("/recipes/1");
+    await screen.findByText("Nutrition unavailable");
+
+    await user.click(within(breakdownRow("almond flour")).getByRole("button", { name: "Choose food" }));
+
+    expect(
+      await screen.findByText(
+        "No other recipe uses “almond flour” yet. A choice here holds for any that do later.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves an ingredient out when a person says it does not count", async () => {
+    // A misspelling ("paprica") is in no food list, and a sprinkle of it
+    // should not hold up the rest of the recipe.
+    let skipped = false;
+    const backend = withNutrition(
+      () =>
+        skipped
+          ? nutrition({
+              counted: 1,
+              total_lines: 1,
+              lines: [FLOUR, line({ ...UNCHOSEN, issue: null, skipped: true, hand_picked: true }), TO_TASTE],
+            })
+          : INCOMPLETE,
+      {
+        "GET /api/nutrition/foods": [],
+        "PUT /api/nutrition/match": () => {
+          skipped = true;
+        },
+        "DELETE /api/nutrition/match": undefined,
+      },
+    );
+    const { user } = renderApp("/recipes/1");
+    await screen.findByText("Nutrition unavailable");
+
+    await user.click(within(breakdownRow("almond flour")).getByRole("button", { name: "Choose food" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Don’t count this ingredient" }));
+
+    expect(backend.requestsTo("PUT /api/nutrition/match")[0].body).toEqual({
+      key: "almond-flour",
+      fdc_id: null,
+    });
+    expect(await screen.findByText("321 kcal a serving")).toBeInTheDocument();
+    // The salt to taste and the one left out.
+    expect(screen.getByText("not counting 2 ingredients")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "How it’s counted" }));
+    const row = breakdownRow("almond flour");
+    expect(within(row).getByText(/Not counted/)).toBeInTheDocument();
+    await user.click(within(row).getByRole("button", { name: "Count it" }));
+
+    expect(backend.requestsTo("DELETE /api/nutrition/match")[0].searchParams.get("key")).toBe(
+      "almond-flour",
+    );
+  });
+
+  it("lists the food in force first, whatever the search returns", async () => {
+    const BLANCHED: FoodChoice = {
+      fdc_id: 170568,
+      description: "Nuts, almonds, blanched",
+      category: "Nut and Seed Products",
+      per_100g: { kcal: 590, protein_g: 21.4, fat_g: 52.5, carbs_g: 18.7, sodium_mg: 19 },
+    };
+    // The chosen food comes back second, and must not be listed twice.
+    withNutrition(nutrition({}), { "GET /api/nutrition/foods": [BLANCHED, ALMONDS] });
+    const { user } = renderApp("/recipes/1");
+    await screen.findByText("321 kcal a serving");
+    await user.click(screen.getByRole("button", { name: "How it’s counted" }));
+
+    await user.click(within(breakdownRow("almond flour")).getByRole("button", { name: "Change food" }));
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByRole("button", { name: /Nuts, almonds, blanched/ });
+
+    const listed = [...dialog.querySelectorAll(".modal-food:not(.skip) .description")].map(
+      (el) => el.textContent,
+    );
+    expect(listed).toEqual(["Nuts, almonds", "Nuts, almonds, blanched"]);
   });
 
   it("goes back to the default food", async () => {

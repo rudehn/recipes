@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { HttpError, mockBackend } from "../test/backend";
@@ -408,6 +408,75 @@ describe("RecipeDetailPage", () => {
       const cost = rowFor("chicken thighs").querySelector(".line-cost")!;
       expect(cost.textContent).toBe("$1.29 whole");
       expect(cost).toHaveAttribute("title", expect.stringMatching(/whole package/));
+    });
+
+    it("prices an unpriced ingredient from the recipe, searching in words of your own", async () => {
+      // A name the shop would never use matches nothing under that name, so
+      // the row has to say so and offer a search for the right words.
+      const coconut = curry.ingredients[1];
+      const COCONUT_MILK = {
+        product_id: "0009",
+        description: "Kroger® Coconut Milk",
+        size: "13.5 fl oz",
+        regular: 2.29,
+        promo: null,
+        aisle: "",
+        in_stock: true,
+        estimated: null,
+      };
+      let pinned = false;
+      const backend = mockBackend({
+        "GET /api/recipes/:id/cost": () => ({
+          store: STORE,
+          total: 8.4,
+          per_serving: 2.1,
+          priced: pinned ? 2 : 1,
+          total_lines: 2,
+          lines: [
+            { ingredient_id: chicken.id, name: chicken.name, key: "chicken-thigh", cost: 8.4, whole_package: false, product: null, hand_picked: false },
+            pinned
+              ? { ingredient_id: coconut.id, name: coconut.name, key: "coconut-milk", cost: 0.85, whole_package: false, product: COCONUT_MILK, hand_picked: true }
+              : { ingredient_id: coconut.id, name: coconut.name, key: "coconut-milk", cost: null, whole_package: false, product: null, hand_picked: false },
+          ],
+        }),
+        "GET /api/recipes/:id": curry,
+        "GET /api/pricing/alternatives": [COCONUT_MILK],
+        "PUT /api/pricing/match": () => {
+          pinned = true;
+        },
+      });
+      const { user } = renderApp("/recipes/1");
+      await screen.findByText("est. $8.40");
+
+      await user.click(
+        within(rowFor("coconut milk")).getByRole("button", {
+          name: "coconut milk: not priced. Choose a product",
+        }),
+      );
+      const dialog = await screen.findByRole("dialog", { name: "Product for “coconut milk”" });
+      const field = within(dialog).getByRole("textbox", { name: "Search products" });
+      await user.clear(field);
+      await user.type(field, "canned coconut milk");
+
+      await waitFor(() =>
+        expect(
+          backend
+            .requestsTo("GET /api/pricing/alternatives")
+            .map((r) => r.searchParams.get("q")),
+        ).toContain("canned coconut milk"),
+      );
+      // The first search is the ingredient's own name, with no words of the cook's.
+      const first = backend.requestsTo("GET /api/pricing/alternatives")[0].searchParams;
+      expect(first.get("key")).toBe("coconut-milk");
+      expect(first.get("q")).toBeNull();
+
+      await user.click(within(dialog).getByRole("button", { name: /Kroger® Coconut Milk/ }));
+
+      expect(backend.requestsTo("PUT /api/pricing/match")[0].body).toEqual({
+        canonical_key: "coconut-milk",
+        product_id: "0009",
+      });
+      expect(await screen.findByText("$0.85")).toBeInTheDocument();
     });
 
     it("shows no cost at all without pricing, or when nothing priced", async () => {

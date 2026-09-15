@@ -242,9 +242,13 @@ export interface Suggestions {
 export interface CostLine {
   ingredient_id: number;
   name: string;
+  /** The identity a product is chosen under; the one the grocery list uses too. */
+  key: string;
   cost: number | null;
   whole_package: boolean;
   product: ItemPrice | null;
+  /** Whether a person chose the product, or chose that there is none. */
+  hand_picked: boolean;
 }
 
 /**
@@ -290,6 +294,12 @@ export interface Food {
   category: string;
 }
 
+/** A recipe named where something reaches it: which recipes a choice changes. */
+export interface RecipeRef {
+  id: number;
+  title: string;
+}
+
 /** A food offered to choose from, with what 100 g of it holds. */
 export interface FoodChoice extends Food {
   per_100g: Nutrients;
@@ -306,7 +316,10 @@ export interface NutritionLine {
   /** The identity a food is chosen under, shared by every recipe using it. */
   key: string;
   measured: boolean;
-  food: Food | null;
+  /** A person said this ingredient does not count. Not counted, not a fault. */
+  skipped: boolean;
+  /** With its figures per 100 g, so the picker can list it first. */
+  food: FoodChoice | null;
   hand_picked: boolean;
   grams: number | null;
   nutrients: Nutrients | null;
@@ -683,8 +696,11 @@ export const api = {
   recipeNutrition: (id: number) => request<RecipeNutrition>(`/api/recipes/${id}/nutrition`),
   searchFoods: (q: string) =>
     request<FoodChoice[]>(`/api/nutrition/foods${queryString({ q })}`),
-  /** Pin a food to an ingredient, for every recipe that uses it. */
-  chooseFood: (key: string, fdc_id: number) =>
+  /** Every recipe a food choice for this ingredient reaches, by title. */
+  nutritionUses: (key: string) =>
+    request<RecipeRef[]>(`/api/nutrition/uses${queryString({ key })}`),
+  /** Pin a food to an ingredient, for every recipe that uses it. Null: it does not count. */
+  chooseFood: (key: string, fdc_id: number | null) =>
     request<void>("/api/nutrition/match", {
       method: "PUT",
       body: JSON.stringify({ key, fdc_id }),
@@ -697,8 +713,9 @@ export const api = {
     request<PlanCost | null>(`/api/meal-plan/cost${queryString({ start, end })}`),
   /** Every ingredient the chosen store has a remembered answer for. */
   rememberedPicks: () => request<RememberedPick[]>("/api/pricing/matches"),
-  matchAlternatives: (key: string) =>
-    request<ItemPrice[]>(`/api/pricing/alternatives?key=${encodeURIComponent(key)}`),
+  /** `q` searches words of the person's own instead of the ingredient's name. */
+  matchAlternatives: (key: string, q?: string) =>
+    request<ItemPrice[]>(`/api/pricing/alternatives${queryString({ key, q })}`),
   /** `product_id` null marks the line as one not to price. */
   setMatch: (canonical_key: string, product_id: string | null) =>
     request<void>("/api/pricing/match", {

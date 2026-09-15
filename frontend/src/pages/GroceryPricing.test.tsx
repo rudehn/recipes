@@ -236,6 +236,48 @@ describe("grocery list pricing", () => {
     });
   });
 
+  it("searches the alternatives in words of the shopper's own", async () => {
+    // A misspelled ingredient finds nothing under its own name, however many
+    // times the panel opens. Typing the right word is the way out.
+    const backend = pricedBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [onion],
+        pricing: { store: STORE, total: 1.19, saved: 0, priced: 1, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+      "PUT /api/pricing/match": undefined,
+    });
+
+    const { user } = renderApp(WEEK);
+    await screen.findByText("onion");
+    await user.click(screen.getByRole("button", { name: /Choose a different product/ }));
+    const panel = await screen.findByRole("group", { name: "Products for onion" });
+
+    const field = within(panel).getByRole("textbox", { name: "Search products for onion" });
+    expect(field).toHaveValue("onion");
+    await user.clear(field);
+    await user.type(field, "sweet onion");
+
+    await waitFor(() =>
+      expect(
+        backend.requestsTo("GET /api/pricing/alternatives").map((r) => r.searchParams.get("q")),
+      ).toContain("sweet onion"),
+    );
+    // Still pinned under the ingredient, whatever was typed.
+    await user.click(
+      within(await screen.findByRole("group", { name: "Products for onion" })).getByRole(
+        "button",
+        { name: /Jumbo Yellow Onions/ },
+      ),
+    );
+    await waitFor(() => expect(backend.requestsTo("PUT /api/pricing/match")).toHaveLength(1));
+    expect(backend.requestsTo("PUT /api/pricing/match")[0].body).toEqual({
+      canonical_key: "onion",
+      product_id: "0002",
+    });
+  });
+
   it("marks the product in force among the alternatives", async () => {
     pricedBackend({
       "GET /api/pricing/status": { enabled: true, store: STORE },

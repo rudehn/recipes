@@ -7,16 +7,24 @@ than pricing, which shows "3 of 4 priced" beside its total, and deliberately
 so: a price short by one ingredient is still roughly a price, while calories
 short by the butter are not roughly anything.
 
-Ingredients a recipe honestly leaves unmeasured - "salt, to taste" - are the
-one exception. They are not counted, they do not block the figure, and the
-page names them beside it.
+Ingredients a recipe honestly leaves unmeasured - "salt, to taste" - are one
+exception, and ingredients a person has said do not count are the other.
+Neither is counted, neither blocks the figure, and the page names both beside
+it.
 """
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import IngredientFoodMatch, Recipe
-from ...schemas import FoodChoice, FoodOut, NutrientsOut, NutritionLine, RecipeNutrition
+from ...models import Ingredient, IngredientFoodMatch, Recipe
+from ...schemas import (
+    FoodChoice,
+    FoodOut,
+    NutrientsOut,
+    NutritionLine,
+    RecipeNutrition,
+    RecipeRef,
+)
 from . import foods, weights
 from .defaults import default_for, nutrition_key
 
@@ -39,8 +47,8 @@ def food_choice(food: foods.Food) -> FoodChoice:
     return FoodChoice(**food_out(food).model_dump(), per_100g=nutrients_out(food.per_100g))
 
 
-async def hand_picks(session: AsyncSession, keys: set[str]) -> dict[str, int]:
-    """The foods people chose, by nutrition key."""
+async def hand_picks(session: AsyncSession, keys: set[str]) -> dict[str, int | None]:
+    """The foods people chose, by nutrition key. None means "does not count"."""
     if not keys:
         return {}
     rows = await session.execute(
@@ -49,14 +57,34 @@ async def hand_picks(session: AsyncSession, keys: set[str]) -> dict[str, int]:
     return {row.key: row.fdc_id for row in rows.scalars()}
 
 
-async def choose(session: AsyncSession, key: str, fdc_id: int) -> None:
-    """Say which food an ingredient means, everywhere it is used."""
+async def choose(session: AsyncSession, key: str, fdc_id: int | None) -> None:
+    """Say which food an ingredient means, everywhere it is used, or that it
+    does not count."""
     row = await session.get(IngredientFoodMatch, key)
     if row is None:
         row = IngredientFoodMatch(key=key)
         session.add(row)
     row.fdc_id = fdc_id
     await session.commit()
+
+
+async def recipes_using(session: AsyncSession, key: str) -> list[RecipeRef]:
+    """Every recipe with an ingredient under this nutrition key, by title.
+
+    What a shared choice reaches, named before it is made. The key is worked
+    out from each ingredient's name rather than stored, so this reads every
+    ingredient name: one query, and a string function per row.
+    """
+    rows = await session.execute(
+        select(Recipe.id, Recipe.title, Ingredient.name).join(
+            Ingredient, Ingredient.recipe_id == Recipe.id
+        )
+    )
+    found = {rid: title for rid, title, name in rows.all() if nutrition_key(name) == key}
+    return [
+        RecipeRef(id=rid, title=title)
+        for rid, title in sorted(found.items(), key=lambda item: (item[1].casefold(), item[0]))
+    ]
 
 
 async def forget(session: AsyncSession, key: str) -> None:
@@ -80,6 +108,15 @@ async def recipe_nutrition(session: AsyncSession, recipe: Recipe) -> RecipeNutri
             line.measured = False
             lines.append(line)
             continue
+        if key in picked and picked[key] is None:
+            # A person said it does not count - a garnish, a pinch of
+            # something no food list has - so it is left out, and does not
+            # stand in the way of the rest. Whatever else is wrong with the
+            # row no longer matters to the figure.
+            line.skipped = True
+            line.hand_picked = True
+            lines.append(line)
+            continue
         measured += 1
 
         default = default_for(key)
@@ -88,7 +125,7 @@ async def recipe_nutrition(session: AsyncSession, recipe: Recipe) -> RecipeNutri
         # rather than an error: see usda/README.md.
         chosen = foods.food(fdc_id) if fdc_id is not None else None
         if chosen is not None:
-            line.food = food_out(chosen)
+            line.food = food_choice(chosen)
             line.hand_picked = key in picked
         elif issue is None:
             issue = "no_food"

@@ -21,12 +21,18 @@ There is no API key, no network call, and nothing to configure.
 Lookup walks to shorter names only across words that do not change the food ("extra-virgin olive oil" reaches "olive oil"; "almond flour" never reaches "flour").
 Anything else has no food until a person picks one, and a pick is stored in `ingredient_food_matches` and holds for every recipe using that ingredient.
 
+**A choice is shared, and says how far it reaches.**
+A person can pick the food an ingredient means, or say it does not count, and either holds for every recipe using that ingredient.
+Per-recipe choices were considered and turned down: the same fix would have to be made again in each recipe, and a recipe added later would not get it.
+The price of sharing is that a change made in one recipe changes others, so the food picker names those recipes before anything is chosen, and every row a choice reaches says "your choice".
+Product choices were already shared for a stronger reason (the grocery list buys one product per ingredient) and are unchanged.
+
 **Weights come from USDA's own portions first**, then the grocery density table.
 A count with nothing to count it against, a bunch, or a container is not weighed: the importer drops "(15 oz)" from "1 (15 oz) can", and USDA's one weight for a can is some other can.
 
 **The figure is all or nothing.**
 `per_serving` is null unless every measured ingredient was counted and the recipe gives its servings.
-Ingredients left to taste are the one exception: not counted, not blocking, and named.
+Ingredients left to taste, and ingredients a person has said do not count, are the exceptions: not counted, not blocking, and named.
 Every ingredient's food, grams and reason are returned, and the recipe page shows them in a breakdown with the fix for each.
 
 **The key is `canonical_key` plus state words.**
@@ -56,6 +62,7 @@ About a megabyte in the image buys that.
 ## Consequences
 
 - Many recipes will show "Nutrition unavailable" at first, most often for rows lint already flags or for canned goods counted by the can. The fix for each is on the breakdown.
+- Pricing borrows the same USDA portions for any ingredient its density table does not list, through the ingredient's default, so a spoon of a spice is costed as a share of the jar rather than the whole jar.
 - A default added to `defaults.py` reaches every recipe at once; `test_every_default_is_a_food_the_tables_hold` fails if one points at nothing.
 - Changing `canonical_key` now also orphans hand-picked foods, the fourth kind of state ADR 2 warns about.
 - Nutrition per serving does not scale with the servings stepper, and is not totalled for the planner. Both are left for later.
