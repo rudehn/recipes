@@ -1,9 +1,10 @@
 import { Suspense, lazy, useCallback } from "react";
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
 
 import { api } from "./api";
 import { InstallHint } from "./components/InstallHint";
 import { PHONE, below } from "./layout";
+import CookPage from "./pages/CookPage";
 import GroceryPage from "./pages/GroceryPage";
 import PantryPage from "./pages/PantryPage";
 import PlannerPage from "./pages/PlannerPage";
@@ -57,7 +58,44 @@ function Nav({ className, sections }: { className: string; sections: typeof SECT
   );
 }
 
+/**
+ * The route table.
+ *
+ * Cook mode stands outside the shell: it is a screen to be used at arm's length
+ * with messy hands, and the top bar and tab bar would only be things to hit by
+ * mistake - the tab bar sitting exactly where Back and Next want to be.
+ */
 export default function App() {
+  return (
+    <Routes>
+      <Route path="/recipes/:id/cook" element={<CookPage />} />
+      <Route element={<Shell />}>
+        <Route path="/" element={<Navigate to="/recipes" replace />} />
+        <Route path="/recipes" element={<RecipesPage />} />
+        <Route path="/recipes/search" element={<RecipeSearchPage />} />
+        <Route path="/recipes/new" element={<RecipeFormPage />} />
+        <Route path="/recipes/:id" element={<RecipeDetailPage />} />
+        <Route path="/recipes/:id/edit" element={<RecipeFormPage />} />
+        <Route path="/planner" element={<PlannerPage />} />
+        <Route path="/groceries" element={<GroceryPage />} />
+        <Route path="/pantry" element={<PantryPage />} />
+        {/* Registered whether or not pricing is on, so the page can explain
+            itself to anyone who follows a link to it. */}
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route
+          path="/styleguide"
+          element={
+            <Suspense fallback={<p className="list-status">Loading…</p>}>
+              <StyleguidePage />
+            </Suspense>
+          }
+        />
+      </Route>
+    </Routes>
+  );
+}
+
+function Shell() {
   // Pricing is opt-in and often absent, so the nav does not advertise it
   // until it is actually configured. A failure here just means no link,
   // which is the same as the far more common case of it being switched off.
@@ -89,28 +127,7 @@ export default function App() {
         </div>
       </header>
       <main className="page">
-        <Routes>
-          <Route path="/" element={<Navigate to="/recipes" replace />} />
-          <Route path="/recipes" element={<RecipesPage />} />
-          <Route path="/recipes/search" element={<RecipeSearchPage />} />
-          <Route path="/recipes/new" element={<RecipeFormPage />} />
-          <Route path="/recipes/:id" element={<RecipeDetailPage />} />
-          <Route path="/recipes/:id/edit" element={<RecipeFormPage />} />
-          <Route path="/planner" element={<PlannerPage />} />
-          <Route path="/groceries" element={<GroceryPage />} />
-          <Route path="/pantry" element={<PantryPage />} />
-          {/* Registered whether or not pricing is on, so the page can explain
-              itself to anyone who follows a link to it. */}
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route
-            path="/styleguide"
-            element={
-              <Suspense fallback={<p className="list-status">Loading…</p>}>
-                <StyleguidePage />
-              </Suspense>
-            }
-          />
-        </Routes>
+        <Outlet />
       </main>
       {/* Last in the shell so it comes after the page in reading order: it is
           an aside about the app itself, and nothing on the page depends on it.

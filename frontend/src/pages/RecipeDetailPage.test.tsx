@@ -53,6 +53,37 @@ function amountFor(name: string): string {
 }
 
 describe("RecipeDetailPage", () => {
+  describe("start cooking", () => {
+    it("opens cook mode", async () => {
+      mockBackend({ "GET /api/recipes/:id": curry });
+      const { user } = renderApp("/recipes/1");
+
+      await user.click(await screen.findByRole("link", { name: "Start cooking" }));
+      expect(await screen.findByRole("heading", { name: /^Step 1/ })).toHaveTextContent(
+        "Step 1 of 3",
+      );
+    });
+
+    it("carries the servings the stepper is showing", async () => {
+      mockBackend({ "GET /api/recipes/:id": curry });
+      const { user } = renderApp("/recipes/1");
+
+      await user.click(await screen.findByRole("button", { name: "More servings" }));
+      expect(screen.getByRole("link", { name: "Start cooking" })).toHaveAttribute(
+        "href",
+        "/recipes/1/cook?servings=5",
+      );
+    });
+
+    it("is not offered for a recipe with no steps", async () => {
+      mockBackend({ "GET /api/recipes/:id": { ...curry, instructions: "" } });
+      renderApp("/recipes/1");
+
+      await screen.findByRole("heading", { name: "Weeknight chicken curry" });
+      expect(screen.queryByRole("link", { name: "Start cooking" })).toBeNull();
+    });
+  });
+
   it("shows the recipe with its times, servings, and tags", async () => {
     mockBackend({ "GET /api/recipes/:id": curry });
     renderApp("/recipes/1");

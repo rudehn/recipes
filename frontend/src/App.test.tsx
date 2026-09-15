@@ -141,6 +141,29 @@ describe("App shell", () => {
     });
   });
 
+  it("steps aside for cook mode, which has the whole screen", async () => {
+    setViewportWidth(375);
+    mockBackend({
+      "GET /api/recipes/:id": {
+        id: 1,
+        title: "Curry",
+        description: "",
+        image_filename: null,
+        prep_minutes: null,
+        cook_minutes: null,
+        servings: null,
+        tags: [],
+        instructions: "Simmer",
+        ingredients: [],
+      },
+    });
+    renderApp("/recipes/1/cook");
+
+    expect(await screen.findByRole("heading", { name: "Curry" })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "Sections" })).toBeNull();
+    expect(screen.queryByText("Mise")).toBeNull();
+  });
+
   it("hands over at the width the stylesheet does", () => {
     setViewportWidth(PHONE);
     plainBackend();

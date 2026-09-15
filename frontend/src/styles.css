@@ -874,6 +874,382 @@ input:focus, select:focus, textarea:focus {
   margin-top: 1px;
 }
 
+/* ---------- Cook mode ---------- */
+
+/*
+ * A whole screen, outside the app shell, read from arm's length. A column of
+ * bars: the recipe's name, the step (beside the ingredients where there is
+ * room), any timers, and Back and Next along the bottom where a thumb is.
+ * Only the middle scrolls, so the controls never leave the screen.
+ *
+ * The bars run the full width but their content keeps to the page's measure:
+ * the inline padding grows to centre it rather than adding a wrapper to every
+ * bar.
+ */
+.cook {
+  --cook-inline: max(var(--space-24), calc((100% - var(--width-page)) / 2 + var(--space-24)));
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+
+.cook-failed { justify-content: center; }
+
+.cook-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+  padding-block: max(var(--space-12), env(safe-area-inset-top)) var(--space-12);
+  padding-inline: var(--cook-inline);
+  border-bottom: 1px solid var(--line);
+}
+
+.cook-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xl);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Whether the screen will stay on, said plainly: a cook who trusts it and
+   finds the phone locked has been let down by the one promise made here. */
+.cook-wake {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cook-wake::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.cook-wake.on { color: var(--green-ink); }
+
+.cook-wake.on::before { background: var(--green); }
+
+.cook-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: var(--space-32);
+  padding-top: var(--space-24);
+  padding-inline: var(--cook-inline);
+}
+
+.cook-ingredients,
+.cook-main {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.cook-ingredients {
+  align-self: start;
+  margin-bottom: var(--space-24);
+  padding: var(--space-20) var(--space-24);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+}
+
+.cook-ingredients h2 {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-10);
+  margin-bottom: var(--space-8);
+}
+
+.cook-scaled {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+}
+
+/* One grid for the whole list, shared down to each label through subgrid, so
+   the amount column is as wide as the widest amount and every name starts on
+   the same line. A fixed column let "0.29 cup" push its name out of true.
+   Capped, so one "3⅜ tablespoons" wraps its own amount rather than squeezing
+   every name in the list into a column a word wide. */
+.cook-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: auto fit-content(35%) minmax(0, 1fr);
+  column-gap: var(--space-12);
+}
+
+.cook-checklist li {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
+.cook-checklist .empty-note { display: block; }
+
+.cook-checklist label {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: start;
+  padding-block: var(--space-10);
+  border-bottom: 1px dashed var(--line);
+  cursor: pointer;
+  transition: color var(--transition);
+}
+
+.cook-checklist li:last-child label { border-bottom: none; }
+
+.cook-checklist input {
+  width: 20px;
+  height: 20px;
+  margin: var(--space-2) 0 0;
+  accent-color: var(--green);
+  flex: none;
+  cursor: pointer;
+}
+
+.cook-checklist .qty {
+  font-weight: var(--weight-bold);
+  color: var(--accent-ink);
+}
+
+/* In, so struck through and quietened - still readable, for the cook checking
+   whether the salt went in after all. */
+.cook-checklist label.checked { color: var(--muted); }
+
+.cook-checklist label.checked .qty { color: var(--muted); }
+
+.cook-checklist label.checked .qty,
+.cook-checklist label.checked .name { text-decoration: line-through; }
+
+.cook-main { padding-bottom: var(--space-32); }
+
+.cook-step { max-width: var(--width-prose); }
+
+.cook-step-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-16);
+}
+
+.cook-count {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--accent-ink);
+}
+
+.cook-count span { color: var(--muted); }
+
+.cook-resumed {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.cook-link {
+  color: var(--accent-ink);
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* One segment a step, each a way to jump there. The bar is drawn thin but the
+   button around it is tall, so it is not a thin thing to hit. */
+.cook-progress {
+  list-style: none;
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-4) 0 var(--space-16);
+  padding: 0;
+}
+
+.cook-progress li { flex: 1; }
+
+.cook-progress button {
+  display: block;
+  width: 100%;
+  padding-block: var(--space-8);
+}
+
+.cook-progress button::before {
+  content: "";
+  display: block;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--line);
+  transition: background var(--transition);
+}
+
+.cook-progress button.done::before {
+  background: color-mix(in srgb, var(--accent) 40%, var(--line));
+}
+
+.cook-progress button.current::before { background: var(--accent); }
+
+.cook-progress button:hover::before { background: var(--accent-hover); }
+
+.cook-text {
+  margin: 0;
+  font-size: var(--text-2xl);
+  line-height: var(--leading-normal);
+  overflow-wrap: break-word;
+}
+
+.cook-empty {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--ink-soft);
+}
+
+/* A time in the step, offered as a timer where it is written. */
+.cook-duration {
+  display: inline;
+  padding: 0 var(--space-6);
+  border-radius: var(--radius-xs);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+  font-weight: var(--weight-semibold);
+  line-height: inherit;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background var(--transition);
+}
+
+button.cook-duration:hover {
+  background: color-mix(in srgb, var(--accent) 22%, var(--accent-soft));
+}
+
+.cook-duration .glyph {
+  margin-right: var(--space-4);
+  font-size: 0.8em;
+}
+
+.cook-duration.running,
+.cook-duration.done {
+  background: var(--green-soft);
+  color: var(--green-ink);
+}
+
+.cook-duration .left {
+  margin-left: var(--space-8);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.8em;
+  font-weight: var(--weight-bold);
+}
+
+.cook-timers {
+  padding-block: var(--space-10);
+  padding-inline: var(--cook-inline);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.cook-timers ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+.cook-timer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-16);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  transition: background var(--transition), color var(--transition);
+}
+
+.cook-timer-step {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.cook-timer-step:hover { text-decoration: underline; }
+
+.cook-timer-left {
+  min-width: 48px;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cook-timer .icon-btn { border-radius: var(--radius-pill); }
+
+/* Finished: filled, and pulsing until it is dismissed, so it is seen from
+   across the kitchen as well as heard. */
+.cook-timer.done {
+  background: var(--accent);
+  color: var(--ink-on-accent);
+  animation: cook-timer-pulse 1s ease-in-out infinite alternate;
+}
+
+.cook-timer.done .cook-timer-step,
+.cook-timer.done .icon-btn { color: inherit; }
+
+.cook-timer.done .icon-btn:hover { background: var(--accent-hover); }
+
+@keyframes cook-timer-pulse {
+  from { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  to { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-timer.done { animation: none; }
+}
+
+.cook-controls {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-12);
+  padding-block: var(--space-12) max(var(--space-12), env(safe-area-inset-bottom));
+  padding-inline: var(--cook-inline);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.cook-controls .btn {
+  justify-content: center;
+  min-height: 52px;
+  padding-inline: var(--space-32);
+  font-size: var(--text-lg);
+}
+
+.cook-controls .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
 /* ---------- Forms ---------- */
 
 .form {
@@ -2876,6 +3252,80 @@ body.has-install-hint .page {
   .panel { padding: var(--space-16); }
 
   .steps li { gap: var(--space-12); }
+
+  /* -------------------------------------------------------- cook mode --- */
+
+  .cook { --cook-inline: max(var(--space-16), env(safe-area-inset-left)); }
+
+  .cook-bar { gap: var(--space-12); }
+
+  .cook-title { font-size: var(--text-lg); }
+
+  /* One of the two at a time, chosen by the tabs: side by side, neither fits. */
+  .cook-tabs {
+    display: flex;
+    gap: var(--space-4);
+    margin: var(--space-12) var(--space-16) 0;
+    padding: var(--space-4);
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+  }
+
+  .cook-tabs button {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-6);
+    min-height: 40px;
+    border-radius: var(--radius-pill);
+    font-weight: var(--weight-semibold);
+    color: var(--ink-soft);
+    transition: background var(--transition), color var(--transition);
+  }
+
+  .cook-tabs button[aria-selected="true"] {
+    background: var(--selected);
+    color: var(--selected-ink);
+  }
+
+  .cook-tabs .count {
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
+  .cook-body {
+    grid-template-columns: minmax(0, 1fr);
+    padding-top: var(--space-16);
+  }
+
+  .cook-ingredients {
+    margin-bottom: var(--space-16);
+    padding: var(--space-8) var(--space-16);
+  }
+
+  .cook-ingredients h2 { display: none; }
+
+  .cook-checklist label { padding-block: var(--space-12); }
+
+  .cook-checklist input { width: 22px; height: 22px; }
+
+  .cook-text { font-size: var(--text-xl); }
+
+  .cook-timer { flex: 1 1 100%; }
+
+  .cook-timer-step {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
+  }
+
+  .cook-controls .btn { flex: 1; padding-inline: var(--space-16); }
+
+  .cook-controls .btn.primary { flex: 2; }
 
   /* ---------------------------------------------------------- planner --- */
 

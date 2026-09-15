@@ -189,5 +189,9 @@ export default defineConfig({
     // A generous ceiling keeps that from reading as a failure; a genuinely
     // hung test still fails, just later.
     testTimeout: 20_000,
+    // Node 25 ships a localStorage of its own and warns, in every worker, that
+    // it was given no file to keep it in. The tests use jsdom's, so Node's is
+    // switched off rather than configured. Accepted by Node 22 and later.
+    execArgv: ["--no-experimental-webstorage"],
   },
 });

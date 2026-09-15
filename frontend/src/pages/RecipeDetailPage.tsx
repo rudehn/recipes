@@ -29,6 +29,7 @@ const ROW_ISSUES: Record<LineIssue, string> = {
   out_of_stock: "out of stock",
 };
 import { highlightedIngredients } from "../recipeLink";
+import { recipeSteps } from "../steps";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 
@@ -112,10 +113,13 @@ export default function RecipeDetailPage() {
     scaledServings != null && recipe?.servings ? scaledServings / recipe.servings : 1;
   const costLines = new Map((cost?.lines ?? []).map((l) => [l.ingredient_id, l]));
 
-  const steps = recipe.instructions
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const steps = recipeSteps(recipe.instructions);
+  // Cook mode shows the amounts the stepper is showing, so a doubled recipe
+  // is not cooked from the single quantities.
+  const cookLink =
+    scaledServings != null && scaledServings !== recipe.servings
+      ? `/recipes/${recipe.id}/cook?servings=${scaledServings}`
+      : `/recipes/${recipe.id}/cook`;
 
   // Undefined when the link named an ingredient this recipe no longer has,
   // which an edit between reading the grocery list and following it can do.
@@ -164,6 +168,11 @@ export default function RecipeDetailPage() {
     <>
       <PageHead title={recipe.title}>
         <Toolbar>
+          {steps.length > 0 && (
+            <LinkButton variant="primary" to={cookLink}>
+              Start cooking
+            </LinkButton>
+          )}
           <LinkButton to={`/recipes/${recipe.id}/edit`}>Edit</LinkButton>
           <Button variant="danger" onClick={handleDelete}>
             Delete
