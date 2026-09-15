@@ -14,6 +14,8 @@ It has since acquired two more:
 2. The primary key of `grocery_checks`, so a tick survives regenerating the list.
 3. Half the primary key of `ingredient_product_matches`, so an ingredient keeps meaning the same Kroger product.
 
+Nutrition keeps a key of its own that differs only where cooking changes the food - see ADR 8.
+
 ## Decision
 
 Keep one key for all three, deliberately, rather than introducing a separate identity for product matching.

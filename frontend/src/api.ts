@@ -261,6 +261,70 @@ export interface RecipeCost {
   lines: CostLine[];
 }
 
+/**
+ * Why an ingredient is left out of a recipe's nutrition, most serious first.
+ * The first three are the recipe-side reasons pricing uses too; the fix for
+ * those is editing the line. "no_food" is fixed by choosing one, and
+ * "unweighable" by either.
+ */
+export type NutritionIssue =
+  | "amount_in_name"
+  | "check_line"
+  | "no_amount"
+  | "no_food"
+  | "unweighable";
+
+/** Calories, the three macronutrients and sodium, for some amount of food. */
+export interface Nutrients {
+  kcal: number;
+  protein_g: number;
+  fat_g: number;
+  carbs_g: number;
+  sodium_mg: number;
+}
+
+/** A USDA food, in USDA's words. */
+export interface Food {
+  fdc_id: number;
+  description: string;
+  category: string;
+}
+
+/** A food offered to choose from, with what 100 g of it holds. */
+export interface FoodChoice extends Food {
+  per_100g: Nutrients;
+}
+
+/**
+ * How one ingredient enters a recipe's nutrition, or why it does not.
+ * `measured` is false for an ingredient left to taste, which is not counted
+ * and is not a fault. `nutrients` is for the recipe's whole amount.
+ */
+export interface NutritionLine {
+  ingredient_id: number;
+  name: string;
+  /** The identity a food is chosen under, shared by every recipe using it. */
+  key: string;
+  measured: boolean;
+  food: Food | null;
+  hand_picked: boolean;
+  grams: number | null;
+  nutrients: Nutrients | null;
+  issue: NutritionIssue | null;
+}
+
+/**
+ * A recipe's nutrition. `per_serving` is null - never partial - until every
+ * measured ingredient is counted and the recipe says how many it serves.
+ */
+export interface RecipeNutrition {
+  servings: number | null;
+  per_serving: Nutrients | null;
+  counted: number;
+  total_lines: number;
+  lines: NutritionLine[];
+}
+
 export interface DayCost {
   plan_date: string;
   total: number;
@@ -615,6 +679,19 @@ export const api = {
   recipesAttention: () => request<RecipeAttention[]>("/api/recipes/attention"),
   /** What a recipe costs to cook. Null when there is nothing to price it with. */
   recipeCost: (id: number) => request<RecipeCost | null>(`/api/recipes/${id}/cost`),
+  /** Nutrition per serving, and every ingredient's part in it. Always answered. */
+  recipeNutrition: (id: number) => request<RecipeNutrition>(`/api/recipes/${id}/nutrition`),
+  searchFoods: (q: string) =>
+    request<FoodChoice[]>(`/api/nutrition/foods${queryString({ q })}`),
+  /** Pin a food to an ingredient, for every recipe that uses it. */
+  chooseFood: (key: string, fdc_id: number) =>
+    request<void>("/api/nutrition/match", {
+      method: "PUT",
+      body: JSON.stringify({ key, fdc_id }),
+    }),
+  /** Back to the ingredient's default food, or to none. */
+  forgetFood: (key: string) =>
+    request<void>(`/api/nutrition/match${queryString({ key })}`, { method: "DELETE" }),
   /** What the meals in a range cost to cook, day by day. Null when pricing is off. */
   planCost: (start: string, end: string) =>
     request<PlanCost | null>(`/api/meal-plan/cost${queryString({ start, end })}`),

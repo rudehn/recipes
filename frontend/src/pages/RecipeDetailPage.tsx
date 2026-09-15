@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api, type LineIssue } from "../api";
+import { api, type FoodChoice, type LineIssue, type NutritionLine } from "../api";
+import { FoodPickerModal, NutritionBreakdown, NutritionStatus } from "../components/Nutrition";
 import { RecipePhoto } from "../components/RecipeBits";
 import {
   Banner,
@@ -41,6 +42,14 @@ export default function RecipeDetailPage() {
   // unreachable: a recipe page without a price is the ordinary page, so a
   // failure here is not reported.
   const { data: cost } = useLoad(useCallback(() => api.recipeCost(Number(id)), [id]));
+  // Bundled on the server, so always answered; a failure here is the server's,
+  // and the recipe is still worth showing without it.
+  const { data: nutrition, reload: reloadNutrition } = useLoad(
+    useCallback(() => api.recipeNutrition(Number(id)), [id]),
+  );
+  const [explaining, setExplaining] = useState(false);
+  const [choosingFor, setChoosingFor] = useState<NutritionLine | null>(null);
+  const nutritionSection = useRef<HTMLDetailsElement | null>(null);
   const action = useAction();
   // Cook-time scaling of the displayed ingredient amounts.
   const [scaledServings, setScaledServings] = useState<number | null>(null);
@@ -111,6 +120,22 @@ export default function RecipeDetailPage() {
     highlighted.has(String(ing.id)),
   )?.id;
 
+  /** Open the breakdown and bring it into view, from the header's status line. */
+  function explainNutrition() {
+    setExplaining(true);
+    nutritionSection.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function chooseFood(food: FoodChoice) {
+    const line = choosingFor!;
+    setChoosingFor(null);
+    if (await action.run(() => api.chooseFood(line.key, food.fdc_id))) reloadNutrition();
+  }
+
+  async function forgetFood(line: NutritionLine) {
+    if (await action.run(() => api.forgetFood(line.key))) reloadNutrition();
+  }
+
   async function handleDelete() {
     if (!window.confirm(`Delete “${recipe!.title}”? This also removes it from your meal plan.`)) {
       return;
@@ -168,6 +193,7 @@ export default function RecipeDetailPage() {
               </span>
             </p>
           )}
+          {nutrition && <NutritionStatus nutrition={nutrition} onExplain={explainNutrition} />}
         </div>
       </div>
 
@@ -268,6 +294,28 @@ export default function RecipeDetailPage() {
           {steps.length === 0 && <p className="empty-note">No instructions yet.</p>}
         </Panel>
       </div>
+
+      {nutrition && (
+        <NutritionBreakdown
+          nutrition={nutrition}
+          recipeId={recipe.id}
+          // Open by itself when there is something to fix: the header has
+          // already said the figure is missing, and the reasons are the answer.
+          open={explaining || (nutrition.per_serving === null && nutrition.total_lines > 0)}
+          onToggle={setExplaining}
+          onChoose={setChoosingFor}
+          onForget={forgetFood}
+          sectionRef={nutritionSection}
+        />
+      )}
+
+      {choosingFor && (
+        <FoodPickerModal
+          line={choosingFor}
+          onPick={chooseFood}
+          onClose={() => setChoosingFor(null)}
+        />
+      )}
     </>
   );
 }

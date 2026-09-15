@@ -15,6 +15,7 @@ from ..schemas import (
     RecipeAttention,
     RecipeCost,
     RecipeIn,
+    RecipeNutrition,
     RecipeOut,
     RecipePage,
     Suggestions,
@@ -27,6 +28,7 @@ from ..services.images import (
     upload_chunks,
 )
 from ..services.kroger import costing
+from ..services.nutrition import facts as nutrition
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -221,6 +223,18 @@ async def recipe_cost(recipe_id: int, session: AsyncSession = Depends(get_sessio
     """
     recipe = await _get_recipe(session, recipe_id)
     return await costing.recipe_cost(session, recipe)
+
+
+@router.get("/{recipe_id}/nutrition", response_model=RecipeNutrition)
+async def recipe_nutrition(recipe_id: int, session: AsyncSession = Depends(get_session)):
+    """Nutrition per serving, and every ingredient's part in it.
+
+    Always answered, since the figures are bundled rather than fetched. The
+    figure itself is null until the whole recipe can be counted; the lines
+    say what is stopping it.
+    """
+    recipe = await _get_recipe(session, recipe_id)
+    return await nutrition.recipe_nutrition(session, recipe)
 
 
 @router.put("/{recipe_id}", response_model=RecipeOut)

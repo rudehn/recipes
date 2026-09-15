@@ -2176,6 +2176,115 @@ body.has-install-hint .page {
 
 .ingredient-list .line-cost .whole { font-size: var(--text-2xs); }
 
+/* Nutrition per serving, under the cost: the same kind of line, answering the
+   same kind of question about the same recipe. */
+.recipe-nutrition {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-4) var(--space-12);
+  margin: var(--space-8) 0 0;
+}
+
+.recipe-nutrition .kcal { font-weight: var(--weight-semibold); }
+
+.recipe-nutrition .macros { font-weight: var(--weight-medium); }
+
+.recipe-nutrition .coverage { font-size: var(--text-sm); color: var(--muted); }
+
+/* Unavailable is something to fix rather than a failure, so it takes the
+   accent ink the row tags use rather than the danger colour. */
+.recipe-nutrition.doubtful .kcal { color: var(--accent-ink); }
+
+.recipe-nutrition .explain {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+/* Below the ingredients and steps, where it is out of the cook's way. The
+   scroll margin is the highlighted ingredient's: the header it clears is the
+   same one. */
+.nutrition-section {
+  margin-top: var(--space-32);
+  scroll-margin-top: 88px;
+}
+
+/* The count stays one phrase beside the heading, however narrow the page. */
+.nutrition-section summary .count { white-space: nowrap; }
+
+.nutrition-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.nutrition-lines li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-4) var(--space-16);
+  padding: var(--space-10) 0;
+  border-bottom: 1px dashed var(--line);
+}
+
+.nutrition-lines li:last-child { border-bottom: none; }
+
+.nutrition-lines .what {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.nutrition-lines .name { font-weight: var(--weight-semibold); overflow-wrap: anywhere; }
+
+/* Which food it was counted as: the only way to see a wrong one. */
+.nutrition-lines .food { font-size: var(--text-sm); color: var(--muted); overflow-wrap: anywhere; }
+
+.nutrition-lines .chosen-by { color: var(--green-ink); }
+
+.nutrition-lines .figures {
+  font-size: var(--text-sm);
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.nutrition-lines .fix {
+  display: flex;
+  gap: var(--space-8);
+  justify-content: flex-end;
+}
+
+/* A food to choose, in the picker. The recipe picker's row, with the figure
+   that tells two similar descriptions apart at the end of it. */
+.modal-food {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-12);
+  width: 100%;
+  text-align: left;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-sm);
+}
+
+.modal-food:hover { background: var(--surface-2); }
+
+.modal-food .description { min-width: 0; overflow-wrap: anywhere; }
+
+.modal-food .per { font-size: var(--text-sm); color: var(--muted); white-space: nowrap; }
+
+.modal-food.chosen {
+  font-weight: var(--weight-semibold);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
 /* ---------- Remembered products ---------- */
 
 .picks {
@@ -2658,6 +2767,14 @@ body.has-install-hint .page {
   .tag-pill { padding: var(--space-8) var(--space-16); }
 
   /* --------------------------------------------------------- recipes --- */
+
+  /* The food takes the whole line, and what it counts and the way to fix it
+     share the one under it. */
+  .nutrition-lines li { grid-template-columns: minmax(0, 1fr) auto; }
+
+  .nutrition-lines .what { grid-column: 1 / -1; }
+
+  .nutrition-lines .figures { text-align: left; }
 
   /*
    * A column of full-width 4:3 photos put about one recipe on a screen, so

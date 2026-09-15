@@ -16,6 +16,8 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 * Pantry staples: items you always keep in stock.
   Out-of-stock staples are added to the grocery list, and checking a pantry item off the list marks it back in stock.
   When a planned recipe calls for a staple you already have, it is set aside under "already in your pantry" rather than put on the list - listed with the amount the week's meals need, so you can buy more anyway if the jar won't cover it.
+* Nutrition per serving - calories, protein, fat, carbs and sodium - worked out from each recipe's own ingredients against USDA data bundled with the app, so it needs no key.
+  The figure is shown only when every ingredient could be counted; otherwise the recipe says which ones could not and why, and a food can be chosen for an ingredient once for every recipe that uses it.
 * Optional grocery pricing from Kroger, off unless you supply an API key.
   Each line on the list carries a price and the product it came from, with a total that says how much of the list it actually covers - "est. $84.39, 26 of 26 priced" - because a total that quietly drops what it could not match reads exactly like a complete one.
   Items on offer show the saving, and a folded panel lists the things you cook with that are discounted this week.

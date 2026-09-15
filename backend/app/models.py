@@ -211,6 +211,29 @@ class IngredientProductMatch(Base):
     )
 
 
+class IngredientFoodMatch(Base):
+    """Which USDA food an ingredient means, as a person chose it.
+
+    Only hand choices are stored. The defaults are code
+    (`services.nutrition.defaults`), so improving one reaches every recipe at
+    once, and nothing here has to be remade when it does. A row is the last
+    word on its ingredient until it is deleted, which is the way back to the
+    default.
+
+    Keyed by `services.nutrition.defaults.nutrition_key`, which is
+    `canonical_key` except where cooking changes the food - see ADR 8.
+    """
+
+    __tablename__ = "ingredient_food_matches"
+
+    key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    # USDA FoodData Central's id, as in `services/nutrition/usda/foods.csv`.
+    fdc_id: Mapped[int] = mapped_column(Integer)
+    chosen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+
 # The two things a shopper can say about a grocery line during a trip. A line
 # with no row is simply to buy. "bought" is the tick: it is in the trolley, and
 # the trip still pays for it. "have" is the other answer to a line, that there

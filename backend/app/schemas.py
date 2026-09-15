@@ -287,6 +287,84 @@ class RecipeCost(BaseModel):
     lines: list[CostLine]
 
 
+# Why an ingredient is left out of a recipe's nutrition, most serious first.
+# The first three are the recipe-side reasons `services.lint` finds for
+# pricing too, so a row that is wrong is wrong in one vocabulary everywhere.
+NutritionIssue = Literal["amount_in_name", "check_line", "no_amount", "no_food", "unweighable"]
+
+
+class NutrientsOut(BaseModel):
+    """Calories, the three macronutrients and sodium, for some amount of food."""
+
+    kcal: float
+    protein_g: float
+    fat_g: float
+    carbs_g: float
+    sodium_mg: float
+
+
+class FoodOut(BaseModel):
+    """A USDA food, described in USDA's words."""
+
+    fdc_id: int
+    description: str
+    category: str
+
+
+class FoodChoice(FoodOut):
+    """A food offered to choose from, with what 100 g of it holds."""
+
+    per_100g: NutrientsOut
+
+
+class NutritionLine(BaseModel):
+    """How one ingredient enters a recipe's nutrition, or why it does not.
+
+    `measured` is false for an ingredient a recipe honestly leaves unmeasured
+    - "salt, to taste" - which is not counted and is not a fault. Otherwise
+    the line is counted only when it has a `food` and its amount could be
+    turned into `grams` of it, and `issue` says which of those failed.
+    `food` is shown even on a line with an issue, since a wrong food is as
+    much a reason to look as a missing one.
+    """
+
+    ingredient_id: int
+    name: str
+    # The identity a food is chosen under; see nutrition.defaults.nutrition_key.
+    key: str
+    measured: bool = True
+    food: FoodOut | None = None
+    hand_picked: bool = False
+    grams: float | None = None
+    # For the recipe's whole amount of this ingredient, not a serving.
+    nutrients: NutrientsOut | None = None
+    issue: NutritionIssue | None = None
+
+
+class RecipeNutrition(BaseModel):
+    """A recipe's nutrition per serving, or the reasons there is none.
+
+    `per_serving` is withheld - null, not partial - unless every measured
+    ingredient was counted and the recipe says how many it serves. A total
+    that leaves out the ingredients it could not weigh is a smaller number
+    that looks exactly like a right one, so it is never given. `counted`
+    against `total_lines` says how far off it is; `lines` says why.
+    """
+
+    servings: int | None
+    per_serving: NutrientsOut | None
+    counted: int
+    total_lines: int
+    lines: list[NutritionLine]
+
+
+class FoodMatchSelection(BaseModel):
+    """Say which food an ingredient means, for every recipe that uses it."""
+
+    key: str = Field(min_length=1, max_length=300)
+    fdc_id: int
+
+
 class DayCost(BaseModel):
     plan_date: date
     total: float
