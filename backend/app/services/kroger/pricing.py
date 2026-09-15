@@ -316,7 +316,10 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
                 line.issue = "out_of_stock"
         if product.price is None:
             continue
-        cost = cost_to_cover(product.price, size, product.sold_by, need, line.key, None, each)
+        loose = product.sold_loose
+        cost = cost_to_cover(
+            product.price, size, product.sold_by, need, line.key, None, each, loose=loose
+        )
         line.price = as_item_price(product)
         line.price.estimated = to_cents(cost)
         if line.status == "have":
@@ -327,7 +330,9 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
             # What the same trip would have cost at the regular price, scaled
             # the same way, so a saving on a weight-sold item is not quoted
             # per pound while its cost is quoted for three of them.
-            was = cost_to_cover(product.regular, size, product.sold_by, need, line.key, None, each)
+            was = cost_to_cover(
+                product.regular, size, product.sold_by, need, line.key, None, each, loose=loose
+            )
             saved += was - cost
 
     if not priced:

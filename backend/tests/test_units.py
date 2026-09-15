@@ -8,7 +8,7 @@ to the older ranking.
 
 import pytest
 
-from app.services.kroger.density import grams_per_cup
+from app.services.kroger.density import grams_per_cup, grams_per_piece
 from app.services.kroger.units import (
     COUNT,
     VOLUME,
@@ -245,3 +245,50 @@ def test_vegetables_have_a_density_too():
     number: 165 g a cup makes it five."""
     assert packages_to_cover(parse_size("10 oz"), measure(9, "cup"), "corn-kernel") == 6
     assert packages_to_cover(parse_size("10 oz"), measure(3, "cup"), "raw-corn-kernel") == 2
+
+
+def test_a_counted_ingredient_is_weighed_against_a_shelf_priced_by_weight():
+    """One jalapeno against loose peppers at $1.99 a pound was costed the
+    whole pound, because a count and a weight could not be related. USDA
+    weighs a jalapeno at 14 g, so the recipe uses 3% of that pound."""
+    pound = parse_size("1 lb")
+    assert grams_per_piece("jalapeno") == pytest.approx(14.0)
+    assert share_of_package(1.99, pound, "WEIGHT", measure(1, None), "jalapeno") == (
+        pytest.approx(0.0614, abs=0.0005)
+    )
+    # It is the recipe's piece that is weighed, so three cloves are 9 g.
+    assert share_of_package(2.99, pound, "WEIGHT", measure(3, None), "garlic-clove") == (
+        pytest.approx(2.99 * 9 / 453.592, rel=1e-3)
+    )
+    # Buying rounds up to the rate's own unit unless the product is loose.
+    assert cost_to_cover(1.99, pound, "WEIGHT", measure(1, None), "jalapeno") == (
+        pytest.approx(1.99)
+    )
+
+
+def test_a_shelf_count_is_never_weighed():
+    """Only the recipe's side is weighed. A "1 ct" of garlic is a bulb, and
+    weighing it as a clove would make a pound of garlic a hundred and fifty
+    bulbs."""
+    assert packages_to_cover(parse_size("1 ct"), measure(1, "lb"), "garlic") == 1
+    assert share_of_package(0.79, parse_size("1 ct"), "UNIT", measure(1, "lb"), "garlic") is None
+
+
+def test_a_count_with_no_known_piece_weight_stays_unrelated():
+    assert share_of_package(9.99, parse_size("1 oz"), "WEIGHT", measure(2, None), "saffron") is None
+
+
+def test_loose_produce_costs_what_is_bought_not_a_whole_unit():
+    """One jalapeno is 14 g of peppers sold loose at $1.99 a pound. The floor
+    is for what a shop will not sell smaller - five grams of bacon - and a
+    single pepper off the pile is exactly what it will."""
+    pound = parse_size("1 lb")
+    one = measure(1, None)
+    assert cost_to_cover(1.99, pound, "WEIGHT", one, "jalapeno", loose=True) == (
+        pytest.approx(1.99 * 14 / 453.592)
+    )
+    # Packaged and sold by weight, the floor stands.
+    teaspoon = measure(1, "tsp")
+    assert cost_to_cover(10.99, pound, "WEIGHT", teaspoon, "brown-sugar") == pytest.approx(10.99)
+    # And an order is still for at least one: no cart takes 14 g.
+    assert packages_to_cover(pound, one, "jalapeno") == 1

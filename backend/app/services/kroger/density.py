@@ -243,6 +243,30 @@ def _usda_grams_per_cup(canonical_key: str) -> float | None:
     return usda_grams_per_cup(food) if food is not None else None
 
 
+@cache
+def grams_per_piece(canonical_key: str) -> float | None:
+    """What one of this ingredient weighs, as a recipe counts it, or None.
+
+    For a recipe's count against a shelf that sells by weight: "1 jalapeno"
+    against loose peppers at $1.99 a pound is 14 g of that pound, not the
+    pound. There is no table of these here. The figure is USDA's, through the
+    food nutrition counts the ingredient as, so a name with no default has
+    none. It is the recipe's piece that is weighed, so "3 garlic cloves" is
+    9 g of garlic - never a count of what the shop packs.
+
+    Imported inside, for the same reason as `_usda_grams_per_cup`.
+    """
+    from ..nutrition import foods
+    from ..nutrition.defaults import default_for
+    from ..nutrition.weights import usda_grams_per_piece
+
+    default = default_for(canonical_key)
+    if default is None:
+        return None
+    food = foods.food(default.fdc_id)
+    return usda_grams_per_piece(food, canonical_key, default) if food is not None else None
+
+
 def sold_by_the_piece(canonical_key: str) -> bool:
     """Whether a recipe's count of this is a count of what Kroger packs.
 

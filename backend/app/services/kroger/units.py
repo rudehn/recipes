@@ -25,7 +25,12 @@ import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 
-from .density import counts_parts_of_a_piece, grams_per_cup, sold_by_the_piece
+from .density import (
+    counts_parts_of_a_piece,
+    grams_per_cup,
+    grams_per_piece,
+    sold_by_the_piece,
+)
 
 WEIGHT = "weight"
 VOLUME = "volume"
@@ -141,6 +146,12 @@ def comparable(
     recipe that counts parts of the piece - cloves, stalks, sprigs - is
     refused, because garlic is produce and a bulb is not a clove.
 
+    A recipe's count against a shelf priced by weight is weighed: "1 jalapeno"
+    against loose peppers at so much a pound is what one pepper weighs, not
+    the pound. Only that way round. A product's count is the shop's piece,
+    and weighing a "1 ct" bulb of garlic as a clove would be the same mistake
+    as counting cloves as bulbs.
+
     None is a real answer. It means the two cannot be related, and every
     caller falls back to one package rather than to a guess.
     """
@@ -152,6 +163,11 @@ def comparable(
             if not (vouched or sold_by_the_piece(canonical_key)):
                 return None
         return size, need
+    if need.dimension == COUNT and size.dimension == WEIGHT:
+        per_piece = grams_per_piece(canonical_key)
+        if per_piece is None:
+            return None
+        return size, Measure(WEIGHT, need.base * per_piece)
     if {size.dimension, need.dimension} != {WEIGHT, VOLUME}:
         return None
     if grams is None:
@@ -171,6 +187,7 @@ def cost_to_cover(
     canonical_key: str = "",
     grams: float | None = None,
     by_the_piece: bool = False,
+    loose: bool = False,
 ) -> float:
     """What covering `need` actually costs, as against one package's price.
 
@@ -188,6 +205,11 @@ def cost_to_cover(
         return price
     size, need = related
     if sold_by == "WEIGHT":
+        if loose:
+            # Loose produce is the exception to the floor below: one pepper
+            # off the pile is a thing a shop sells, and it costs what it
+            # weighs. `Product.sold_loose` says which products those are.
+            return price * need.base / size.base
         # Never less than one of whatever unit the rate is quoted in. The
         # arithmetic alone says a teaspoon of a $10.99/lb item costs eleven
         # cents, which is true and useless: you cannot buy five grams of

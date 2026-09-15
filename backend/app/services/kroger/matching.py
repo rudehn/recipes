@@ -241,7 +241,14 @@ def _fit(
 
     price = product.regular or 0.0
     cost = cost_to_cover(
-        price, parse_size(product.size), product.sold_by, need, canonical_key, grams, each
+        price,
+        parse_size(product.size),
+        product.sold_by,
+        need,
+        canonical_key,
+        grams,
+        each,
+        loose=product.sold_loose,
     )
 
     # Sold by weight, the price is a rate and any amount can be bought, so it

@@ -65,6 +65,11 @@ CATALOG = {
         "0004", "Fresh Chicken Thighs", 4.00, size="1 lb", sold_by="WEIGHT",
         categories=["Meat & Seafood"],
     ),
+    # Sold loose by the pound, filed under produce, as the live store lists it.
+    "jalapeno": catalog_entry(
+        "0005", "Fresh Jalapeno Peppers", 1.99, size="1 lb", sold_by="WEIGHT",
+        categories=["Produce", "International"],
+    ),
     "saffron": None,
 }
 
@@ -190,6 +195,19 @@ async def test_lines_carry_a_price_and_the_total_says_what_it_covers(client, cat
     assert body["pricing"]["priced"] == 2
     assert body["pricing"]["total_lines"] == 3
     assert body["pricing"]["store"]["name"] == "Kroger - Kroger Riverside"
+
+
+async def test_loose_produce_is_estimated_for_the_amount_not_a_whole_pound(client, catalog):
+    """A cup of jalapenos is 90 g of peppers sold loose at $1.99 a pound. The
+    list used to charge the whole pound: the floor that stops a teaspoon of
+    bacon costing pennies was catching produce, which sells in any amount."""
+    await seed(["jalapeno"])
+
+    body = await fetch(client)
+
+    line = {i["name"]: i for i in body["items"]}["jalapeno"]
+    assert line["price"]["regular"] == 1.99
+    assert line["price"]["estimated"] == 0.39
 
 
 async def test_the_list_survives_kroger_being_unreachable(client, catalog):

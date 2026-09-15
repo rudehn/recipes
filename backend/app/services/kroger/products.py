@@ -87,6 +87,19 @@ class Product:
         )
 
     @property
+    def sold_loose(self) -> bool:
+        """Produce sold by weight off a pile: loose jalapenos, loose onions.
+
+        Priced as a rate like anything sold by weight, and unlike the packaged
+        ones - bacon, chicken from the meat case - it can be bought in any
+        amount, down to a single pepper. Told apart the way produce sold by
+        the piece is: by the department Kroger files it under.
+        """
+        return self.sold_by == "WEIGHT" and any(
+            "produce" in c.casefold() for c in self.categories
+        )
+
+    @property
     def on_sale(self) -> bool:
         return self.promo is not None and self.regular is not None and self.promo < self.regular
 

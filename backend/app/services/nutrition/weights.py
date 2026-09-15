@@ -145,6 +145,17 @@ def _grams_per_piece(food: Food, name: str, key: str, default: Default | None) -
     return None
 
 
+def usda_grams_per_piece(food: Food, key: str, default: Default | None = None) -> float | None:
+    """What one of a counted ingredient weighs by USDA's portions, or None.
+
+    For a caller with no recipe line to read sizes from - pricing, weighing a
+    count against a shelf sold by weight. The same order as a recipe's own
+    count, less the sizes a name would have given: the default's piece, a
+    word of the key, a word of the food's name, a generic medium piece.
+    """
+    return _grams_per_piece(food, "", key, default)
+
+
 def grams(
     food: Food,
     quantity: float | None,
