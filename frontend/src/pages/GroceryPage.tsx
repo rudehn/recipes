@@ -15,7 +15,9 @@ import {
   type LineIssue,
   type Modality,
 } from "../api";
+import { CartStepper } from "../components/CartStepper";
 import { LoadFailure } from "../components/LoadError";
+import { PasteToCart } from "../components/PasteToCart";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, formatWhen, fromISODate, startOfWeek, toISODate } from "../dates";
 import { recipeIngredientPath } from "../recipeLink";
@@ -383,7 +385,7 @@ export default function GroceryPage() {
 
       {list?.pricing && <PricingSummary pricing={list.pricing} list={list} />}
 
-      {list && !empty && <SendToCart start={start} end={end} list={list} />}
+      {list && <SendToCart start={start} end={end} list={list} empty={Boolean(empty)} />}
 
       {!error && empty && (
         <EmptyState glyph="🧺" title="Nothing to buy">
@@ -553,15 +555,21 @@ function SendToCart({
   start,
   end,
   list,
+  empty,
 }: {
   start: string;
   end: string;
   list: GroceryList;
+  /** Nothing planned to buy. A pasted list can still be sent. */
+  empty: boolean;
 }) {
   const { data: status, reload: reloadStatus } = useLoad(
     useCallback(() => api.cartStatus(), []),
   );
-  const [open, setOpen] = useState(false);
+  // Which review is open: the week's list, or a pasted one. One at a time,
+  // since each ends in its own send button and two would invite pressing
+  // the wrong one.
+  const [open, setOpen] = useState<"list" | "paste" | null>(null);
   const [sent, setSent] = useState<CartResult | null>(null);
 
   const signature = markSignature(list);
@@ -569,6 +577,9 @@ function SendToCart({
   if (!status?.configured) return null;
 
   if (!status.connected) {
+    // Only offered against a list: an empty week has nothing to invite
+    // ordering, and the settings page is where connecting is explained.
+    if (empty) return null;
     return (
       <div className="cart-invite">
         <span>Order this list from Kroger.</span>
@@ -635,12 +646,25 @@ function SendToCart({
             </p>
           )}
         </div>
-        <Button onClick={() => setOpen((wasOpen) => !wasOpen)} aria-expanded={open}>
-          {open ? "Cancel" : "Send to cart"}
-        </Button>
+        <div className="cart-actions">
+          <Button
+            onClick={() => setOpen((was) => (was === "paste" ? null : "paste"))}
+            aria-expanded={open === "paste"}
+          >
+            {open === "paste" ? "Cancel" : "Paste a list"}
+          </Button>
+          {!empty && (
+            <Button
+              onClick={() => setOpen((was) => (was === "list" ? null : "list"))}
+              aria-expanded={open === "list"}
+            >
+              {open === "list" ? "Cancel" : "Send to cart"}
+            </Button>
+          )}
+        </div>
       </div>
 
-      {open && (
+      {open === "list" && (
         // Keyed on the marks, so marking something while the review is open
         // starts it again rather than leaving it describing a trip that is
         // no longer the one about to be ordered.
@@ -649,7 +673,16 @@ function SendToCart({
           start={start}
           end={end}
           onSent={(result) => {
-            setOpen(false);
+            setOpen(null);
+            setSent(result);
+          }}
+        />
+      )}
+
+      {open === "paste" && (
+        <PasteToCart
+          onSent={(result) => {
+            setOpen(null);
             setSent(result);
           }}
         />
@@ -657,9 +690,6 @@ function SendToCart({
     </section>
   );
 }
-
-/** The most of one product a single send will order; the server's cap too. */
-const MAX_QUANTITY = 99;
 
 /**
  * What is about to be ordered, and the button that orders it.
@@ -697,8 +727,7 @@ function CartReview({
     return quantities.get(line.key) ?? line.quantity;
   }
 
-  function adjust(line: CartLine, by: number) {
-    const next = Math.min(MAX_QUANTITY, Math.max(1, quantityOf(line) + by));
+  function setQuantity(line: CartLine, next: number) {
     setQuantities((prev) => {
       const changed = new Map(prev);
       // Back at the worked-out number is the same as never having changed it.
@@ -803,25 +832,11 @@ function CartReview({
               const quantity = quantityOf(line);
               return (
                 <li key={line.key}>
-                  <span className="stepper" role="group" aria-label={`How many ${line.name}`}>
-                    <button
-                      type="button"
-                      aria-label={`Fewer ${line.name}`}
-                      disabled={quantity <= 1}
-                      onClick={() => adjust(line, -1)}
-                    >
-                      −
-                    </button>
-                    <span className="quantity">{quantity}×</span>
-                    <button
-                      type="button"
-                      aria-label={`More ${line.name}`}
-                      disabled={quantity >= MAX_QUANTITY}
-                      onClick={() => adjust(line, 1)}
-                    >
-                      +
-                    </button>
-                  </span>
+                  <CartStepper
+                    name={line.name}
+                    quantity={quantity}
+                    onChange={(next) => setQuantity(line, next)}
+                  />
                   <span className="item-name">
                     <span className="name">{line.name}</span>
                     {line.amounts.length > 0 && (

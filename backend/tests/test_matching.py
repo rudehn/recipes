@@ -574,3 +574,25 @@ def test_a_single_piece_of_produce_counts_as_the_recipes_piece():
     })
     assert bulb.sold_by_piece is True
     assert packages_to_cover(parse_size("1 ct"), measure(6, None), "garlic-clove", None, True) == 1
+
+
+# ------------------------------------------------ a pasted shopping list ---
+
+
+def test_paper_towels_are_nothing_to_a_recipe():
+    """The food aisles are where an ingredient is bought."""
+    towels = _product_from(produce("0001", "Bounty Paper Towels", ["Household"]))
+    assert matching.choose([towels], "paper-towel") is None
+
+
+def test_a_shopping_list_can_buy_paper_towels():
+    towels = _product_from(produce("0001", "Bounty Paper Towels", ["Household"]))
+    assert matching.choose([towels], "paper-towel", any_department=True) is towels
+
+
+def test_a_shopping_list_still_asks_the_food_aisles_first():
+    """Epsom salt answers "salt" as fully as table salt does, and is not it."""
+    epsom = _product_from(produce("0001", "Epsom Salt", ["Health"]))
+    table = _product_from(produce("0002", "Kroger® Iodized Salt", ["Baking Goods"]))
+    chosen = matching.choose([epsom, table], "salt", any_department=True)
+    assert chosen is table

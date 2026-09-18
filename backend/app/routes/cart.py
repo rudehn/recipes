@@ -22,11 +22,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import config
 from ..db import get_session
-from ..schemas import CartPlan, CartRequest, CartResult, CartSignIn, CartStatus
+from ..schemas import (
+    CartPlan,
+    CartRequest,
+    CartResult,
+    CartSignIn,
+    CartStatus,
+    PastePlan,
+    PasteRequest,
+    PasteSend,
+)
 from ..services import settings as settings_service
 from ..services.grocery import build_grocery_list
 from ..services.kroger import cart
 from ..services.kroger import client as kroger
+from ..services.kroger.locations import Store
+from ..services.shopping_text import read_shopping_text
 
 log = logging.getLogger(__name__)
 
@@ -180,3 +191,72 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     await cart.record_sent(session, plan.lines)
     sent_at = await settings_service.record_cart_send(session)
     return CartResult(added=len(plan.lines), skipped=plan.skipped, sent_at=sent_at)
+
+
+# ----------------------------------------------------------- a pasted list ---
+
+
+async def _store_for_paste(session: AsyncSession) -> Store:
+    store = await settings_service.selected_store(session)
+    if store is None:
+        # A pasted list is nothing but products to find, and there is no
+        # finding them without a store. Said outright, rather than answered
+        # with every line unmatched, which would read as a list gone wrong.
+        raise HTTPException(
+            status_code=409, detail="Choose a Kroger store in Settings first"
+        )
+    return store
+
+
+@router.post("/paste/preview", response_model=PastePlan)
+async def paste_preview(data: PasteRequest, session: AsyncSession = Depends(get_session)):
+    """What sending a pasted shopping list would order.
+
+    A read, though it is a POST: the list is the request body, and it can be
+    longer than belongs in a URL. Nothing reaches the cart from here.
+    """
+    _require_configured()
+    store = await _store_for_paste(session)
+    read = read_shopping_text(data.text)
+    try:
+        ordered = await cart.order_pasted(session, read, store.location_id)
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+    return cart.paste_plan(ordered, read)
+
+
+@router.post("/paste/add", response_model=CartResult)
+async def paste_add(data: PasteSend, session: AsyncSession = Depends(get_session)):
+    """Put a pasted shopping list in the cart.
+
+    The text is read and planned again rather than the preview being
+    trusted, for the reasons `add` gives. It records the send's time, since
+    it is the same cart and a second send adds to it, and nothing else: a
+    pasted list is not the grocery list and holds none of its lines back.
+    """
+    _require_configured()
+    if await settings_service.cart_connection(session) is None:
+        raise HTTPException(status_code=409, detail="No Kroger account is connected")
+    store = await _store_for_paste(session)
+
+    read = read_shopping_text(data.text)
+    try:
+        ordered = await cart.order_pasted(
+            session, read, store.location_id, data.quantities, data.removed
+        )
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+    lines = [o.line for o in ordered if o.line is not None]
+    skipped = [o.wanted.name for o in ordered if o.line is None]
+    if not lines:
+        return CartResult(added=0, skipped=skipped)
+
+    try:
+        await cart.send(session, lines, data.modality)
+    except cart.NotConnected:
+        raise HTTPException(status_code=409, detail="No Kroger account is connected")
+    except kroger.KrogerError:
+        raise HTTPException(status_code=502, detail="Could not reach Kroger")
+
+    sent_at = await settings_service.record_cart_send(session)
+    return CartResult(added=len(lines), skipped=skipped, sent_at=sent_at)

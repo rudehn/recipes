@@ -1371,6 +1371,16 @@ button.cook-duration:hover {
   flex-shrink: 0;
 }
 
+/* The global reset takes the underline off every link, which inside a
+   sentence leaves "Open your cart" reading as plain text. */
+.notice-banner a,
+.error-banner a {
+  color: var(--accent-ink);
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 /* ---------- Install hint ---------- */
 
 /*
@@ -2148,6 +2158,79 @@ body.has-install-hint .page {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
+
+.cart-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+}
+
+/* ------------------------------------------------------ a pasted list --- */
+
+.paste-label {
+  display: block;
+  margin-bottom: var(--space-8);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+/* Tall enough to see a week's list without scrolling inside it, and resized
+   only upwards: the panel is already the width of the page. */
+.paste-list textarea {
+  display: block;
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  line-height: var(--leading-normal);
+}
+
+.paste-list .section-note { margin: var(--space-8) 0 var(--space-12); }
+
+.paste-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+  margin-bottom: var(--space-8);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.paste-lines li { align-items: center; }
+
+.paste-lines .item-name { max-width: 40%; overflow-wrap: anywhere; }
+
+/* Kroger's price for one package, in ink rather than muted: with the name,
+   it is what says whether the match is the right one. */
+.paste-lines .price {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Written as a link inside the product's own line, since it changes that and
+   nothing else. */
+.paste-lines .change {
+  color: var(--accent-ink);
+  font-weight: var(--weight-semibold);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.paste-lines .change:hover { color: var(--ink); }
+
+/* A line that cannot be counted keeps the stepper's width, so the names
+   stay in one column down the list; a line taken off keeps the remove
+   button's, so its "Put back" lines up with the other lines' "Change". */
+.stepper-slot,
+.remove-slot { visibility: hidden; flex: none; }
+
+.paste-lines li.removed .name {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.paste-lines li.removed .covers { text-decoration: line-through; }
 
 .cart-send {
   display: flex;
@@ -3495,6 +3578,19 @@ body.has-install-hint .page {
   .preview-banner .spacer { display: none; }
 
   .cart-head .btn { flex: 1; justify-content: center; }
+
+  .cart-actions { flex: 1 0 100%; }
+
+  /* The product drops to a line of its own under the name, and the button
+     that takes the line off stays at the end of the first row. */
+  .paste-lines li { row-gap: var(--space-2); }
+
+  .paste-lines .product { order: 1; }
+
+  .paste-lines li > .icon-btn,
+  .paste-lines li > .remove-slot { margin-left: auto; }
+
+  .paste-lines .item-name { max-width: none; flex: 1; }
 
   .empty-state { padding: var(--space-32) var(--space-16); }
 }

@@ -307,6 +307,7 @@ def _best(
     tokens: list[str],
     need: Measure | None,
     canonical_key: str,
+    food_only: bool = True,
 ) -> Product | None:
     # A product with no price is no use even when it is the right thing, and
     # one that does not account for the whole ingredient name is a guess. One
@@ -322,7 +323,7 @@ def _best(
         and p.in_stock
         and _coverage(tokens, words := _words(p.description)) >= MIN_COVERAGE
         and not _is_derivative(words, tokens)
-        and not _non_food(p)
+        and not (food_only and _non_food(p))
     ]
     if not usable:
         return None
@@ -330,22 +331,33 @@ def _best(
 
 
 def choose(
-    candidates: list[Product], canonical_key: str, need: Measure | None = None
+    candidates: list[Product],
+    canonical_key: str,
+    need: Measure | None = None,
+    any_department: bool = False,
 ) -> Product | None:
     """The best product for an ingredient, or None if none is good enough.
 
     Two passes over the same results, never a second search. The first asks
     for the whole name; the second drops measure words, which is what lets
     "garlic clove" find garlic without loosening the bar for everything else.
+
+    `any_department` is for a pasted shopping list, which has paper towels
+    and dish soap on it as well as food. Food is still asked for first, so
+    "salt" is the salt in the baking aisle and not the Epsom salt in the
+    pharmacy; the other departments are tried only when no food answers.
     """
     tokens = _tokens(canonical_key)
     if not tokens:
         return None
-    chosen = _best(candidates, tokens, need, canonical_key)
-    if chosen is not None:
-        return chosen
     reduced = _without_unit_words(tokens)
-    return _best(candidates, reduced, need, canonical_key) if reduced else None
+    for food_only in (True, False) if any_department else (True,):
+        chosen = _best(candidates, tokens, need, canonical_key, food_only)
+        if chosen is None and reduced:
+            chosen = _best(candidates, reduced, need, canonical_key, food_only)
+        if chosen is not None:
+            return chosen
+    return None
 
 
 async def _stored(
@@ -377,7 +389,11 @@ _FAILED = object()
 
 
 async def _search(
-    canonical_key: str, location_id: str, need: Measure | None, gate: asyncio.Semaphore
+    canonical_key: str,
+    location_id: str,
+    need: Measure | None,
+    gate: asyncio.Semaphore,
+    any_department: bool,
 ) -> Product | object | None:
     """Kroger's answer for one ingredient: a product, None, or _FAILED."""
     term = canonical_key.replace("-", " ")
@@ -387,7 +403,7 @@ async def _search(
         except KrogerError as exc:
             log.warning("Kroger product search failed for %r: %s", canonical_key, exc)
             return _FAILED
-    chosen = choose(candidates, canonical_key, need)
+    chosen = choose(candidates, canonical_key, need, any_department)
     if chosen is None:
         log.info(
             "No confident Kroger match for %r among %d results",
@@ -402,6 +418,7 @@ async def _resolve_all(
     keys: list[str],
     location_id: str,
     needs: dict[str, Measure],
+    any_department: bool = False,
 ) -> dict[str, str | None]:
     """Search for several ingredients together and record every answer.
 
@@ -411,7 +428,7 @@ async def _resolve_all(
     """
     gate = asyncio.Semaphore(SEARCH_CONCURRENCY)
     answers = await asyncio.gather(
-        *(_search(key, location_id, needs.get(key), gate) for key in keys)
+        *(_search(key, location_id, needs.get(key), gate, any_department) for key in keys)
     )
     resolved: dict[str, str | None] = {}
     for key, answer in zip(keys, answers, strict=True):
@@ -451,6 +468,7 @@ async def picks(
     canonical_keys: list[str],
     location_id: str,
     needs: dict[str, Measure] | None = None,
+    any_department: bool = False,
 ) -> dict[str, Pick]:
     """What each ingredient given means here, resolving any not seen before.
 
@@ -459,6 +477,9 @@ async def picks(
     between page loads. Every key asked for is answered, including those that
     resolved to nothing: the caller shows those as unpriced, and needs to
     know whether that was a person's decision.
+
+    `any_department` lets a key seen for the first time match outside the
+    food aisles; see `choose`. A key already recorded keeps its answer.
     """
     stored = await _stored(session, canonical_keys, location_id)
 
@@ -482,7 +503,7 @@ async def picks(
     unseen = sorted({key for key in canonical_keys if key and key not in stored})
     if unseen:
         for key, product_id in (
-            await _resolve_all(session, unseen, location_id, needs or {})
+            await _resolve_all(session, unseen, location_id, needs or {}, any_department)
         ).items():
             resolved[key] = Pick(product_id, False)
     if unseen or stale:

@@ -46,8 +46,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import config
 from ...models import CartSentLine, utcnow
-from ...schemas import CartLine, CartPlan, GroceryItem, GroceryList, SentLine
+from ...schemas import (
+    CartLine,
+    CartPlan,
+    GroceryItem,
+    GroceryList,
+    LineIssue,
+    PastedLine,
+    PastePlan,
+    PasteProblem,
+    SentLine,
+)
 from .. import settings as settings_service
+from ..shopping_text import ShoppingText
 from . import pricing
 from .client import (
     EXPIRY_MARGIN,
@@ -59,7 +70,7 @@ from .client import (
     put,
     refresh_user_token,
 )
-from .units import packages_to_cover, parse_size
+from .units import Measure, comparable, packages_to_cover, parse_size
 
 log = logging.getLogger(__name__)
 
@@ -304,42 +315,172 @@ async def plan(
     held_back = {line.key for line in sent}
     lines = [line for line in lines if line.key not in held_back]
 
-    chosen = await pricing.choices(session, lines, store.location_id)
-    overrides = quantities or {}
+    ordered = await _order(
+        session, [_wanted(line) for line in lines], store.location_id, quantities or {}
+    )
+    sending = [o.line for o in ordered if o.line is not None]
+    skipped = [o.wanted.name for o in ordered if o.problem in ("no_match", "not_orderable")]
+    out_of_stock = [o.wanted.name for o in ordered if o.problem == "out_of_stock"]
+    return CartPlan(lines=sending, skipped=skipped, out_of_stock=out_of_stock, sent=sent)
 
-    sending: list[CartLine] = []
-    skipped: list[str] = []
-    out_of_stock: list[str] = []
-    for line in lines:
-        choice = chosen.get(line.key)
+
+@dataclass(frozen=True)
+class Wanted:
+    """One thing to order, whichever list asked for it.
+
+    `need` is the amount to cover, and the count is worked out from it
+    against the package. `packages` is a count stated outright instead, as a
+    pasted "eggs x2" does, and is sent as it stands. `measured` says whether
+    an amount was asked for at all: a line with none is one package without
+    that being a problem, while a line whose amount cannot be related to the
+    package is one package by default, and says so.
+    """
+
+    key: str
+    name: str
+    need: Measure | None
+    measured: bool
+    packages: int | None = None
+    amounts: tuple[str, ...] = ()
+    issue: LineIssue | None = None
+
+
+@dataclass(frozen=True)
+class Ordered:
+    """What became of one `Wanted`: the line to send, or why there is none."""
+
+    wanted: Wanted
+    choice: pricing.Choice | None
+    line: CartLine | None
+    problem: PasteProblem | None
+
+
+def _wanted(line: GroceryItem) -> Wanted:
+    return Wanted(
+        key=line.key,
+        name=line.name,
+        need=pricing.needed(line),
+        measured=any(use.quantity for use in line.uses),
+        amounts=tuple(line.amounts),
+        issue=line.issue,
+    )
+
+
+async def _order(
+    session: AsyncSession,
+    wanted: list[Wanted],
+    location_id: str,
+    overrides: dict[str, int],
+    any_department: bool = False,
+) -> list[Ordered]:
+    """Which product each thing is, how many of it, and whether it can go.
+
+    The one place both a grocery list and a pasted list are turned into cart
+    lines, so the two cannot come to differ on what "orderable" means.
+    `overrides` are counts the shopper set by hand, by key; they replace the
+    worked-out count and cannot put a product in the cart the plan did not
+    already choose.
+    """
+    chosen = await pricing.choices_for(
+        session, {w.key: w.need for w in wanted}, location_id, any_department
+    )
+    ordered: list[Ordered] = []
+    for item in wanted:
+        choice = chosen.get(item.key)
         product = choice.product if choice else None
         # The UPC is what the cart is addressed by, and it is not the product
         # id. A product without one cannot be ordered even though it priced.
-        if product is None or not product.upc:
-            skipped.append(line.name)
+        if product is None:
+            ordered.append(Ordered(item, choice, None, "no_match"))
+            continue
+        if not product.upc:
+            ordered.append(Ordered(item, choice, None, "not_orderable"))
             continue
         if not product.in_stock:
-            out_of_stock.append(line.name)
+            ordered.append(Ordered(item, choice, None, "out_of_stock"))
             continue
-        need = pricing.needed(line)
         size = parse_size(product.size)
-        worked_out = packages_to_cover(size, need, line.key, None, product.sold_by_piece)
+        by_piece = product.sold_by_piece
+        if item.packages is not None:
+            worked_out = item.packages
+        else:
+            worked_out = packages_to_cover(size, item.need, item.key, None, by_piece)
         # A count that could not be worked out is one by default, and says so:
         # the stepper is the shopper's to use, knowingly.
-        unsized = not pricing.sized(line, product)
-        sending.append(
-            CartLine(
-                key=line.key,
-                name=line.name,
-                upc=product.upc,
-                description=product.description,
-                size=product.size,
-                quantity=overrides.get(line.key, worked_out),
-                amounts=line.amounts,
-                issue="unsized" if unsized else line.issue,
+        unsized = item.measured and (
+            item.need is None
+            or comparable(size, item.need, item.key, None, by_piece) is None
+        )
+        line = CartLine(
+            key=item.key,
+            name=item.name,
+            upc=product.upc,
+            description=product.description,
+            size=product.size,
+            quantity=overrides.get(item.key, worked_out),
+            amounts=list(item.amounts),
+            issue="unsized" if unsized else item.issue,
+        )
+        ordered.append(Ordered(item, choice, line, None))
+    return ordered
+
+
+def _wanted_from_paste(read: ShoppingText, removed: set[str]) -> list[Wanted]:
+    return [
+        Wanted(
+            key=item.key,
+            name=item.name,
+            need=item.need,
+            measured=item.need is not None,
+            packages=item.packages,
+            amounts=(item.amount,) if item.amount else (),
+        )
+        for item in read.lines
+        if item.key not in removed
+    ]
+
+
+async def order_pasted(
+    session: AsyncSession,
+    read: ShoppingText,
+    location_id: str,
+    quantities: dict[str, int] | None = None,
+    removed: list[str] | None = None,
+) -> list[Ordered]:
+    """What a pasted shopping list would order, line by line, in its order.
+
+    Its own path to the cart, and nothing else's: it is not a grocery list,
+    so it holds nothing back that a grocery list sent this trip, and records
+    nothing that would hold a grocery list's lines back in turn. Products are
+    chosen from every department, since a shopping list has paper towels on
+    it, and a choice made here is remembered by key like any other.
+    """
+    return await _order(
+        session,
+        _wanted_from_paste(read, set(removed or [])),
+        location_id,
+        quantities or {},
+        any_department=True,
+    )
+
+
+def paste_plan(ordered: list[Ordered], read: ShoppingText) -> PastePlan:
+    lines = []
+    for o in ordered:
+        product = o.choice.product if o.choice else None
+        lines.append(
+            PastedLine(
+                key=o.wanted.key,
+                name=o.wanted.name,
+                quantity=o.line.quantity if o.line else (o.wanted.packages or 1),
+                amount=o.wanted.amounts[0] if o.wanted.amounts else None,
+                product=pricing.as_item_price(product) if product else None,
+                hand_picked=o.choice.hand_picked if o.choice else False,
+                problem=o.problem,
+                issue=o.line.issue if o.line else None,
             )
         )
-    return CartPlan(lines=sending, skipped=skipped, out_of_stock=out_of_stock, sent=sent)
+    return PastePlan(lines=lines, ticked=read.ticked)
 
 
 async def send(session: AsyncSession, lines: list[CartLine], modality: str) -> None:

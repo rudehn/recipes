@@ -20,6 +20,8 @@ import type {
   MealPlanEntry,
   Page,
   PantryItem,
+  PastedLine,
+  PastePlan,
   Recipe,
   RecipeDraft,
   RecipeSummary,
@@ -158,6 +160,24 @@ export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
 
 export function cartPlan(overrides: Partial<CartPlan> = {}): CartPlan {
   return { lines: [], skipped: [], out_of_stock: [], sent: [], ...overrides };
+}
+
+export function pastedLine(overrides: Partial<PastedLine> = {}): PastedLine {
+  return {
+    key: "milk",
+    name: "milk",
+    quantity: 1,
+    amount: null,
+    product: itemPrice({ product_id: "0004", description: "Kroger® 2% Milk", size: "1 gal", regular: 3.29 }),
+    hand_picked: false,
+    problem: null,
+    issue: null,
+    ...overrides,
+  };
+}
+
+export function pastePlan(overrides: Partial<PastePlan> = {}): PastePlan {
+  return { lines: [], ticked: [], ...overrides };
 }
 
 export function itemPrice(overrides: Partial<ItemPrice> = {}): ItemPrice {

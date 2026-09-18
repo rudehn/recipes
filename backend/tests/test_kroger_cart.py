@@ -77,6 +77,10 @@ CATALOG = {
     # Matched, priced, and not on the shelf today.
     "butter": catalog_entry("0008", "Kroger® Butter", stock="TEMPORARILY_OUT_OF_STOCK"),
     "saffron": None,
+    # Not food, and on every shopping list.
+    "paper towel": catalog_entry(
+        "0009", "Bounty® Paper Towels", size="6 ct", categories=["Household"]
+    ),
 }
 
 
@@ -757,3 +761,143 @@ async def test_a_worked_out_count_carries_no_issue(client, fake):
 
     assert body["lines"][0]["quantity"] == 3
     assert body["lines"][0]["issue"] is None
+
+
+# -------------------------------------------------- a pasted shopping list ---
+
+
+async def preview_paste(client, text: str) -> httpx.Response:
+    return await client.post("/api/cart/paste/preview", json={"text": text})
+
+
+async def send_paste(client, text: str, **body) -> httpx.Response:
+    return await client.post("/api/cart/paste/add", json={"text": text, **body})
+
+
+async def test_a_pasted_list_is_shown_line_by_line_before_anything_is_sent(client, fake):
+    """Every line keeps its place, with the reason beside the ones that
+    cannot go, because the review is the only place a pasted line is fixed."""
+    # Butter was chosen by hand while it was on the shelf; the matcher itself
+    # would pass an empty shelf over.
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="butter", location_id=LOCATION, product_id="0008",
+                user_confirmed=True,
+            )
+        )
+        await session.commit()
+    await seed([])
+    text = "- [ ] flour x2\n12 lb sugar\n[x] milk\nsaffron\nbutter\nyeast"
+
+    resp = await preview_paste(client, text)
+
+    assert resp.status_code == 200
+    assert fake.carts == []
+    body = resp.json()
+    assert body["ticked"] == ["milk"]
+    lines = {line["name"]: line for line in body["lines"]}
+    assert list(lines) == ["flour", "sugar", "saffron", "butter", "yeast"]
+    assert (lines["flour"]["quantity"], lines["flour"]["problem"]) == (2, None)
+    assert lines["flour"]["product"]["description"] == "Kroger® All Purpose Flour"
+    # An amount is covered by packages, and says what it is covering.
+    assert (lines["sugar"]["quantity"], lines["sugar"]["amount"]) == (3, "12 lb")
+    assert lines["saffron"]["problem"] == "no_match"
+    assert lines["saffron"]["product"] is None
+    assert lines["butter"]["problem"] == "out_of_stock"
+    assert lines["butter"]["hand_picked"] is True
+    assert lines["yeast"]["problem"] == "not_orderable"
+
+
+async def test_a_pasted_list_can_buy_what_no_recipe_would(client, fake):
+    await seed([])
+
+    body = (await preview_paste(client, "paper towels")).json()
+
+    assert body["lines"][0]["product"]["description"] == "Bounty® Paper Towels"
+    assert body["lines"][0]["problem"] is None
+
+
+async def test_a_pasted_list_reaches_the_cart_with_the_counts_set_in_the_review(
+    client, fake
+):
+    await seed([])
+    text = "flour\neggs x2\nsugar\nsaffron"
+
+    resp = await send_paste(
+        client, text, quantities={"flour": 4}, removed=["sugar"], modality="DELIVERY"
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["added"] == 2
+    assert resp.json()["skipped"] == ["saffron"]
+    assert fake.carts == [
+        {
+            "items": [
+                {"upc": "000111100001", "quantity": 4, "modality": "DELIVERY"},
+                {"upc": "000111100005", "quantity": 2, "modality": "DELIVERY"},
+            ]
+        }
+    ]
+    # It is a send to the same cart, so the warning about sending again holds.
+    assert (await client.get("/api/cart/status")).json()["last_sent_at"] is not None
+
+
+async def test_a_pasted_send_does_not_hold_back_the_grocery_list(client, fake):
+    """Pasting eggs says nothing about the eggs the week's meals need, so the
+    grocery list's record of what it sent is not touched."""
+    await seed(["egg"], quantity=2, unit=None)
+
+    await send_paste(client, "eggs")
+    preview = (await client.get(f"/api/cart/preview?{RANGE}")).json()
+
+    assert [line["name"] for line in preview["lines"]] == ["egg"]
+    assert preview["sent"] == []
+
+
+async def test_the_page_cannot_put_anything_in_the_cart_the_text_did_not_ask_for(
+    client, fake
+):
+    await seed([])
+
+    resp = await send_paste(client, "saffron", quantities={"flour": 3})
+
+    assert resp.json()["added"] == 0
+    assert fake.carts == []
+    # Nothing went, so nothing is stamped as having gone.
+    assert resp.json()["sent_at"] is None
+    assert (await client.get("/api/cart/status")).json()["last_sent_at"] is None
+
+
+async def test_a_pasted_list_needs_a_store_to_be_matched_against(client, fake):
+    await seed([], store=False)
+
+    resp = await preview_paste(client, "flour")
+
+    assert resp.status_code == 409
+    assert "store" in resp.json()["detail"]
+
+
+async def test_sending_a_pasted_list_without_a_connection_asks_for_one(client, fake):
+    await seed([], connected=False)
+
+    resp = await send_paste(client, "flour")
+
+    assert resp.status_code == 409
+    assert fake.carts == []
+
+
+async def test_a_pasted_count_outside_what_can_be_ordered_is_refused(client, fake):
+    await seed([])
+
+    resp = await send_paste(client, "flour", quantities={"flour": 100})
+
+    assert resp.status_code == 422
+
+
+async def test_a_paste_longer_than_any_list_is_refused(client, fake):
+    await seed([])
+
+    resp = await preview_paste(client, "flour\n" * 5_000)
+
+    assert resp.status_code == 422

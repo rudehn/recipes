@@ -536,6 +536,35 @@ export interface CartResult {
   sent_at: string | null;
 }
 
+/** Why a pasted line cannot go to the cart. */
+export type PasteProblem = "no_match" | "out_of_stock" | "not_orderable";
+
+/**
+ * One line of a pasted shopping list, as it would be ordered.
+ *
+ * A line that cannot be sent stays in its place with the reason, because the
+ * review is the only place a pasted line can be put right.
+ */
+export interface PastedLine {
+  key: string;
+  /** The shopper's own words, without the bullet or the count. */
+  name: string;
+  quantity: number;
+  /** The amount the count is meant to cover, when one was written: "2 lb". */
+  amount: string | null;
+  product: ItemPrice | null;
+  hand_picked: boolean;
+  problem: PasteProblem | null;
+  /** "unsized" when the count is one by default rather than worked out. */
+  issue: LineIssue | null;
+}
+
+/** What sending a pasted list would order, and the lines already ticked in it. */
+export interface PastePlan {
+  lines: PastedLine[];
+  ticked: string[];
+}
+
 /**
  * The request never reached the server, so there is no answer to report.
  *
@@ -766,6 +795,34 @@ export const api = {
         modality,
         ...(Object.keys(quantities).length > 0 ? { quantities } : {}),
         ...(resend.length > 0 ? { resend } : {}),
+      }),
+    }),
+  /** What sending a pasted shopping list would order. A read: nothing reaches the cart. */
+  pastePreview: (text: string) =>
+    request<PastePlan>("/api/cart/paste/preview", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+  /**
+   * Send a pasted shopping list.
+   *
+   * The text again rather than the lines on screen: the server reads it and
+   * picks the products itself. The counts changed in the review and the lines
+   * taken out are all that come from here.
+   */
+  pasteToCart: (
+    text: string,
+    modality: Modality,
+    quantities: Record<string, number> = {},
+    removed: string[] = [],
+  ) =>
+    request<CartResult>("/api/cart/paste/add", {
+      method: "POST",
+      body: JSON.stringify({
+        text,
+        modality,
+        ...(Object.keys(quantities).length > 0 ? { quantities } : {}),
+        ...(removed.length > 0 ? { removed } : {}),
       }),
     }),
 };

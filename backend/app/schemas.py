@@ -648,6 +648,13 @@ class CartPlan(BaseModel):
     sent: list[SentLine] = []
 
 
+def _orderable_counts(quantities: dict[str, int]) -> dict[str, int]:
+    for key, count in quantities.items():
+        if not 1 <= count <= MAX_CART_QUANTITY:
+            raise ValueError(f"quantity for {key!r} must be between 1 and {MAX_CART_QUANTITY}")
+    return quantities
+
+
 class CartRequest(BaseModel):
     """Send the list for a date range, rather than a list of products.
 
@@ -674,10 +681,7 @@ class CartRequest(BaseModel):
     @field_validator("quantities")
     @classmethod
     def _counts_are_orderable(cls, quantities: dict[str, int]) -> dict[str, int]:
-        for key, count in quantities.items():
-            if not 1 <= count <= MAX_CART_QUANTITY:
-                raise ValueError(f"quantity for {key!r} must be between 1 and {MAX_CART_QUANTITY}")
-        return quantities
+        return _orderable_counts(quantities)
 
     @model_validator(mode="after")
     def _range_runs_forwards(self) -> "CartRequest":
@@ -700,6 +704,73 @@ class CartResult(BaseModel):
     added: int
     skipped: list[str]
     sent_at: datetime | None = None
+
+
+# Why a pasted line cannot go to the cart. Nothing at the store matched it
+# (or the shopper chose nothing); the product is out today; or the product
+# has no UPC, which is what the cart is addressed by.
+PasteProblem = Literal["no_match", "out_of_stock", "not_orderable"]
+
+
+class PastedLine(BaseModel):
+    """One line of a pasted shopping list, as it would be ordered.
+
+    Unlike a grocery list's review, a line that cannot be sent stays in its
+    place with the reason, rather than being listed by name underneath:
+    the review is the only place a pasted line can be put right, so the
+    product picker has to be reachable from the line itself.
+    """
+
+    key: str
+    # The shopper's own words, without the bullet or the count.
+    name: str
+    quantity: int
+    # The amount the count is meant to cover, when one was written: "2 lb".
+    amount: str | None = None
+    product: ItemPrice | None = None
+    hand_picked: bool = False
+    problem: PasteProblem | None = None
+    # "unsized" when the amount could not be related to the package, so the
+    # count is one by default rather than worked out.
+    issue: LineIssue | None = None
+
+
+class PastePlan(BaseModel):
+    """What sending a pasted list would order, line by line, in its order.
+
+    `ticked` names the lines that were already ticked off in the paste and
+    so are left out, so nothing disappears without saying so.
+    """
+
+    lines: list[PastedLine]
+    ticked: list[str] = []
+
+
+# Longer than any shopping list, and short enough that a paste of the wrong
+# thing is refused rather than read.
+MAX_PASTE_CHARACTERS = 20_000
+
+
+class PasteRequest(BaseModel):
+    text: str = Field(max_length=MAX_PASTE_CHARACTERS)
+
+
+class PasteSend(PasteRequest):
+    """Send a pasted list: the text again, not the lines on screen.
+
+    As with `CartRequest`, the server reads the text and picks the products
+    itself, so what is ordered is what it would have shown. The counts the
+    shopper set and the lines they took out are all that come from the page.
+    """
+
+    modality: Modality = "PICKUP"
+    quantities: dict[str, int] = {}
+    removed: list[str] = []
+
+    @field_validator("quantities")
+    @classmethod
+    def _counts_are_orderable(cls, quantities: dict[str, int]) -> dict[str, int]:
+        return _orderable_counts(quantities)
 
 
 class CartSignIn(BaseModel):

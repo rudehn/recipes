@@ -49,3 +49,21 @@ The app gets more useful the longer it is used, and notes are where the fixes di
 - It only pays off if logging costs one tap; auto-logging from the planner is the important part.
 - Keep a rating coarse (up or down).
   Five stars invites agonising and adds nothing a household needs to decide what to cook again.
+
+## More ways into a pasted list
+
+ADR 9 built pasting text into the Kroger cart; these were left for later.
+
+**What**
+
+- Share a list into the app from Notes or Messages, through the Web Share Target API, so the paste panel opens already filled.
+- Read a photo of a handwritten list or a fridge whiteboard into the same panel.
+
+**Why**
+
+Copy and paste is two steps more than sharing, and a list on paper cannot be pasted at all.
+
+**Watch for**
+
+- Share targets work for an installed PWA on Android and not on iOS, so check which phone the shopping is done on before building it.
+- A photo needs a model call that can fail or misread; the review already guards the cart, but the result should land in the text box to be checked, never straight in the review.

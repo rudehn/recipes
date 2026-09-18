@@ -8,7 +8,8 @@ import { Modal } from "./ui";
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 /**
- * Choose which product an ingredient means, from the recipe page.
+ * Choose which product an ingredient means, from the recipe page or a pasted
+ * shopping list.
  *
  * The grocery list's correction for a recipe row: the same alternatives, the
  * same "don't price this" and the same way back, pinned under the same key,
@@ -22,12 +23,19 @@ export function ProductPickerModal({
   onPick,
   onForget,
   onClose,
+  offerNone = true,
 }: {
-  line: CostLine;
+  line: Pick<CostLine, "key" | "name" | "product" | "hand_picked">;
   /** Null: the ingredient is not to be priced. */
   onPick: (productId: string | null) => void;
   onForget: () => void;
   onClose: () => void;
+  /**
+   * Whether "don't price this" is on offer. A pasted list leaves it out: a
+   * line there that is not wanted is taken off the order, and the remembered
+   * "no product" would quietly unprice every recipe using it.
+   */
+  offerNone?: boolean;
 }) {
   const own = line.key.split("-").join(" ");
   const [query, setQuery] = useState(own);
@@ -83,9 +91,11 @@ export function ProductPickerModal({
             {error ?? (loading ? "Looking…" : "Nothing at this store matches that.")}
           </p>
         )}
-        <button type="button" className="modal-food skip" onClick={() => onPick(null)}>
-          Don&rsquo;t price this
-        </button>
+        {offerNone && (
+          <button type="button" className="modal-food skip" onClick={() => onPick(null)}>
+            Don&rsquo;t price this
+          </button>
+        )}
         {line.hand_picked && (
           <button type="button" className="modal-food skip" onClick={onForget}>
             Back to the automatic pick

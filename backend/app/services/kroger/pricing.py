@@ -241,20 +241,36 @@ async def choices(
     Every line is answered, so that a line with no product can still say
     whether that was the shopper's decision.
     """
+    return await choices_for(
+        session, {line.key: needed(line) for line in lines}, location_id
+    )
+
+
+async def choices_for(
+    session: AsyncSession,
+    needs: dict[str, Measure | None],
+    location_id: str,
+    any_department: bool = False,
+) -> dict[str, Choice]:
+    """`choices` for keys and the amounts they are to cover, rather than for
+    grocery lines - what a pasted shopping list has. `any_department` lets a
+    key seen for the first time match outside the food aisles, since a
+    shopping list has paper towels on it; see `matching.choose`."""
     picked = await matching.picks(
         session,
-        [line.key for line in lines],
+        list(needs),
         location_id,
-        needs={line.key: need for line in lines if (need := needed(line))},
+        needs={key: need for key, need in needs.items() if need},
+        any_department=any_department,
     )
     wanted = sorted({p.product_id for p in picked.values() if p.product_id})
     found = await products.by_ids(wanted, location_id) if wanted else {}
     chosen: dict[str, Choice] = {}
-    for line in lines:
-        pick = picked.get(line.key)
+    for key in needs:
+        pick = picked.get(key)
         if pick is None:
             continue
-        chosen[line.key] = Choice(found.get(pick.product_id or ""), pick.hand_picked)
+        chosen[key] = Choice(found.get(pick.product_id or ""), pick.hand_picked)
     return chosen
 
 
