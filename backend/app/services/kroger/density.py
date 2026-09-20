@@ -193,8 +193,25 @@ SUB_PIECE_WORDS: frozenset[str] = frozenset({
 })
 
 
+# Ingredients whose whole name says the same thing, because the shop's piece
+# is a bunch of them and the recipe counts them one at a time. Kroger's green
+# onions are "1 each", meaning a bunch, so "4 green onions" bought four
+# bunches - the bulb-and-clove mistake without a word to give it away. Named
+# rather than derived: only the shop knows what it packs together.
+SUB_PIECE_KEYS: frozenset[str] = frozenset({
+    "green-onion",
+    "scallion",
+    "spring-onion",
+    "celery",
+    "asparagus-spear",
+    "radish",
+})
+
+
 def counts_parts_of_a_piece(canonical_key: str) -> bool:
     """Whether the recipe's count is of parts, not of what the shop packs."""
+    if any(name in SUB_PIECE_KEYS for name in _walk(canonical_key)):
+        return True
     return any(t in SUB_PIECE_WORDS for t in canonical_key.split("-"))
 
 

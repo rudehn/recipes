@@ -292,3 +292,15 @@ def test_loose_produce_costs_what_is_bought_not_a_whole_unit():
     assert cost_to_cover(10.99, pound, "WEIGHT", teaspoon, "brown-sugar") == pytest.approx(10.99)
     # And an order is still for at least one: no cart takes 14 g.
     assert packages_to_cover(pound, one, "jalapeno") == 1
+
+
+def test_a_bunch_of_produce_is_not_one_of_what_the_recipe_counts():
+    """Kroger sells green onions as "1 each", meaning a bunch, and a recipe
+    counts them one stalk at a time. Four of them bought four bunches, the
+    same mistake as counting garlic cloves as bulbs, so the count is refused
+    and the line falls back to one bunch."""
+    four = measure(4, None)
+    assert packages_to_cover(parse_size("1 each"), four, "green-onion", None, True) == 1
+    assert packages_to_cover(parse_size("1 each"), four, "scallion", None, True) == 1
+    # An avocado is still one avocado.
+    assert packages_to_cover(parse_size("1 each"), four, "avocado", None, True) == 4
