@@ -100,11 +100,19 @@ def recipe_titles(conn: Connection) -> list[str]:
 
 
 async def test_upgrade_builds_the_schema_the_models_describe(db_url):
-    """Guards against migrations and models drifting apart."""
+    """Guards against migrations and models drifting apart.
+
+    Compared the way alembic/env.py compares, server defaults included, so
+    this fails exactly when `alembic check` would. Comparing less let a
+    server default the models did not declare sit unnoticed until the next
+    autogenerate tried to drop it.
+    """
     await run(db_url, _upgrade)
 
     def differences(conn: Connection):
-        context = MigrationContext.configure(conn, opts={"compare_type": True})
+        context = MigrationContext.configure(
+            conn, opts={"compare_type": True, "compare_server_default": True}
+        )
         return compare_metadata(context, Base.metadata)
 
     assert await run(db_url, differences) == []

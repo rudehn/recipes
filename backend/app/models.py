@@ -205,7 +205,12 @@ class IngredientProductMatch(Base):
     user_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     # The rules the automatic pick was made under; see matching.MATCHER_VERSION.
     # An unconfirmed row from an older version is remade on its next use.
-    matcher_version: Mapped[int] = mapped_column(Integer, default=1)
+    #
+    # The server default is the one the migration adding this column used to
+    # stamp existing rows as made under the first rules. It is declared here
+    # so the models say what the database already holds; left out, every
+    # autogenerate proposed dropping it and `alembic check` never passed.
+    matcher_version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     resolved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
