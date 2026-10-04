@@ -189,7 +189,7 @@ export default function RecipeDetailPage() {
       <div className="detail-hero">
         <RecipePhoto recipe={recipe} />
         <div>
-          {recipe.description && <p>{recipe.description}</p>}
+          {recipe.description && <p className="recipe-description">{recipe.description}</p>}
           {recipe.source_url && (
             // Someone else's site, so a new tab: the recipe stays open here,
             // and noopener noreferrer hand the other page nothing of this one.

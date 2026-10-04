@@ -750,11 +750,29 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--shadow);
 }
 
+/*
+ * The column beside the photo is spaced by what follows what, rather than by
+ * a paragraph's default margins. Those put a blank line above the
+ * description, so on a phone it sat twice the page's gap below the photo, and
+ * on a wide screen its first line started below the top of the photo it is
+ * beside. Now the column starts flush, whatever it opens with: the link back
+ * to the original sits close under the description it belongs to, and the
+ * chips keep the same distance from either that the cost keeps from them.
+ */
+.detail-hero .recipe-description { margin: 0; }
+
+.detail-hero .chips { padding-top: 0; }
+
+.recipe-description + .recipe-source { margin-top: var(--space-8); }
+
+.recipe-description + .chips,
+.recipe-source + .chips { margin-top: var(--space-12); }
+
 /* The link back to the page a recipe was imported from, under its
    description: one quiet line in the accent ink the hero's other links use,
    underlined because it leaves the app. */
 .recipe-source {
-  margin: 0 0 var(--space-12);
+  margin: 0;
   font-size: var(--text-sm);
 }
 
