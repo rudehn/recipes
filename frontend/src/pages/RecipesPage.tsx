@@ -291,7 +291,12 @@ function SuggestionPanels() {
                       </span>
                       <span className="product">
                         {sale.price.description}
-                        {sale.price.size && ` · ${sale.price.size}`}
+                        {sale.price.size && (
+                          <>
+                            {" · "}
+                            <span className="product-size">{sale.price.size}</span>
+                          </>
+                        )}
                       </span>
                     </span>
                   </li>

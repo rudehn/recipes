@@ -2317,12 +2317,18 @@ body.has-install-hint .page {
 
 .cart-connection .page-note { margin: 0; }
 
-/* One recipe with something on offer in it: the recipe on the left, its
-   discounted ingredients on the right as a column the eye can add up. */
+/* One recipe in a fold on the recipes page: the recipe on the left, its lines
+   - what is on offer, what needs a look - on the right. The card decides where
+   the right-hand side starts, not its lines: sized to its longest line, each
+   card's lines began somewhere else and the fold read ragged. Split here, the
+   lines start at one edge down the whole fold and end at another, so the
+   prices and the reasons form columns the eye can run down. Two fifths for
+   the recipe keeps a long title to a line or two at full width without
+   stretching the lines so wide a name sits far from its reason. */
 .offer {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
   gap: var(--space-16);
   padding: var(--space-12) var(--space-16);
   background: var(--surface);
@@ -2362,18 +2368,26 @@ body.has-install-hint .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  flex: none;
-  max-width: 55%;
 }
 
+/* The name at the column's start and the price at its end, so both line up
+   from one card to the next. */
 .offer-items li {
   display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--space-12);
 }
 
-.offer-items .name { font-weight: var(--weight-semibold); }
+/* The ingredient keeps its line - "hash browns" broken over two reads as two
+   things - and Kroger's longer description beside it wraps instead. Up to two
+   fifths of the column, past which a long name wraps too, so the price
+   always has room for its figures. */
+.offer-items .name {
+  flex-shrink: 0;
+  max-width: 40%;
+  font-weight: var(--weight-semibold);
+}
 
 /* Right-aligned and narrow, so the prices form a column the eye can add up
    rather than sitting wherever each name happens to end. */
@@ -2404,6 +2418,10 @@ body.has-install-hint .page {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+
+/* "4 sticks / 16 oz" is one thing, so the line breaks before it rather than
+   leaving "oz" alone on a line of its own. */
+.item-price .product-size { white-space: nowrap; }
 
 .grocery-item.checked { opacity: 0.55; }
 
@@ -2547,13 +2565,11 @@ body.has-install-hint .page {
 .cart-lines .why { color: var(--accent-ink); }
 
 /* A recipe's lines in "Needs a look", a list for each thing they hold up, in
-   the column the offers' items take. */
+   the card's right-hand column. */
 .attention-groups {
   display: flex;
   flex-direction: column;
   gap: var(--space-16);
-  flex: none;
-  max-width: 55%;
   min-width: 0;
 }
 
@@ -2675,8 +2691,9 @@ body.has-install-hint .page {
 
 /* A figure on the right of a suggestion row, for the folds that have one
    number rather than a column of prices. */
+/* A single figure stands at the card's end, where the prices end. */
 .offer-figure {
-  flex: none;
+  justify-self: end;
   font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
@@ -3561,22 +3578,18 @@ body.has-install-hint .page {
 
   .grocery-item.stocked .btn { flex: 1; }
 
-  /* The offers' two columns become two rows on a phone. */
-  .offer { flex-direction: column; gap: var(--space-8); }
+  /* The cards' two columns become two rows on a phone, and a single figure
+     sits under the recipe rather than across from it. */
+  .offer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+  }
 
-  /* Full width, or the column is only as wide as its longest line and the
-     prices sit in the middle of the row rather than at its edge. */
-  .offer-items { max-width: 100%; width: 100%; }
-
-  .offer-items li { justify-content: space-between; }
+  .offer-figure { justify-self: start; }
 
   /* Stood a little further off the recipe's summary than the offers' items
      are, so the first heading does not read as a second line of it. */
-  .attention-groups {
-    max-width: 100%;
-    width: 100%;
-    margin-top: var(--space-4);
-  }
+  .attention-groups { margin-top: var(--space-4); }
 
   /* A cart line wraps to two rows: the stepper and name first, then Kroger's
      wording for the product on its own line under them. */
