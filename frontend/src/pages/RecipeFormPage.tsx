@@ -340,14 +340,23 @@ export default function RecipeFormPage() {
           <div className="image-drop">
             {previewUrl && <img src={previewUrl} alt="Recipe preview" />}
             <div className="image-drop-actions">
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(e) => {
-                  setImageFile(e.target.files?.[0] ?? null);
-                  setRemoveImage(false);
-                }}
-              />
+              {/* The platform's file control draws a grey box and "No file
+                  chosen" in its own type, so it is kept for its picker and
+                  reached through a label drawn as one of the app's buttons.
+                  Clipped rather than hidden, the input still takes focus and
+                  carries the label's words as its name. */}
+              <label className="btn small file-pick">
+                <input
+                  type="file"
+                  className="visually-hidden"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => {
+                    setImageFile(e.target.files?.[0] ?? null);
+                    setRemoveImage(false);
+                  }}
+                />
+                {previewUrl ? "Replace photo" : "Choose photo"}
+              </label>
               {(imageFile || importedImageUrl || (existingImage && !removeImage)) && (
                 <Button
                   variant="danger"

@@ -190,14 +190,6 @@ describe("the phone's edges", () => {
 });
 
 /**
- * A recipe's amounts and names, which jsdom lays out no more than it does
- * anything else. Laid out one row at a time, a long amount ("½ teaspoon") was
- * squeezed to the column's minimum and ran into its name - found in real
- * recipes, and only visible in a browser. What is assertable is that the rows
- * still share the list's columns, which is what keeps the amount column as
- * wide as the widest amount.
- */
-/**
  * The recipes page's folds: a card per recipe, the recipe on the left and its
  * lines on the right. When the right-hand block was as wide as its longest
  * line, every card's lines started somewhere else and the fold read ragged -
@@ -221,9 +213,58 @@ describe("the recipes page's folds", () => {
   });
 });
 
+/**
+ * A recipe's amounts and names, which jsdom lays out no more than it does
+ * anything else. Laid out one row at a time, a long amount ("½ teaspoon") was
+ * squeezed to the column's minimum and ran into its name - found in real
+ * recipes, and only visible in a browser. What is assertable is that the rows
+ * still share the list's columns, which is what keeps the amount column as
+ * wide as the widest amount.
+ */
 describe("the ingredient list", () => {
   it("gives every row the list's columns, so names start after the widest amount", () => {
     expect(css).toMatch(/\.ingredient-list\s*\{[^}]*display:\s*grid/);
     expect(css).toMatch(/\.ingredient-list li\s*\{[^}]*grid-template-columns:\s*subgrid/);
+  });
+});
+
+/**
+ * The planner's week grid at its narrowest. A column there is about 85px of
+ * text beside the remove button, and a flex item will not shrink below its
+ * longest word, so "Hashbrown" pushed the button 23px out of its card at
+ * 901px. Allowed to shrink, the title breaks long words where a dictionary
+ * would, with a hyphen, rather than anywhere at all.
+ */
+describe("a planned meal's title", () => {
+  const rule = /\.plan-entry a\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+
+  it("may be narrower than its longest word", () => {
+    expect(rule).toMatch(/min-width:\s*0/);
+  });
+
+  it("hyphenates a word that cannot fit, and breaks one only as a last resort", () => {
+    expect(rule).toMatch(/hyphens:\s*auto/);
+    expect(rule).toMatch(/overflow-wrap:\s*break-word/);
+    expect(rule).not.toMatch(/overflow-wrap:\s*anywhere/);
+  });
+});
+
+/**
+ * A tap on a phone. Chrome and Safari flash their own translucent blue over
+ * whatever was tapped, which is nobody's colour in this app; the app's own
+ * pressed states say the same thing in its own terms.
+ */
+describe("a tap", () => {
+  const body = /(?:^|\n)body\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+
+  it("draws no platform highlight", () => {
+    expect(body).toMatch(/-webkit-tap-highlight-color:\s*transparent/);
+  });
+
+  it("still shows that it landed, on everything tappable without a pressed state of its own", () => {
+    // The list may hold :not(...) of its own, so its parentheses are matched
+    // one level deep rather than stopping at the first ")".
+    const list = String.raw`(?:[^()]|\([^()]*\))*`;
+    expect(css).toMatch(new RegExp(String.raw`:where\(${list}button${list}\):active\s*\{[^}]*opacity`));
   });
 });

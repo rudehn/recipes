@@ -129,11 +129,12 @@ export default function PlannerPage() {
   }
 
   /*
-   * Seven columns of meals need about 900px before they stop scrolling
-   * sideways, and a phone has a third of that: the grid was 988px wide inside
-   * a 343px window, so two days were visible at a time and the sticky label
-   * column ate a third of what was left. Below that width the same week is a
-   * stack of days instead, which reads top to bottom like the rest of the app.
+   * Seven columns of meals need about 1100px before each meal's title has
+   * room for its words, and a phone has a third of that: the grid was 988px
+   * wide inside a 343px window, so two days were visible at a time and the
+   * sticky label column ate a third of what was left. Below that width the
+   * same week is a stack of days instead, which reads top to bottom like the
+   * rest of the app.
    */
   const agenda = useMediaQuery(below(WEEK_GRID));
 

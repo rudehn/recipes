@@ -283,6 +283,17 @@ body {
   font-size: var(--text-body);
   line-height: var(--leading-normal);
   -webkit-font-smoothing: antialiased;
+  /* Chrome and Safari flash a translucent blue over anything tapped, in
+     nobody's colour; the pressed states below and on .btn say it instead. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* What a tap looks like on anything with no pressed state of its own. A
+   dimming rather than a colour, so it reads on every surface in both themes,
+   and :where() so it weighs nothing against a component's own :active. A
+   .btn already presses in, and is left to it. */
+:where(button:not(.btn), a:not(.btn), summary):active {
+  opacity: 0.72;
 }
 
 h1, h2, h3 {
@@ -1455,6 +1466,16 @@ button.cook-duration:hover {
   min-width: 0;
 }
 
+/* The photo's picker: a label drawn as a button, around a clipped file input.
+   The input is what takes focus, so the ring is drawn on the label for it -
+   only for a keyboard, the way a real button's would be. */
+.file-pick { cursor: pointer; }
+
+.file-pick:has(input:focus-visible) {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
 /* A button in a field column sizes to its label rather than stretching the
    full width the way an input should. */
 .field > .btn {
@@ -1729,15 +1750,19 @@ body.has-install-hint .page {
 
 /*
  * The track minimums are what decides the width the grid stops fitting at, and
- * so where PlannerPage switches to the agenda: 96px of labels, seven 100px
- * days and their 6px gaps come to 838px, which clears the 852px a 900px window
- * has left after the page's own padding. Widening either track means moving
- * WEEK_GRID in layout.ts to match, or the grid starts scrolling again on the
- * tablet it was meant to fit.
+ * so where PlannerPage switches to the agenda: 96px of labels, seven 128px
+ * days and their 6px gaps come to 1034px, which clears the 1052px an 1100px
+ * window has left after the page's own padding. Widening either track means
+ * moving WEEK_GRID in layout.ts to match, or the grid starts scrolling again.
+ *
+ * A day is 128px because of what a planned meal has to hold: its title beside
+ * the remove button. At 100px the title had 46px, and "Chicken", "Breakfast"
+ * and "Casserole" broke in the middle; at 128px it has 74px, which every word
+ * in a real week fits but the occasional "Hashbrown", and that one hyphenates.
  */
 .week-grid {
   display: grid;
-  grid-template-columns: 96px repeat(7, minmax(100px, 1fr));
+  grid-template-columns: 96px repeat(7, minmax(128px, 1fr));
   gap: var(--space-6);
   overflow-x: auto;
   padding-bottom: var(--space-8);
@@ -1848,7 +1873,18 @@ body.has-install-hint .page {
   gap: var(--space-6);
 }
 
-.plan-entry a { flex: 1; }
+/* A flex item will not shrink below its longest word, and at the grid's
+   narrowest a column is about 85px of text beside the remove button: left to
+   itself "Hashbrown" pushed the button 23px out of the card. Allowed to
+   shrink, a word that cannot fit breaks where a dictionary would, with a
+   hyphen; break-word is only the backstop for one no dictionary knows, and
+   unlike "anywhere" it never breaks a word that would have fit. */
+.plan-entry a {
+  flex: 1;
+  min-width: 0;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
 
 /* The servings and what they cost, on the line under the title. The cost
    keeps to the right edge whether or not a stepper sits to its left, and
@@ -1939,7 +1975,7 @@ body.has-install-hint .page {
 /* ---------------------------------------- the week as a stack of days --- */
 
 /*
- * The planner below 900px, where the seven-column grid no longer fits.
+ * The planner below 1100px, where the seven-column grid no longer fits.
  *
  * A day at a time rather than a meal at a time: on a phone the grid showed two
  * columns of a seven-column week, so reading Thursday meant scrolling sideways

@@ -10,17 +10,19 @@
  * Two rather than one, because they answer different questions. PHONE is
  * "does this have a thumb and no room" - it moves navigation to the bottom of
  * the screen and stops iOS zooming the page on a focused field. WEEK_GRID is
- * simply the width the planner's seven-day grid needs before it starts
- * scrolling sideways: 96px of label column plus seven 104px days plus their
- * gaps and the page's own padding. Below it the planner is a day-by-day
- * agenda instead, which a tablet in portrait wants as much as a phone does.
+ * the width the planner's seven-day grid needs before it starts scrolling
+ * sideways: 96px of label column plus seven 128px days plus their gaps and the
+ * page's own padding. A day is that wide so a meal's title has room for its
+ * words beside the remove button - see .week-grid in styles.css. Below it the
+ * planner is a day-by-day agenda instead, which a tablet wants as much as a
+ * phone does.
  */
 
 /** Below this the app is laid out for a thumb. */
 export const PHONE = 720;
 
 /** Below this the planner's week grid no longer fits without scrolling. */
-export const WEEK_GRID = 900;
+export const WEEK_GRID = 1100;
 
 /** As a media query string, for useMediaQuery. */
 export const below = (width: number) => `(max-width: ${width}px)`;

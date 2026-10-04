@@ -721,6 +721,22 @@ describe("RecipeFormPage: a draft picked out of search", () => {
 });
 
 describe("RecipeFormPage: photos", () => {
+  it("offers a photo to choose, then one to replace once there is one", async () => {
+    // The platform's own file control drew a grey "Choose File" box and "No
+    // file chosen" in the middle of the form; the picker is reached through a
+    // button like the rest of the app's, named for what it does.
+    formBackend({});
+    const { user } = renderApp("/recipes/new");
+
+    const choose = screen.getByLabelText("Choose photo");
+    expect(choose).toBe(photoInput());
+
+    await user.upload(choose, new File(["x"], "curry.jpg", { type: "image/jpeg" }));
+
+    expect(screen.getByLabelText("Replace photo")).toBe(photoInput());
+    expect(screen.queryByText(/no file chosen/i)).not.toBeInTheDocument();
+  });
+
   it("previews a chosen file and offers to remove it", async () => {
     formBackend({});
     const { user } = renderApp("/recipes/new");
