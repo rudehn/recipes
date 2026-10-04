@@ -160,6 +160,26 @@ async def test_search_drafts_carry_their_link_without_tracking(fake_net):
     assert net.fetched == [tagged]
 
 
+async def test_search_endpoint_suggests_tags_spelled_the_way_the_box_spells_them(
+    client, fake_net
+):
+    """Find online prefills the same form the URL importer does, so its
+    drafts are held up against the tags already in the box the same way."""
+    resp = await client.post("/api/recipes", json={"title": "Scones", "tags": ["breakfast"]})
+    assert resp.status_code == 201, resp.text
+
+    url = "https://www.budgetbytes.com/x/"
+    page = _recipe_html("Banana Bread").replace(
+        '"description": "Moist and easy.",',
+        '"description": "Moist and easy.", "recipeCategory": "Breads",'
+        ' "keywords": "best banana bread, Breakfast",',
+    )
+    fake_net({"www.budgetbytes.com": [url]}, {url: page})
+    resp = await client.post("/api/import/search", json={"query": "banana bread"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()[0]["tags"] == ["breads", "breakfast"]
+
+
 async def test_results_are_ordered_by_relevance(fake_net):
     """Sites nominate; we rank. Their own ordering is not evidence of much,
     so a recipe that is about the query outranks one that mentions it."""

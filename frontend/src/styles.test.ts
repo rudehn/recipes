@@ -126,6 +126,32 @@ describe("date fields", () => {
   });
 });
 
+/**
+ * The tag bar on a phone. Wrapped, a box with a dozen tags put three rows of
+ * pills between the search field and the first recipe, and that wall grew
+ * with every tag. One row that scrolls sideways costs one row however many
+ * tags there are - which no rendered test can see, since jsdom lays nothing
+ * out.
+ */
+describe("the tag bar on a phone", () => {
+  const rule = (selector: string) => {
+    const match = new RegExp(`(?:^|[\\s}])\\${selector}\\s*\\{([^}]*)\\}`).exec(
+      mediaBlock(below(PHONE)),
+    );
+    expect(match, `the phone block has no ${selector} rule`).not.toBeNull();
+    return match![1];
+  };
+
+  it("is one row that scrolls sideways rather than wrapping", () => {
+    expect(rule(".tag-filter")).toMatch(/flex-wrap:\s*nowrap/);
+    expect(rule(".tag-filter")).toMatch(/overflow-x:\s*auto/);
+  });
+
+  it("keeps every pill whole instead of squeezing them to fit", () => {
+    expect(rule(".tag-filter .tag-pill")).toMatch(/flex:\s*none/);
+  });
+});
+
 describe("the phone's edges", () => {
   it("pays the safe-area inset on everything the content reaches", () => {
     const phone = mediaBlock(below(PHONE));
@@ -152,6 +178,14 @@ describe("the phone's edges", () => {
     expect(mediaBlock(below(PHONE))).toMatch(
       /\.page\s*\{[^}]*padding-bottom:[^;]*var\(--tabbar\)/,
     );
+  });
+
+  it("lets the controls beside a recipe's photo be narrower than a file input wants", () => {
+    // A file input is as wide as the platform draws it - about 360px in
+    // Chrome on a phone - and a flex item will not shrink below its content
+    // unless told it may. Beside the photo's preview that ran the column off
+    // the screen, and the whole edit form scrolled sideways.
+    expect(css).toMatch(/\.image-drop-actions\s*\{[^}]*min-width:\s*0/);
   });
 });
 

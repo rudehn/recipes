@@ -8,6 +8,7 @@ import {
   type RecipeDraft,
   type RecipeInput,
 } from "../api";
+import { TagInput } from "../components/TagInput";
 import {
   Banner,
   Button,
@@ -18,7 +19,7 @@ import {
   PageHead,
 } from "../components/ui";
 import { formatAmount, parseQuantity } from "../quantity";
-import { errorMessage } from "../useLoad";
+import { errorMessage, useLoad } from "../useLoad";
 
 interface IngredientDraft {
   quantity: string;
@@ -89,7 +90,7 @@ export default function RecipeFormPage() {
   const [cook, setCook] = useState("");
   const [servings, setServings] = useState("");
   const [rows, setRows] = useState<IngredientDraft[]>([{ ...EMPTY_ROW }]);
-  const [tags, setTags] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImage, setExistingImage] = useState<string | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
@@ -106,6 +107,9 @@ export default function RecipeFormPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   // The recipe already saved from the page the current draft came from.
   const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
+  // Every tag in the box, for the tag field to suggest. A failure only costs
+  // the suggestions: tags can still be typed.
+  const { data: tagsInBox } = useLoad(useCallback(() => api.listRecipeTags(), []));
 
   useEffect(() => {
     if (!isEdit) return;
@@ -118,7 +122,7 @@ export default function RecipeFormPage() {
         setPrep(r.prep_minutes?.toString() ?? "");
         setCook(r.cook_minutes?.toString() ?? "");
         setServings(r.servings?.toString() ?? "");
-        setTags(r.tags.join(", "));
+        setTags(r.tags);
         setExistingImage(r.image_filename);
         setRows(toRows(r.ingredients));
         setSourceUrl(r.source_url ?? "");
@@ -134,6 +138,9 @@ export default function RecipeFormPage() {
     setCook(draft.cook_minutes?.toString() ?? "");
     setServings(draft.servings?.toString() ?? "");
     setRows(toRows(draft.ingredients));
+    // Suggestions from the page, shown as chips like any other tag: they
+    // are the person's to drop, and nothing is tagged until they save.
+    setTags(draft.tags);
     setImportedImageUrl(draft.image_url);
     setImageFile(null);
     setRemoveImage(false);
@@ -202,7 +209,7 @@ export default function RecipeFormPage() {
       cook_minutes: cook.trim() === "" ? null : Number(cook),
       servings: servings.trim() === "" ? null : Number(servings),
       ingredients,
-      tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      tags,
       // Like an ingredient's source line, sent only when there is one. A save
       // replaces the recipe, so an emptied field takes a stored link off.
       ...(source ? { source_url: source } : {}),
@@ -433,13 +440,13 @@ export default function RecipeFormPage() {
         <Field
           label="Tags"
           htmlFor="tags"
-          hint="Comma separated, e.g. quick, vegetarian, weeknight."
+          hint="Enter or a comma adds one, e.g. quick, vegetarian, weeknight."
         >
-          <input
+          <TagInput
             id="tags"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="quick, vegetarian"
+            tags={tags}
+            onChange={setTags}
+            suggestions={tagsInBox?.map((t) => t.name) ?? []}
           />
         </Field>
 

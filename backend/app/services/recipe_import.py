@@ -7,10 +7,11 @@ structured quantity / unit / name."""
 
 import json
 import re
+from collections.abc import Collection
 
 from bs4 import BeautifulSoup
 
-from ..schemas import IngredientIn, RecipeDraft
+from ..schemas import MAX_TAG_LENGTH, IngredientIn, RecipeDraft
 from .grocery import UNIT_ALIASES
 
 UNICODE_FRACTIONS = {
@@ -140,6 +141,70 @@ def _meta_description(soup: BeautifulSoup) -> str:
         if isinstance(content, str) and content.strip():
             return _strip_html(content)
     return ""
+
+
+def _tag_names(value: object) -> list[str]:
+    """The names in a schema.org text field, spelled the way a tag is stored.
+
+    recipeCategory, recipeCuisine and keywords may each be a string, a
+    comma-separated string, or a list of either; whatever else a site puts
+    there - an object, a number - is not a name. A name longer than a tag can
+    be is a sentence rather than a tag, and is dropped rather than cut: cut
+    at the limit it would be a tag nobody would ever type.
+    """
+    names: list[str] = []
+    for item in value if isinstance(value, list) else [value]:
+        if not isinstance(item, str):
+            continue
+        for part in _strip_html(item).split(","):
+            name = part.strip().lower()
+            if name and len(name) <= MAX_TAG_LENGTH:
+                names.append(name)
+    return names
+
+
+def _plural_variants(tag: str) -> list[str]:
+    """Spellings of `tag` that differ from it only by a regular plural.
+
+    Read off the end of the whole tag, so "side dishes" meets "side dish" as
+    well as "sides" meeting "side". Irregular plurals are left alone: a rule
+    for those would be a dictionary.
+    """
+    variants = [tag + "s", tag + "es"]
+    if tag.endswith("y"):
+        variants.append(tag[:-1] + "ies")
+    if tag.endswith("ies"):
+        variants.append(tag[:-3] + "y")
+    if tag.endswith("es"):
+        variants.append(tag[:-2])
+    if tag.endswith("s"):
+        variants.append(tag[:-1])
+    return variants
+
+
+def _suggest_tags(recipe: dict, known_tags: Collection[str]) -> list[str]:
+    """Tags for the recipe, from what its page says it is.
+
+    Category and cuisine are suggested whatever they say. Keywords are not:
+    they are mostly written for search engines ("best chili recipe"), so one
+    is suggested only when it names a tag the box already has, which is the
+    one case where it is plainly the person's own word for the recipe.
+
+    A suggestion one plural away from a tag in the box takes the box's
+    spelling, so a page filed under "Sides" does not start a second tag
+    beside "side" that the filter bar would then show as two.
+    """
+    known = {tag.lower() for tag in known_tags}
+
+    def spelled_as_known(tag: str) -> str:
+        if tag in known:
+            return tag
+        return next((v for v in _plural_variants(tag) if v in known), tag)
+
+    described = _tag_names(recipe.get("recipeCategory")) + _tag_names(recipe.get("recipeCuisine"))
+    suggested = [spelled_as_known(tag) for tag in described]
+    suggested += [word for word in _tag_names(recipe.get("keywords")) if word in known]
+    return list(dict.fromkeys(suggested))
 
 
 def _parse_instructions(value: object) -> str:
@@ -288,7 +353,16 @@ def parse_ingredient_line(line: str) -> IngredientIn:
     )
 
 
-def parse_recipe_html(html: str, source_url: str) -> RecipeDraft:
+def parse_recipe_html(
+    html: str, source_url: str, known_tags: Collection[str] = ()
+) -> RecipeDraft:
+    """The page's recipe as a draft for the form.
+
+    `known_tags` are the tags already in the recipe box, which the suggested
+    tags are spelled against (see `_suggest_tags`). They are handed in rather
+    than looked up, so parsing stays a function of its arguments and never
+    touches the database; the routes that have a session read them.
+    """
     soup = BeautifulSoup(html, "html.parser")
     recipe: dict | None = None
     for script in soup.find_all("script", type="application/ld+json"):
@@ -339,6 +413,7 @@ def parse_recipe_html(html: str, source_url: str) -> RecipeDraft:
             for line in ingredients_raw
             if isinstance(line, str) and line.strip()
         ],
+        tags=_suggest_tags(recipe, known_tags),
         image_url=_parse_image(recipe.get("image")),
         source_url=source_url,
     )

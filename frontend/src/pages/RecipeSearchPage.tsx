@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, type RecipeDraft } from "../api";
 import { Banner, Button, Chip, EmptyState, LinkButton, PageHead, Panel } from "../components/ui";
 import { formatQuantity } from "../quantity";
+import { useScrollEdges } from "../useScrollEdges";
 
 function totalMinutes(draft: RecipeDraft): number | null {
   const total = (draft.prep_minutes ?? 0) + (draft.cook_minutes ?? 0);
@@ -44,28 +45,6 @@ function ResultActions({ savedId, onUse }: { savedId: number | null; onUse: () =
       <Button onClick={onUse}>Use this recipe</Button>
     </>
   );
-}
-
-/** Which edges of the tab strip have more tabs hidden past them. */
-function useScrollEdges(deps: unknown) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ left: false, right: false });
-
-  const measure = useCallback(() => {
-    const el = ref.current;
-    if (!el) return;
-    const max = el.scrollWidth - el.clientWidth;
-    setEdges({ left: el.scrollLeft > 1, right: el.scrollLeft < max - 1 });
-  }, []);
-
-  useLayoutEffect(measure, [measure, deps]);
-
-  useEffect(() => {
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [measure]);
-
-  return { ref, edges, measure };
 }
 
 export default function RecipeSearchPage() {

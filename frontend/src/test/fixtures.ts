@@ -82,6 +82,7 @@ export function recipeDraft(overrides: Partial<RecipeDraft> = {}): RecipeDraft {
     cook_minutes: 60,
     servings: 8,
     ingredients: [{ name: "bananas", quantity: 3, unit: null }],
+    tags: [],
     image_url: null,
     source_url: "https://www.budgetbytes.com/banana-bread/",
     saved_recipe_id: null,

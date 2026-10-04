@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..models import Recipe
+from ..models import Recipe, RecipeTag
 from ..schemas import ImportRequest, RecipeDraft, RecipeSearchRequest
 from ..services.fetch import BROWSER_HEADERS
 from ..services.recipe_import import RecipeNotFound, parse_recipe_html
@@ -45,6 +45,12 @@ async def _mark_already_saved(session: AsyncSession, drafts: Sequence[RecipeDraf
         draft.saved_recipe_id = saved.get(source_key(draft.source_url))
 
 
+async def _tags_in_use(session: AsyncSession) -> set[str]:
+    """The tags already in the recipe box, which an imported recipe's
+    suggested tags are spelled against. See recipe_import._suggest_tags."""
+    return set((await session.scalars(select(RecipeTag.name).distinct())).all())
+
+
 @router.post("/recipe", response_model=RecipeDraft)
 async def import_recipe(data: ImportRequest, session: AsyncSession = Depends(get_session)):
     try:
@@ -57,7 +63,7 @@ async def import_recipe(data: ImportRequest, session: AsyncSession = Depends(get
         raise HTTPException(status_code=502, detail=f"Could not fetch that page: {exc}")
 
     try:
-        draft = parse_recipe_html(resp.text, str(data.url))
+        draft = parse_recipe_html(resp.text, str(data.url), await _tags_in_use(session))
     except RecipeNotFound as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     draft.source_label = site_label(str(data.url))
@@ -77,6 +83,6 @@ async def search(data: RecipeSearchRequest, session: AsyncSession = Depends(get_
     Results already in the recipe box say so, but are not dropped: the box's
     copy may have been edited away from the original, and seeing the two
     side by side is a reason to have searched."""
-    drafts = await search_recipes(data.query.strip())
+    drafts = await search_recipes(data.query.strip(), await _tags_in_use(session))
     await _mark_already_saved(session, drafts)
     return drafts

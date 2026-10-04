@@ -7,14 +7,16 @@ import {
   type Page,
   type RecipeAttention,
   type RecipeSummary,
+  type TagCount,
 } from "../api";
 import { ISSUE_LABELS, NO_SERVINGS_LABEL } from "../issues";
 import { recipeIngredientPath, recipeNutritionPath } from "../recipeLink";
 import { LoadFailure } from "../components/LoadError";
-import { RecipePhoto, TimeChips } from "../components/RecipeBits";
+import { RecipePhoto, TagChips, TimeChips } from "../components/RecipeBits";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
+import { useScrollEdges } from "../useScrollEdges";
 
 const PER_PAGE = 24;
 
@@ -28,7 +30,15 @@ interface Listing extends Page<RecipeSummary> {
    * yet). Carrying the filters with the results keeps every number and every
    * message describing the same request.
    */
-  filters: { q: string; tag: string | null };
+  filters: { q: string; tags: string[] };
+}
+
+/** “a”, “b” and “c”: names quoted the way the page quotes a search. */
+function quotedList(names: readonly string[]): string {
+  const quoted = names.map((name) => `“${name}”`);
+  return quoted.length < 2
+    ? quoted.join("")
+    : `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1]}`;
 }
 
 export default function RecipesPage() {
@@ -36,13 +46,17 @@ export default function RecipesPage() {
 
   // The URL seeds the filters and then mirrors them, so a filtered view is
   // shareable and is still there after opening a recipe and coming back.
+  // Several tags are several `tag` params, the same shape the server reads.
   const [input, setInput] = useState(() => searchParams.get("q") ?? "");
-  const [activeTag, setActiveTag] = useState(() => searchParams.get("tag"));
+  const [activeTags, setActiveTags] = useState(() => searchParams.getAll("tag"));
   const query = useDebounced(input.trim());
 
   // The filter bar can no longer be derived from the recipes on screen, since
-  // those are only ever one page of the collection.
-  const { data: tags } = useLoad(useCallback(() => api.listRecipeTags(), []));
+  // those are only ever one page of the collection. It is asked with the
+  // list's own filters, so each count is what tapping that pill would leave.
+  const { data: tags } = useLoad(
+    useCallback(() => api.listRecipeTags({ q: query, tags: activeTags }), [query, activeTags]),
+  );
 
   const {
     data: listing,
@@ -54,12 +68,12 @@ export default function RecipesPage() {
     useCallback(async () => {
       const first = await api.listRecipes({
         q: query,
-        tag: activeTag,
+        tags: activeTags,
         page: 1,
         per_page: PER_PAGE,
       });
-      return { ...first, filters: { q: query, tag: activeTag } };
-    }, [query, activeTag]),
+      return { ...first, filters: { q: query, tags: activeTags } };
+    }, [query, activeTags]),
   );
   const [loadingMore, setLoadingMore] = useState(false);
 
@@ -68,7 +82,7 @@ export default function RecipesPage() {
   // parts are joined on a character neither a query nor a tag can hold, so
   // no two different filters share a key; it is written as an escape
   // because a raw NUL in the source makes git treat this file as binary.
-  const filters = `${query}\u0000${activeTag ?? ""}`;
+  const filters = [query, ...activeTags].join("\u0000");
   const currentFilters = useRef(filters);
   useEffect(() => {
     currentFilters.current = filters;
@@ -78,8 +92,8 @@ export default function RecipesPage() {
     const next = new URLSearchParams(searchParams);
     if (query) next.set("q", query);
     else next.delete("q");
-    if (activeTag) next.set("tag", activeTag);
-    else next.delete("tag");
+    next.delete("tag");
+    for (const tag of activeTags) next.append("tag", tag);
     // Navigating only on a real change matters: setSearchParams is a new
     // function after each navigation, so an unconditional call here would
     // re-trigger this effect forever.
@@ -87,7 +101,13 @@ export default function RecipesPage() {
     // Replaced rather than pushed, so Back leaves the page instead of
     // stepping back through every letter the user typed.
     setSearchParams(next, { replace: true });
-  }, [query, activeTag, searchParams, setSearchParams]);
+  }, [query, activeTags, searchParams, setSearchParams]);
+
+  function toggleTag(name: string) {
+    setActiveTags((selected) =>
+      selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name],
+    );
+  }
 
   async function loadMore() {
     if (!listing) return;
@@ -96,7 +116,7 @@ export default function RecipesPage() {
     try {
       const more = await api.listRecipes({
         q: query,
-        tag: activeTag,
+        tags: activeTags,
         page: listing.page + 1,
         per_page: PER_PAGE,
       });
@@ -119,7 +139,7 @@ export default function RecipesPage() {
   // Everything below describes the results on screen, so it reads the filters
   // they answer rather than the ones the user is part-way through typing.
   const applied = listing?.filters;
-  const filtering = Boolean(applied?.q || applied?.tag);
+  const filtering = Boolean(applied?.q || applied?.tags.length);
   const shown = listing?.items.length ?? 0;
   const total = listing?.total ?? 0;
   // A failed refresh leaves results worth keeping, so the page empties itself
@@ -161,27 +181,13 @@ export default function RecipesPage() {
         />
       )}
 
-      {!blank && tags && tags.length > 0 && (
-        <div className="tag-filter">
-          <button
-            className={`tag-pill${activeTag === null ? " active" : ""}`}
-            onClick={() => setActiveTag(null)}
-          >
-            All
-          </button>
-          {tags.map((tag) => (
-            <button
-              key={tag.name}
-              className={`tag-pill${activeTag === tag.name ? " active" : ""}`}
-              // The visible count is a bare number; spell it out for a reader.
-              aria-label={`${tag.name}, ${tag.count} ${tag.count === 1 ? "recipe" : "recipes"}`}
-              onClick={() => setActiveTag(activeTag === tag.name ? null : tag.name)}
-            >
-              {tag.name}
-              <span className="count">{tag.count}</span>
-            </button>
-          ))}
-        </div>
+      {!blank && tags && (
+        <TagFilter
+          tags={tags}
+          selected={activeTags}
+          onToggle={toggleTag}
+          onClear={() => setActiveTags([])}
+        />
       )}
 
       {!blank && <SuggestionPanels />}
@@ -211,6 +217,7 @@ export default function RecipesPage() {
               <RecipePhoto recipe={r} />
               <div className="body">
                 <h3>{r.title}</h3>
+                <TagChips tags={r.tags} />
                 {r.description && <p className="desc">{r.description}</p>}
                 <TimeChips recipe={r} />
               </div>
@@ -235,11 +242,85 @@ export default function RecipesPage() {
           <p>
             No recipes match
             {applied?.q ? ` “${applied.q}”` : ""}
-            {applied?.tag ? ` with tag “${applied.tag}”` : ""}.
+            {applied?.tags.length
+              ? ` with ${applied.tags.length === 1 ? "tag" : "tags"} ${quotedList(applied.tags)}`
+              : ""}
+            .
           </p>
         </EmptyState>
       )}
     </>
+  );
+}
+
+/**
+ * The tag pills. Tapping several narrows the list to recipes carrying all of
+ * them, and each pill counts what tapping it would leave.
+ *
+ * A pill that would leave nothing is dimmed and cannot be tapped, rather than
+ * hidden, so the bar keeps its shape as the filters change. A selected pill is
+ * never dimmed, whatever its count: it is the way back out of the filter. For
+ * the same reason a selected tag the box no longer has - a link from before it
+ * was renamed - still gets a pill, at the end, so it can be taken off.
+ *
+ * On a phone the bar is one row that scrolls sideways (see styles.css), and
+ * the edges fade where there are more pills past them.
+ */
+function TagFilter({
+  tags,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  tags: TagCount[];
+  selected: string[];
+  onToggle: (name: string) => void;
+  onClear: () => void;
+}) {
+  const gone = selected.filter((name) => !tags.some((t) => t.name === name));
+  const pills = [...tags, ...gone.map((name) => ({ name, count: 0 }))];
+  const { ref, edges, measure } = useScrollEdges(pills.length);
+  if (pills.length === 0) return null;
+
+  return (
+    <div
+      className={`tag-filter-wrap${edges.left ? " fade-left" : ""}${
+        edges.right ? " fade-right" : ""
+      }`}
+    >
+      <div
+        className="tag-filter"
+        role="group"
+        aria-label="Filter by tag"
+        ref={ref}
+        onScroll={measure}
+      >
+        <button
+          className={`tag-pill${selected.length === 0 ? " active" : ""}`}
+          aria-pressed={selected.length === 0}
+          onClick={onClear}
+        >
+          All
+        </button>
+        {pills.map((tag) => {
+          const on = selected.includes(tag.name);
+          return (
+            <button
+              key={tag.name}
+              className={`tag-pill${on ? " active" : ""}`}
+              aria-pressed={on}
+              disabled={!on && tag.count === 0}
+              // The visible count is a bare number; spell it out for a reader.
+              aria-label={`${tag.name}, ${tag.count} ${tag.count === 1 ? "recipe" : "recipes"}`}
+              onClick={() => onToggle(tag.name)}
+            >
+              {tag.name}
+              <span className="count">{tag.count}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

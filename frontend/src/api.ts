@@ -82,16 +82,25 @@ export interface Page<T> {
   per_page: number;
 }
 
-/** A tag and how many recipes carry it, for the filter bar. */
+/**
+ * A tag and how many recipes carry it, for the filter bar. Asked with
+ * filters, the count is within them: what selecting this tag as well would
+ * leave, which is zero for a tag none of the remaining recipes carry.
+ */
 export interface TagCount {
   name: string;
   count: number;
 }
 
-export interface RecipeQuery {
+/** The filters the recipe list and its tag bar share. */
+export interface RecipeFilters {
   /** Matches title, description, tags, and ingredient names. */
   q?: string;
-  tag?: string | null;
+  /** A recipe has to carry every one of these. */
+  tags?: readonly string[];
+}
+
+export interface RecipeQuery extends RecipeFilters {
   sort?: "title" | "newest";
   page?: number;
   per_page?: number;
@@ -118,6 +127,12 @@ export interface RecipeDraft {
   cook_minutes: number | null;
   servings: number | null;
   ingredients: Omit<Ingredient, "id">[];
+  /**
+   * Suggested from the page's category and cuisine, spelled the way the
+   * recipe box already spells them. The form offers them for review; none is
+   * saved until the person saves the recipe.
+   */
+  tags: string[];
   image_url: string | null;
   source_url: string;
   /** The recipe already saved from this same page, so it can be opened instead of copied. */
@@ -652,12 +667,20 @@ export function imageUrl(filename: string | null): string | null {
   return filename ? `/api/images/${filename}` : null;
 }
 
-/** A "?a=1&b=2" string, dropping the params the caller left unset. */
-function queryString(params: Record<string, string | number | null | undefined>): string {
+type QueryValue = string | number | null | undefined;
+
+/**
+ * A "?a=1&b=2" string, dropping the params the caller left unset. A list is
+ * repeated as one param per value ("?tag=a&tag=b"), which is how the server
+ * reads a list from a query string.
+ */
+function queryString(params: Record<string, QueryValue | readonly string[]>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined && value !== null && value !== "") {
-      search.set(key, String(value));
+    for (const each of Array.isArray(value) ? value : [value]) {
+      if (each !== undefined && each !== null && each !== "") {
+        search.append(key, String(each));
+      }
     }
   }
   const query = search.toString();
@@ -665,11 +688,12 @@ function queryString(params: Record<string, string | number | null | undefined>)
 }
 
 export const api = {
-  listRecipes: ({ q, tag, sort, page, per_page }: RecipeQuery = {}) =>
+  listRecipes: ({ q, tags, sort, page, per_page }: RecipeQuery = {}) =>
     request<Page<RecipeSummary>>(
-      `/api/recipes${queryString({ q, tag, sort, page, per_page })}`,
+      `/api/recipes${queryString({ q, tag: tags, sort, page, per_page })}`,
     ),
-  listRecipeTags: () => request<TagCount[]>("/api/recipes/tags"),
+  listRecipeTags: ({ q, tags }: RecipeFilters = {}) =>
+    request<TagCount[]>(`/api/recipes/tags${queryString({ q, tag: tags })}`),
   getRecipe: (id: number) => request<Recipe>(`/api/recipes/${id}`),
   createRecipe: (data: RecipeInput) =>
     request<Recipe>("/api/recipes", { method: "POST", body: JSON.stringify(data) }),

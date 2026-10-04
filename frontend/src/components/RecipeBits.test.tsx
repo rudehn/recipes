@@ -1,8 +1,8 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RecipePhoto, RecipePickerModal, TimeChips } from "./RecipeBits";
+import { RecipePhoto, RecipePickerModal, TagChips, TimeChips } from "./RecipeBits";
 import { HttpError, mockBackend, type MockRequest } from "../test/backend";
 import { page, recipeSummary } from "../test/fixtures";
 import { renderInRouter } from "../test/render";
@@ -27,6 +27,63 @@ describe("TimeChips", () => {
     render(<TimeChips recipe={{ prep_minutes: null, cook_minutes: null, servings: null }} />);
 
     expect(screen.queryByText(/min/)).not.toBeInTheDocument();
+  });
+});
+
+describe("TagChips", () => {
+  /** The chips a reader sees: the ones not given up to the count. */
+  function shown(): string[] {
+    return [...document.querySelectorAll(".card-tags .chip:not(.spare)")].map(
+      (c) => c.textContent ?? "",
+    );
+  }
+
+  /**
+   * Lay the card out as a browser would, which jsdom never does: a chip 10px
+   * a character plus 20px of padding, on a line `line` wide.
+   */
+  function layout(line: number) {
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("chip") ? (this.textContent ?? "").length * 10 + 20 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return this.classList.contains("card-tags") ? line : 0;
+    });
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it("names the first three tags and counts the rest", () => {
+    render(<TagChips tags={["chinese", "dinner", "noodles", "spicy", "weeknight"]} />);
+
+    expect(shown()).toEqual(["chinese", "dinner", "noodles", "+2"]);
+    expect(screen.getByText("+2")).toHaveAttribute("title", "spicy, weeknight");
+  });
+
+  it("gives a chip that would wrap up to the count instead", () => {
+    // 90 + 80 + 90 and a 40px count is 300; the line is 220, which holds
+    // two chips and the count.
+    layout(220);
+    render(<TagChips tags={["chinese", "dinner", "noodles", "spicy"]} />);
+
+    expect(shown()).toEqual(["chinese", "dinner", "+2"]);
+    expect(screen.getByText("+2")).toHaveAttribute("title", "noodles, spicy");
+  });
+
+  it("counts a tag it had no room for even when there were only three", () => {
+    layout(250);
+    render(<TagChips tags={["chinese", "dinner", "noodles"]} />);
+
+    expect(shown()).toEqual(["chinese", "dinner", "+1"]);
+  });
+
+  it("is nothing at all for a recipe with no tags", () => {
+    const { container } = render(<TagChips tags={[]} />);
+    expect(container).toBeEmptyDOMElement();
   });
 });
 
