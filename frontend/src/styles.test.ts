@@ -153,4 +153,12 @@ describe("the phone's edges", () => {
       /\.page\s*\{[^}]*padding-bottom:[^;]*var\(--tabbar\)/,
     );
   });
+
+  it("lets the controls beside a recipe's photo be narrower than a file input wants", () => {
+    // A file input is as wide as the platform draws it - about 360px in
+    // Chrome on a phone - and a flex item will not shrink below its content
+    // unless told it may. Beside the photo's preview that ran the column off
+    // the screen, and the whole edit form scrolled sideways.
+    expect(css).toMatch(/\.image-drop-actions\s*\{[^}]*min-width:\s*0/);
+  });
 });

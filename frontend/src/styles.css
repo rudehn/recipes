@@ -1307,6 +1307,11 @@ button.cook-duration:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-8);
+  /* A flex item's automatic minimum is its content's, and a file input's is
+     whatever the platform draws - about 360px in Chrome on a phone. Beside
+     the preview that stood the column past the screen's edge, and the whole
+     page scrolled sideways, taking the tab bar's last tab off screen. */
+  min-width: 0;
 }
 
 /* A button in a field column sizes to its label rather than stretching the
