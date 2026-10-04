@@ -238,7 +238,7 @@ describe("SettingsPage", () => {
       const salt = rows.find((r) => within(r).queryByText("salt"))!;
       expect(within(salt).getByText(/not priced, by choice/)).toBeInTheDocument();
       const saffron = rows.find((r) => within(r).queryByText("saffron"))!;
-      expect(within(saffron).getByText(/nothing matched/)).toBeInTheDocument();
+      expect(within(saffron).getByText("no match")).toBeInTheDocument();
     });
 
     it("forgets a pick and reloads the list", async () => {

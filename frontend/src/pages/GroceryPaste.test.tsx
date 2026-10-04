@@ -163,7 +163,7 @@ describe("pasting a list into the Kroger cart", () => {
     await pasteAndFind(user, "milk{enter}saffron");
 
     const line = await waitFor(() => row("saffron"));
-    expect(within(line).getByText(/nothing at your store matched/i)).toBeInTheDocument();
+    expect(within(line).getByText("no match")).toBeInTheDocument();
     // Nothing to count, so no count to change.
     expect(within(line).queryByRole("button", { name: "More saffron" })).not.toBeInTheDocument();
     expect(screen.getByText(/1 item to send/)).toBeInTheDocument();

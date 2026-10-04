@@ -6,6 +6,7 @@ import { LoadFailure } from "../components/LoadError";
 import type { BannerTone } from "../components/ui/Banner";
 import { Banner, Button, EmptyState, Field, PageHead, Panel } from "../components/ui";
 import { formatWhen } from "../dates";
+import { ISSUE_LABELS } from "../issues";
 import { useAction } from "../useAction";
 import { errorMessage, useLoad } from "../useLoad";
 
@@ -402,7 +403,7 @@ function RememberedPicks() {
                 ) : pick.hand_picked ? (
                   "not priced, by choice"
                 ) : (
-                  "nothing matched"
+                  ISSUE_LABELS.no_match
                 )}
                 {pick.hand_picked && <span className="pick-tag">your pick</span>}
               </span>

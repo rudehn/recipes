@@ -360,16 +360,33 @@ export interface PlanCost {
   grocery_total: number | null;
 }
 
+/**
+ * What a doubtful row stands in the way of: the recipe's price, and the
+ * shopping the same amounts drive, or its nutrition.
+ */
+export type Affects = "price" | "nutrition";
+
+/**
+ * One reason a row needs a look, and what it stands in the way of. A row the
+ * recipe has wrong is one reason affecting both; a row the shop and the food
+ * tables each failed on comes twice, once for each, since each has its own fix.
+ */
 export interface IngredientIssue {
   ingredient_id: number;
   name: string;
-  issue: LineIssue;
+  issue: LineIssue | NutritionIssue;
+  affects: Affects[];
 }
 
-/** A recipe with ingredient rows that will price or shop wrongly. */
+/** A recipe with rows that will price, shop or count wrongly. */
 export interface RecipeAttention {
   recipe: RecipeSummary;
   issues: IngredientIssue[];
+  /**
+   * The recipe does not say how many it serves, so nutrition per serving has
+   * nothing to divide by. Only set for a recipe with something to count.
+   */
+  no_servings: boolean;
 }
 
 /** One ingredient's remembered product at the chosen store. */

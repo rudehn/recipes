@@ -8,18 +8,10 @@ import {
   type NutritionLine,
   type RecipeNutrition,
 } from "../api";
+import { ISSUE_LABELS } from "../issues";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
 import { Button, LinkButton, Modal } from "./ui";
-
-/** Why an ingredient is not counted, in the words the recipe rows use. */
-const NUTRITION_ISSUES: Record<NutritionIssue, string> = {
-  amount_in_name: "amount is in the name",
-  no_amount: "no amount",
-  check_line: "check this line",
-  no_food: "no food chosen",
-  unweighable: "can't weigh the amount",
-};
 
 /** The reasons whose fix is editing the recipe line rather than choosing a food. */
 const RECIPE_SIDE: ReadonlySet<NutritionIssue> = new Set<NutritionIssue>([
@@ -113,6 +105,8 @@ export function NutritionBreakdown({
   onChoose,
   onForget,
   sectionRef,
+  marked = null,
+  markedRef,
 }: {
   nutrition: RecipeNutrition;
   recipeId: number;
@@ -121,6 +115,9 @@ export function NutritionBreakdown({
   onChoose: (line: NutritionLine) => void;
   onForget: (line: NutritionLine) => void;
   sectionRef: Ref<HTMLDetailsElement>;
+  /** The ingredient id, from the URL, whose line the reader was sent to. */
+  marked?: string | null;
+  markedRef?: Ref<HTMLLIElement>;
 }) {
   if (nutrition.total_lines === 0) return null;
 
@@ -157,8 +154,18 @@ export function NutritionBreakdown({
       <ul className="nutrition-lines">
         {measured.map((line) => {
           const recipeSide = line.issue !== null && RECIPE_SIDE.has(line.issue);
+          const isMarked = String(line.ingredient_id) === marked;
+          const classes = [line.issue && "doubtful", isMarked && "highlighted"].filter(Boolean);
           return (
-            <li key={line.ingredient_id} className={line.issue ? "doubtful" : undefined}>
+            <li
+              key={line.ingredient_id}
+              className={classes.join(" ") || undefined}
+              ref={isMarked ? markedRef : undefined}
+              // Not in the tab order - the row is not a control. It takes
+              // focus only because the app sent the reader to it.
+              tabIndex={isMarked ? -1 : undefined}
+              aria-current={isMarked ? "true" : undefined}
+            >
               <span className="what">
                 <span className="name">{line.name}</span>
                 <span className="food">
@@ -170,7 +177,7 @@ export function NutritionBreakdown({
                 {line.skipped ? null : line.nutrients && line.grams !== null ? (
                   `${whole(line.grams)} g · ${whole(line.nutrients.kcal)} kcal`
                 ) : (
-                  <span className="issue-tag">{NUTRITION_ISSUES[line.issue ?? "no_food"]}</span>
+                  <span className="issue-tag">{ISSUE_LABELS[line.issue ?? "no_food"]}</span>
                 )}
               </span>
               <span className="fix">

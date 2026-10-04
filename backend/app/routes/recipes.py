@@ -21,6 +21,7 @@ from ..schemas import (
     Suggestions,
     TagCount,
 )
+from ..services.attention import recipes_needing_a_look
 from ..services.images import (
     ImageTooLarge,
     declared_length_exceeds,
@@ -149,14 +150,14 @@ async def suggestions(session: AsyncSession = Depends(get_session)):
 
 @router.get("/attention", response_model=list[RecipeAttention])
 async def attention(session: AsyncSession = Depends(get_session)):
-    """Recipes with ingredient rows that will price or shop wrongly.
+    """Recipes with rows that will price, shop or count wrongly.
 
     Declared above /{recipe_id} so that path does not swallow it. String
-    checks over every ingredient row, plus "nothing matched" from picks
-    already made at the chosen store - never a search - so it costs one
-    query and no Kroger call.
+    checks and the bundled nutrition tables over every row, plus "nothing
+    matched" from picks already made at the chosen store - never a search -
+    so it costs a few queries for the whole box and no Kroger call.
     """
-    return await costing.attention(session)
+    return await recipes_needing_a_look(session)
 
 
 @router.post("", response_model=RecipeOut, status_code=201)

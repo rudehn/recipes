@@ -2,8 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { HttpError, mockBackend, type MockRequest, type RouteHandler } from "../test/backend";
-import { page, recipeSummary, tagCount } from "../test/fixtures";
-import { renderApp } from "../test/render";
+import { page, recipe, recipeSummary, tagCount } from "../test/fixtures";
+import { renderApp, type AppRender } from "../test/render";
 
 const curry = recipeSummary({
   id: 1,
@@ -384,35 +384,184 @@ describe("RecipesPage", () => {
   });
 
   describe("needs a look", () => {
-    it("lists the recipes with rows that will shop wrongly, each row linked", async () => {
+    const AVOCADO = {
+      ingredient_id: 9,
+      name: "Optional: 1 diced ripe avocado",
+      issue: "amount_in_name",
+      affects: ["price", "nutrition"],
+    };
+    const PAPRICA_UNMATCHED = {
+      ingredient_id: 10,
+      name: "paprica",
+      issue: "no_match",
+      affects: ["price"],
+    };
+    const PAPRICA_NO_FOOD = {
+      ingredient_id: 10,
+      name: "paprica",
+      issue: "no_food",
+      affects: ["nutrition"],
+    };
+    const BEANS = {
+      ingredient_id: 11,
+      name: "can black beans",
+      issue: "unweighable",
+      affects: ["nutrition"],
+    };
+
+    function needingALook(attention: unknown) {
+      return mockBackend({
+        "GET /api/recipes/tags": TAGS,
+        "GET /api/recipes": page([curry, bread]),
+        "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
+        "GET /api/recipes/attention": attention,
+      });
+    }
+
+    /** The fold's entry for one recipe, opened. */
+    async function openEntry(user: AppRender["user"], title: string): Promise<HTMLElement> {
+      await user.click(await screen.findByText(/needs a look/i));
+      return screen.getByRole("link", { name: title }).closest<HTMLElement>(".offer")!;
+    }
+
+    /**
+     * An entry as it reads: each list of lines under what they hold up, and
+     * each line's row and reason, in order.
+     */
+    function groups(entry: HTMLElement): [string, string[][]][] {
+      return within(entry)
+        .getAllByRole("list")
+        .map((list) => [
+          // The heading that names the list, for a screen reader as for the eye.
+          document.getElementById(list.getAttribute("aria-labelledby")!)?.textContent ?? "",
+          within(list)
+            .getAllByRole("listitem")
+            .map((li) => [
+              within(li).getByRole("link").textContent ?? "",
+              li.querySelector(".issue-tag")?.textContent ?? "",
+            ]),
+        ]);
+    }
+
+    it("says what each row holds up, and sums it up for the recipe", async () => {
+      needingALook([{ recipe: bread, issues: [AVOCADO, PAPRICA_UNMATCHED, BEANS], no_servings: false }]);
+      const { user } = renderApp("/recipes");
+
+      const entry = await openEntry(user, "Banana bread");
+
+      expect(within(entry).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
+        "href",
+        "/recipes/2",
+      );
+      expect(within(entry).getByText("2 for nutrition · 2 for price")).toBeInTheDocument();
+      expect(groups(entry)).toEqual([
+        ["Price and nutrition", [["Optional: 1 diced ripe avocado", "amount is in the name"]]],
+        ["Nutrition", [["can black beans", "can't weigh the amount"]]],
+        ["Price", [["paprica", "no match"]]],
+      ]);
+    });
+
+    it("lists a row under each when price and nutrition are held up for their own reasons", async () => {
+      needingALook([
+        { recipe: bread, issues: [PAPRICA_UNMATCHED, PAPRICA_NO_FOOD], no_servings: false },
+      ]);
+      const { user } = renderApp("/recipes");
+
+      const entry = await openEntry(user, "Banana bread");
+
+      expect(within(entry).getByText("1 for nutrition · 1 for price")).toBeInTheDocument();
+      expect(groups(entry)).toEqual([
+        ["Nutrition", [["paprica", "no food chosen"]]],
+        ["Price", [["paprica", "no match"]]],
+      ]);
+    });
+
+    it("links a price line to its row and a nutrition line to its place in the breakdown", async () => {
+      needingALook([
+        { recipe: bread, issues: [AVOCADO, PAPRICA_UNMATCHED, PAPRICA_NO_FOOD], no_servings: false },
+      ]);
+      const { user } = renderApp("/recipes");
+
+      const entry = await openEntry(user, "Banana bread");
+      const link = (list: string, name: string) =>
+        within(within(entry).getByRole("list", { name: list })).getByRole("link", { name });
+
+      // A reason the recipe line has wrong is fixed on the line, whatever it
+      // also holds up.
+      expect(link("Price and nutrition", "Optional: 1 diced ripe avocado")).toHaveAttribute(
+        "href",
+        "/recipes/2?ingredient=9",
+      );
+      expect(link("Price", "paprica")).toHaveAttribute("href", "/recipes/2?ingredient=10");
+      expect(link("Nutrition", "paprica")).toHaveAttribute("href", "/recipes/2?nutrition=10");
+    });
+
+    it("sends a recipe with no serving count to its edit form", async () => {
+      needingALook([{ recipe: bread, issues: [BEANS], no_servings: true }]);
+      const { user } = renderApp("/recipes");
+
+      const entry = await openEntry(user, "Banana bread");
+
+      expect(within(entry).getByText("2 for nutrition")).toBeInTheDocument();
+      expect(groups(entry)).toEqual([
+        [
+          "Nutrition",
+          [
+            ["Whole recipe", "no serving count"],
+            ["can black beans", "can't weigh the amount"],
+          ],
+        ],
+      ]);
+      expect(within(entry).getByRole("link", { name: "Whole recipe" })).toHaveAttribute(
+        "href",
+        "/recipes/2/edit",
+      );
+    });
+
+    it("lands a nutrition line on the breakdown, open at that ingredient", async () => {
+      const cake = recipe({
+        id: 2,
+        title: "Banana bread",
+        servings: 12,
+        ingredients: [{ id: 10, name: "paprica", quantity: 1, unit: "tbsp" }],
+      });
       mockBackend({
         "GET /api/recipes/tags": TAGS,
         "GET /api/recipes": page([curry, bread]),
         "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
         "GET /api/recipes/attention": [
-          {
-            recipe: bread,
-            issues: [
-              { ingredient_id: 9, name: "Optional: 1 diced ripe avocado", issue: "amount_in_name" },
-              { ingredient_id: 10, name: "paprica", issue: "no_match" },
-            ],
-          },
+          { recipe: bread, issues: [PAPRICA_NO_FOOD], no_servings: false },
         ],
+        "GET /api/recipes/:id/nutrition": {
+          servings: 12,
+          per_serving: null,
+          counted: 0,
+          total_lines: 1,
+          lines: [
+            {
+              ingredient_id: 10,
+              name: "paprica",
+              key: "paprica",
+              measured: true,
+              skipped: false,
+              food: null,
+              hand_picked: false,
+              grams: null,
+              nutrients: null,
+              issue: "no_food",
+            },
+          ],
+        },
+        "GET /api/recipes/:id": cake,
       });
       const { user } = renderApp("/recipes");
 
-      await user.click(await screen.findByText(/needs a look/i));
+      const entry = await openEntry(user, "Banana bread");
+      await user.click(within(entry).getByRole("link", { name: "paprica" }));
 
-      const offer = screen.getByText("2 ingredients").closest(".offer")!;
-      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
-        "href",
-        "/recipes/2",
-      );
-      expect(
-        within(offer as HTMLElement).getByRole("link", { name: "Optional: 1 diced ripe avocado" }),
-      ).toHaveAttribute("href", expect.stringMatching(/^\/recipes\/2\?/));
-      expect(within(offer as HTMLElement).getByText("amount is in the name")).toBeInTheDocument();
-      expect(within(offer as HTMLElement).getByText("nothing matched at your store")).toBeInTheDocument();
+      const row = await screen.findByText("paprica", { selector: ".nutrition-lines .name" });
+      expect(document.querySelector("#nutrition")).toHaveAttribute("open");
+      expect(row.closest("li")).toHaveClass("highlighted");
     });
 
     it("is absent when every recipe is in order", async () => {

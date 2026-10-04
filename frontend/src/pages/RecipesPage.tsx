@@ -1,8 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type LineIssue, type Page, type RecipeSummary } from "../api";
-import { recipeIngredientPath } from "../recipeLink";
+import {
+  api,
+  type Affects,
+  type Page,
+  type RecipeAttention,
+  type RecipeSummary,
+} from "../api";
+import { ISSUE_LABELS, NO_SERVINGS_LABEL } from "../issues";
+import { recipeIngredientPath, recipeNutritionPath } from "../recipeLink";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePhoto, TimeChips } from "../components/RecipeBits";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
@@ -340,22 +347,112 @@ function SuggestionPanels() {
   );
 }
 
-const ISSUE_LABELS: Record<LineIssue, string> = {
-  amount_in_name: "amount is in the name",
-  no_amount: "no amount",
-  check_line: "check the line",
-  no_match: "nothing matched at your store",
-  unsized: "can't size the amount",
-  out_of_stock: "out of stock today",
-};
+/** What a line of "Needs a look" holds up, which decides the list it is in. */
+type Holds = "both" | "nutrition" | "price";
 
 /**
- * Recipes with ingredient rows that will price or shop wrongly.
+ * The lists, in order. A row the recipe has wrong comes first, since one edit
+ * to it settles the price and the nutrition together.
+ */
+const HOLDS: [Holds, string][] = [
+  ["both", "Price and nutrition"],
+  ["nutrition", "Nutrition"],
+  ["price", "Price"],
+];
+
+function holds(affects: Affects[]): Holds {
+  const price = affects.includes("price");
+  const nutrition = affects.includes("nutrition");
+  return price && nutrition ? "both" : price ? "price" : "nutrition";
+}
+
+interface AttentionLine {
+  key: string;
+  /** Where the fix is. */
+  to: string;
+  name: string;
+  why: string;
+}
+
+/**
+ * A recipe's lines sorted by what they hold up, each linked to its fix. A
+ * price, or a row the recipe has wrong, is fixed on the row; a food is chosen
+ * in the nutrition breakdown; the servings are in the edit form. A row held up
+ * for a reason on each side - nothing matched, and no food chosen - is in both
+ * lists, since each has its own fix.
+ */
+function attentionLines(entry: RecipeAttention): Map<Holds, AttentionLine[]> {
+  const id = entry.recipe.id;
+  const lines = new Map<Holds, AttentionLine[]>(HOLDS.map(([h]) => [h, []]));
+  if (entry.no_servings) {
+    lines.get("nutrition")!.push({
+      key: "servings",
+      to: `/recipes/${id}/edit`,
+      name: "Whole recipe",
+      why: NO_SERVINGS_LABEL,
+    });
+  }
+  for (const row of entry.issues) {
+    const held = holds(row.affects);
+    lines.get(held)!.push({
+      key: String(row.ingredient_id),
+      to:
+        held === "nutrition"
+          ? recipeNutritionPath(id, row.ingredient_id)
+          : recipeIngredientPath(id, [row.ingredient_id]),
+      name: row.name,
+      why: ISSUE_LABELS[row.issue],
+    });
+  }
+  return lines;
+}
+
+/**
+ * How much of a recipe's price and nutrition is held up: "2 for nutrition ·
+ * 1 for price". A row the recipe has wrong is counted in both, since fixing
+ * it settles both.
+ */
+function heldUp(lines: Map<Holds, AttentionLine[]>): string {
+  const both = lines.get("both")!.length;
+  const counts: [string, number][] = [
+    ["nutrition", both + lines.get("nutrition")!.length],
+    ["price", both + lines.get("price")!.length],
+  ];
+  return counts
+    .filter(([, n]) => n > 0)
+    .map(([what, n]) => `${n} for ${what}`)
+    .join(" · ");
+}
+
+/** One list of a recipe's lines, under what they hold up. */
+function AttentionGroup({ heading, lines }: { heading: string; lines: AttentionLine[] }) {
+  const headingId = useId();
+  return (
+    <div className="attention-group">
+      <p className="attention-heading" id={headingId}>
+        {heading}
+      </p>
+      <ul className="attention-items" aria-labelledby={headingId}>
+        {lines.map((line) => (
+          <li key={line.key}>
+            <Link to={line.to}>{line.name}</Link>
+            <span className="issue-tag">{line.why}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Recipes with rows that will price, shop or count wrongly.
  *
- * The same reasons the grocery list shows on its lines, grouped by recipe,
- * because the fix is on the recipe page. Each row links straight to itself
- * there. Folded like the suggestions, and absent when there is nothing to
- * say - which is the state to aim for.
+ * The reasons the grocery list and the nutrition breakdown show, gathered by
+ * recipe so the fixes can be made in one sitting. Within a recipe the lines
+ * are listed under what they hold up - the price, the nutrition, or both -
+ * since the fixes differ, and each links to where its fix is. Folded like the
+ * suggestions, and absent when there is nothing to say - which is the state
+ * to aim for.
  */
 function NeedsALook() {
   const { data } = useLoad(useCallback(() => api.recipesAttention(), []));
@@ -365,26 +462,22 @@ function NeedsALook() {
       <summary>
         Needs a look <span className="count">{recipeCount(data.length)}</span>
       </summary>
-      {data.map((entry) => (
-        <div key={entry.recipe.id} className="offer">
-          <div className="offer-recipe">
-            <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
-            <span className="offer-coverage">
-              {entry.issues.length} ingredient{entry.issues.length === 1 ? "" : "s"}
-            </span>
+      {data.map((entry) => {
+        const lines = attentionLines(entry);
+        return (
+          <div key={entry.recipe.id} className="offer">
+            <div className="offer-recipe">
+              <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
+              <span className="offer-coverage">{heldUp(lines)}</span>
+            </div>
+            <div className="attention-groups">
+              {HOLDS.filter(([held]) => lines.get(held)!.length > 0).map(([held, heading]) => (
+                <AttentionGroup key={held} heading={heading} lines={lines.get(held)!} />
+              ))}
+            </div>
           </div>
-          <ul className="offer-items attention-items">
-            {entry.issues.map((row) => (
-              <li key={row.ingredient_id}>
-                <Link to={recipeIngredientPath(entry.recipe.id, [row.ingredient_id])}>
-                  {row.name}
-                </Link>
-                <span className="issue-tag">{ISSUE_LABELS[row.issue]}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+        );
+      })}
     </details>
   );
 }
