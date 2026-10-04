@@ -190,6 +190,73 @@ async def test_import_endpoint_parses_recipe(client, monkeypatch):
     assert resp.status_code == 422
 
 
+async def test_import_says_when_the_recipe_is_already_in_the_box(client, monkeypatch):
+    """Pasting a link to a recipe already saved should say so, and where, so
+    the same recipe is not imported twice. The link pasted carries tracking
+    junk and a different spelling of the host than the one saved, which is
+    how it really arrives the second time."""
+    import httpx
+
+    async def fake_get(self, url):
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    saved = (
+        await client.post(
+            "/api/recipes",
+            json={"title": "Banana bread", "source_url": "https://www.example.com/banana-bread/"},
+        )
+    ).json()
+
+    resp = await client.post(
+        "/api/import/recipe",
+        json={"url": "http://example.com/banana-bread?utm_source=pinterest#recipe"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["saved_recipe_id"] == saved["id"]
+
+
+async def test_a_page_saved_twice_names_the_first_copy(client, monkeypatch):
+    """The answer should not move each time another copy is made."""
+    import httpx
+
+    async def fake_get(self, url):
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    link = "https://example.com/banana-bread/"
+    first = (
+        await client.post("/api/recipes", json={"title": "Banana bread", "source_url": link})
+    ).json()
+    await client.post("/api/recipes", json={"title": "Banana bread again", "source_url": link})
+
+    resp = await client.post("/api/import/recipe", json={"url": link})
+    assert resp.json()["saved_recipe_id"] == first["id"]
+
+
+async def test_import_of_a_new_recipe_names_no_saved_one(client, monkeypatch):
+    import httpx
+
+    async def fake_get(self, url):
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    await client.post(
+        "/api/recipes",
+        json={"title": "Zucchini bread", "source_url": "https://example.com/zucchini-bread/"},
+    )
+    # Saved before sources were kept: nothing to match it on.
+    await client.post("/api/recipes", json={"title": "Banana bread"})
+
+    resp = await client.post(
+        "/api/import/recipe", json={"url": "https://example.com/banana-bread"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["saved_recipe_id"] is None
+    # The draft still carries its own link, for the form to save with it.
+    assert resp.json()["source_url"] == "https://example.com/banana-bread"
+
+
 async def test_import_sends_browser_navigation_headers(client, monkeypatch):
     """Sites like AllRecipes answer 403 with a JS challenge unless the request
     carries the headers a browser sends on a top-level navigation. A

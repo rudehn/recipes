@@ -724,6 +724,13 @@ input:focus, select:focus, textarea:focus {
   font-size: var(--text-sm);
 }
 
+/* "Prefilled from Budget Bytes" names the page the form will save as the
+   recipe's source, and the reset left that name reading as plain text. */
+.import-box .hint a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
 /* ---------- Recipe detail ---------- */
 
 .detail-hero {
@@ -742,6 +749,24 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
 }
+
+/* The link back to the page a recipe was imported from, under its
+   description: one quiet line in the accent ink the hero's other links use,
+   underlined because it leaves the app. */
+.recipe-source {
+  margin: 0 0 var(--space-12);
+  font-size: var(--text-sm);
+}
+
+.recipe-source a {
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.recipe-source a:hover { text-decoration-color: currentColor; }
 
 .detail-cols {
   display: grid;
@@ -3061,6 +3086,17 @@ body.has-install-hint .page {
   overflow: hidden;
 }
 
+/* A result already saved says so on its tab, so it can be passed over without
+   being opened. On a line of its own and pinned to the foot of the tab, since
+   beside the site name it fitted for two sites of six, and a strip of tabs
+   whose marks sat at different heights read as untidy rather than as news.
+   The padding is the least room it keeps under a two-line name. */
+.result-tab .saved {
+  display: flex;
+  margin-top: auto;
+  padding-top: var(--space-6);
+}
+
 .result-tab.active {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -3082,7 +3118,8 @@ body.has-install-hint .page {
   font-size: var(--text-md);
 }
 
-.preview-banner a {
+/* The credit's link, and not the button beside it that is also an <a>. */
+.preview-banner a:not(.btn) {
   color: var(--accent-ink);
   text-decoration: underline;
 }
@@ -3588,6 +3625,11 @@ body.has-install-hint .page {
   .compare-row { gap: var(--space-20); }
 
   .preview-banner .spacer { display: none; }
+
+  /* Wrapped under the credit, a button sized to its label sat stranded at
+     the left; full width, it reads as the banner's answer, the way the
+     search and import buttons do above it. */
+  .preview-banner .btn { flex: 1 0 100%; justify-content: center; }
 
   .cart-head .btn { flex: 1; justify-content: center; }
 

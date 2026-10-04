@@ -93,6 +93,12 @@ class Recipe(Base):
     prep_minutes: Mapped[int | None] = mapped_column(Integer)
     cook_minutes: Mapped[int | None] = mapped_column(Integer)
     servings: Mapped[int | None] = mapped_column(Integer)
+    # The page the recipe was imported from, for the link back to it and for
+    # noticing when the same page is about to be imported again. Absent for
+    # recipes typed in by hand and for everything saved before it was kept.
+    # 2048 is the longest link browsers and sitemaps reliably carry, and well
+    # past a recipe page with a tail of tracking parameters.
+    source_url: Mapped[str | None] = mapped_column(String(2048))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
@@ -113,6 +119,19 @@ class Recipe(Base):
     @property
     def tags(self) -> list[str]:
         return [t.name for t in self.tag_rows]
+
+    @property
+    def source_label(self) -> str | None:
+        """The source site's name ("Budget Bytes"), as the search tabs give it.
+
+        Worked out on reading rather than stored, so a site joining the
+        allowlist is named properly on every recipe already saved from it.
+        """
+        if not self.source_url:
+            return None
+        from .services.recipe_search import site_label
+
+        return site_label(self.source_url)
 
 
 class RecipeTag(Base):

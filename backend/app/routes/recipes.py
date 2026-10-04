@@ -168,6 +168,7 @@ async def create_recipe(data: RecipeIn, session: AsyncSession = Depends(get_sess
         prep_minutes=data.prep_minutes,
         cook_minutes=data.cook_minutes,
         servings=data.servings,
+        source_url=data.source_url,
         ingredients=[
             Ingredient(
                 name=i.name,
@@ -248,6 +249,7 @@ async def update_recipe(
     recipe.prep_minutes = data.prep_minutes
     recipe.cook_minutes = data.cook_minutes
     recipe.servings = data.servings
+    recipe.source_url = data.source_url
     recipe.ingredients = [
         Ingredient(
             name=i.name, quantity=i.quantity, unit=i.unit, position=pos, source_line=i.source_line

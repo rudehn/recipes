@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { HttpError, mockBackend } from "../test/backend";
-import { recipeDraft } from "../test/fixtures";
+import { recipe, recipeDraft } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 const budgetBytes = recipeDraft({
@@ -176,6 +176,72 @@ describe("RecipeSearchPage", () => {
       "href",
       budgetBytes.source_url,
     );
+  });
+
+  describe("a result already in the box", () => {
+    const saved = { ...budgetBytes, saved_recipe_id: 12 };
+
+    it("says so, with a link to the saved recipe", async () => {
+      mockBackend({ "POST /api/import/search": [saved, nyt] });
+      const { user } = renderApp("/recipes/search");
+      await search(user, "banana bread");
+      await screen.findAllByRole("tab");
+
+      const banner = screen.getByText("Already in your box").closest<HTMLElement>(".preview-banner")!;
+      expect(banner).not.toHaveTextContent("Not saved yet.");
+      expect(within(banner).getByRole("link", { name: "Open saved recipe" })).toHaveAttribute(
+        "href",
+        "/recipes/12",
+      );
+      // Still credited, since the box's copy may have been edited since.
+      expect(within(banner).getByRole("link", { name: "Budget Bytes" })).toHaveAttribute(
+        "href",
+        budgetBytes.source_url,
+      );
+    });
+
+    it("is marked on its tab, so it can be told apart before it is opened", async () => {
+      mockBackend({ "POST /api/import/search": [nyt, saved] });
+      const { user } = renderApp("/recipes/search");
+      await search(user, "banana bread");
+
+      const [unsaved, alreadySaved] = await screen.findAllByRole("tab");
+      expect(within(alreadySaved).getByText("In your box")).toBeInTheDocument();
+      expect(within(unsaved).queryByText("In your box")).not.toBeInTheDocument();
+    });
+
+    it("can still be used, but opening the saved one comes first", async () => {
+      mockBackend({ "POST /api/import/search": [saved] });
+      const { user } = renderApp("/recipes/search");
+      await search(user, "banana bread");
+      await screen.findAllByRole("tab");
+
+      for (const use of screen.getAllByRole("button", { name: "Use this recipe" })) {
+        expect(use).not.toHaveClass("primary");
+      }
+      for (const open of screen.getAllByRole("link", { name: "Open saved recipe" })) {
+        expect(open).toHaveClass("primary");
+      }
+
+      await user.click(screen.getAllByRole("button", { name: "Use this recipe" })[0]);
+      expect(await screen.findByRole("heading", { name: "New recipe" })).toBeVisible();
+      expect(screen.getByLabelText("Title")).toHaveValue(budgetBytes.title);
+    });
+
+    it("opens the saved recipe rather than importing it again", async () => {
+      const backend = mockBackend({
+        "POST /api/import/search": [saved],
+        "GET /api/recipes/:id": recipe({ id: 12, title: "Banana bread, my way" }),
+      });
+      const { user } = renderApp("/recipes/search");
+      await search(user, "banana bread");
+      await screen.findAllByRole("tab");
+
+      await user.click(screen.getAllByRole("link", { name: "Open saved recipe" })[0]);
+
+      expect(await screen.findByRole("heading", { name: "Banana bread, my way" })).toBeVisible();
+      expect(backend.requestsTo("POST /api/recipes")).toHaveLength(0);
+    });
   });
 
   it("saves nothing while the results are being compared", async () => {

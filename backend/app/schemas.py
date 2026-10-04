@@ -70,6 +70,35 @@ class RecipeIn(BaseModel):
     servings: int | None = Field(default=None, ge=1)
     ingredients: list[IngredientIn] = []
     tags: list[str] = []
+    # The page the recipe came from. Absent means none: this is a full
+    # replacement, so an edit that leaves the field blank takes the link off.
+    source_url: str | None = Field(default=None, max_length=2048)
+
+    @field_validator("source_url", mode="before")
+    @classmethod
+    def _blank_source_is_none(cls, value: object) -> object:
+        """An emptied form field is no link rather than a link to nowhere."""
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @field_validator("source_url")
+    @classmethod
+    def _source_is_a_web_page(cls, value: str | None) -> str | None:
+        """Only http and https. The recipe page renders this as a link, where
+        any other scheme is either useless or a script, and a link with no
+        scheme at all would resolve as a path inside this app.
+
+        Checked rather than converted: the link is kept exactly as given, so
+        the edit form shows back what was pasted into it.
+        """
+        if value is None:
+            return None
+        try:
+            HttpUrl(value)
+        except ValueError:
+            raise ValueError("must be an http or https link") from None
+        return value
 
     def normalized_tags(self) -> list[str]:
         seen: dict[str, None] = {}
@@ -91,6 +120,10 @@ class RecipeOut(BaseModel):
     prep_minutes: int | None
     cook_minutes: int | None
     servings: int | None
+    source_url: str | None
+    # The source site's name for "View original on ...", or its bare host
+    # when it is off the search allowlist. Null exactly when the URL is.
+    source_label: str | None
     created_at: datetime
     updated_at: datetime
     ingredients: list[IngredientOut]
@@ -801,6 +834,10 @@ class RecipeDraft(BaseModel):
     ingredients: list[IngredientIn] = []
     image_url: str | None = None
     source_url: str
+    # The saved recipe imported from this same page, if there is one, so the
+    # page can offer it instead of a second copy. Set by the route, which is
+    # what can see the recipe box. See services.recipe_source.
+    saved_recipe_id: int | None = None
     # Human-readable name of the site this came from ("Budget Bytes"), for the
     # comparison tabs. Falls back to the bare host for anything off the
     # allowlist. Set by the caller, which is what knows the allowlist.

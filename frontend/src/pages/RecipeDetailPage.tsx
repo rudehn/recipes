@@ -190,6 +190,18 @@ export default function RecipeDetailPage() {
         <RecipePhoto recipe={recipe} />
         <div>
           {recipe.description && <p>{recipe.description}</p>}
+          {recipe.source_url && (
+            // Someone else's site, so a new tab: the recipe stays open here,
+            // and noopener noreferrer hand the other page nothing of this one.
+            // The arrow says "leaves the app" to the eye; read aloud it would
+            // only be "north east arrow".
+            <p className="recipe-source">
+              <a href={recipe.source_url} target="_blank" rel="noopener noreferrer">
+                View original on {recipe.source_label}
+                <span aria-hidden="true"> ↗</span>
+              </a>
+            </p>
+          )}
           <Chips>
             {recipe.prep_minutes != null && (
               <Chip tone="accent">Prep {recipe.prep_minutes} min</Chip>
