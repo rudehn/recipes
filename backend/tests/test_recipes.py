@@ -190,6 +190,27 @@ async def test_a_source_is_kept_without_the_space_around_it(client):
     assert resp.json()["source_url"] == "https://cookieandkate.com/pancakes/"
 
 
+async def test_a_source_is_kept_without_its_tracking(client):
+    """"View original" should not carry a newsletter's campaign tags back to
+    the site, on a recipe saved with them or edited to have them."""
+    resp = await client.post(
+        "/api/recipes",
+        json={
+            **PANCAKES,
+            "source_url": "https://example.com/?p=123&utm_source=newsletter&fbclid=x#recipe",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] == "https://example.com/?p=123#recipe"
+
+    resp = await client.put(
+        f"/api/recipes/{resp.json()['id']}",
+        json={**PANCAKES, "source_url": "https://pinchofyum.com/pancakes?utm_medium=social"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source_url"] == "https://pinchofyum.com/pancakes"
+
+
 @pytest.mark.parametrize(
     "bad",
     [

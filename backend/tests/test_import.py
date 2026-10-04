@@ -257,6 +257,52 @@ async def test_import_of_a_new_recipe_names_no_saved_one(client, monkeypatch):
     assert resp.json()["source_url"] == "https://example.com/banana-bread"
 
 
+async def test_import_hands_the_form_the_link_without_its_tracking(client, monkeypatch):
+    """The form shows the draft's link as the one it will save, so the
+    campaign tags a shared link arrives with are gone before it gets there.
+    The page is still fetched at the link as pasted."""
+    import httpx
+
+    fetched: list[str] = []
+
+    async def fake_get(self, url):
+        fetched.append(str(url))
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    pasted = "https://example.com/banana-bread/?utm_source=pinterest&utm_medium=social#recipe"
+
+    resp = await client.post("/api/import/recipe", json={"url": pasted})
+
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source_url"] == "https://example.com/banana-bread/#recipe"
+    assert fetched == [pasted]
+
+
+async def test_import_tells_apart_pages_named_by_their_query(client, monkeypatch):
+    """On a site without pretty permalinks every recipe is "/?p=" something,
+    and ignoring the whole query would call them all one recipe."""
+    import httpx
+
+    async def fake_get(self, url):
+        return httpx.Response(200, text=SAMPLE_HTML, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    saved = (
+        await client.post(
+            "/api/recipes", json={"title": "Banana bread", "source_url": "https://example.com/?p=123"}
+        )
+    ).json()
+
+    other = await client.post("/api/import/recipe", json={"url": "https://example.com/?p=124"})
+    assert other.json()["saved_recipe_id"] is None
+
+    same = await client.post(
+        "/api/import/recipe", json={"url": "https://example.com/?utm_source=x&p=123"}
+    )
+    assert same.json()["saved_recipe_id"] == saved["id"]
+
+
 async def test_import_sends_browser_navigation_headers(client, monkeypatch):
     """Sites like AllRecipes answer 403 with a JS challenge unless the request
     carries the headers a browser sends on a top-level navigation. A

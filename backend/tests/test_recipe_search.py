@@ -148,6 +148,18 @@ async def test_search_marks_results_already_in_the_box(client, fake_net):
     assert marks == {saved_url: saved["id"], other_url: None}
 
 
+async def test_search_drafts_carry_their_link_without_tracking(fake_net):
+    """A site's search can hand back links tagged for its own analytics; the
+    draft's link is the one the form will save, so the tags come off."""
+    tagged = "https://www.budgetbytes.com/banana-bread/?utm_source=wp-search"
+    net = fake_net({"www.budgetbytes.com": [tagged]}, {tagged: _recipe_html("Banana Bread")})
+
+    drafts = await search_recipes("banana bread")
+
+    assert [d.source_url for d in drafts] == ["https://www.budgetbytes.com/banana-bread/"]
+    assert net.fetched == [tagged]
+
+
 async def test_results_are_ordered_by_relevance(fake_net):
     """Sites nominate; we rank. Their own ordering is not evidence of much,
     so a recipe that is about the query outranks one that mentions it."""

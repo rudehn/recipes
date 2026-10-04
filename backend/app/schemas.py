@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
+from .services.recipe_source import without_tracking
+
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
 
@@ -89,8 +91,9 @@ class RecipeIn(BaseModel):
         any other scheme is either useless or a script, and a link with no
         scheme at all would resolve as a path inside this app.
 
-        Checked rather than converted: the link is kept exactly as given, so
-        the edit form shows back what was pasted into it.
+        Checked rather than converted: past its tracking parameters the link
+        is kept exactly as given, so the edit form shows back what was pasted
+        into it. See services.recipe_source.
         """
         if value is None:
             return None
@@ -98,7 +101,7 @@ class RecipeIn(BaseModel):
             HttpUrl(value)
         except ValueError:
             raise ValueError("must be an http or https link") from None
-        return value
+        return without_tracking(value)
 
     def normalized_tags(self) -> list[str]:
         seen: dict[str, None] = {}
@@ -836,12 +839,21 @@ class RecipeDraft(BaseModel):
     source_url: str
     # The saved recipe imported from this same page, if there is one, so the
     # page can offer it instead of a second copy. Set by the route, which is
-    # what can see the recipe box. See services.recipe_source.
+    # what can see the recipe box. See routes.import_recipe.
     saved_recipe_id: int | None = None
     # Human-readable name of the site this came from ("Budget Bytes"), for the
     # comparison tabs. Falls back to the bare host for anything off the
     # allowlist. Set by the caller, which is what knows the allowlist.
     source_label: str = ""
+
+    @field_validator("source_url")
+    @classmethod
+    def _source_without_tracking(cls, value: str) -> str:
+        """The form saves this link as the recipe's source and shows it as the
+        one it will save, so the tags a shared link arrives with come off here,
+        once, for the importer and the search alike. The page itself is fetched
+        at the link as given, before a draft exists."""
+        return without_tracking(value)
 
 
 class ImageFromUrl(BaseModel):
