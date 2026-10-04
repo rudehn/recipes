@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, type RecipeDraft } from "../api";
+import { DescriptionParagraphs } from "../components/RecipeBits";
 import { Banner, Button, Chip, EmptyState, LinkButton, PageHead, Panel } from "../components/ui";
 import { formatQuantity } from "../quantity";
 import { useScrollEdges } from "../useScrollEdges";
@@ -198,7 +199,7 @@ export default function RecipeSearchPage() {
             )}
             <div>
               <h2>{current.title}</h2>
-              {current.description && <p>{current.description}</p>}
+              <DescriptionParagraphs text={current.description} />
               <div className="compare-row">
                 <CompareStat
                   label="ingredients"

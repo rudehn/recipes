@@ -2,12 +2,24 @@ import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
 import { chipsThatFit } from "../chipFit";
+import { descriptionParagraphs } from "../description";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
 import { Chip, Chips, Modal } from "./ui";
 
 /** How many matches the picker shows before asking for a narrower search. */
 const PICKER_LIMIT = 20;
+
+/** A description as the paragraphs it was written in. See description.ts. */
+export function DescriptionParagraphs({ text }: { text: string }) {
+  return (
+    <>
+      {descriptionParagraphs(text).map((paragraph, i) => (
+        <p key={i}>{paragraph}</p>
+      ))}
+    </>
+  );
+}
 
 export function TimeChips({
   recipe,

@@ -894,6 +894,15 @@ input:focus, select:focus, textarea:focus {
  */
 .detail-hero .recipe-description { margin: 0; }
 
+/* A description's paragraphs, a blank line apart where it was written, and
+   any single line break inside one kept as written. */
+.recipe-description p {
+  margin: 0;
+  white-space: pre-line;
+}
+
+.recipe-description p + p { margin-top: var(--space-12); }
+
 .detail-hero .chips { padding-top: 0; }
 
 .recipe-description + .recipe-source { margin-top: var(--space-8); }
@@ -1479,6 +1488,16 @@ button.cook-duration:hover {
   display: flex;
   gap: var(--space-16);
   flex-wrap: wrap;
+}
+
+/* A recipe's description, which grows with what is written in it from the
+   two lines it starts at (see useAutoGrow) to about ten, and scrolls past
+   that, so a long one cannot push the rest of the form off the screen. Its
+   height is the hook's to set, so it is not dragged by hand. The 2px is its
+   border, top and bottom. */
+.description-input {
+  max-height: calc(10lh + 2 * var(--space-10) + 2px);
+  resize: none;
 }
 
 .field-row .field { flex: 1; min-width: 130px; }

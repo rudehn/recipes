@@ -74,6 +74,25 @@ describe("RecipeFormPage: writing a recipe", () => {
     expect(await screen.findByRole("heading", { name: "Sheet pan salmon" })).toBeVisible();
   });
 
+  it("keeps a description written over several lines as written", async () => {
+    const created = recipe({ id: 42, title: "Chili" });
+    const backend = formBackend({
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByLabelText("Title"), "Chili");
+    const description = screen.getByLabelText("Description");
+    expect(description.tagName).toBe("TEXTAREA");
+    await user.type(description, "Smoky and rich.{Enter}{Enter}Notes: Freezes well.");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").description).toBe(
+      "Smoky and rich.\n\nNotes: Freezes well.",
+    );
+  });
+
   it("leaves blank optional fields null rather than zero", async () => {
     // A recipe with no stated prep time is not a zero-minute recipe.
     const created = recipe({ id: 42, title: "Toast" });
@@ -349,6 +368,22 @@ describe("RecipeFormPage: editing a recipe", () => {
       { name: "salt", quantity: null, unit: null },
     ]);
     expect(payload.tags).toEqual(["quick", "dinner"]);
+  });
+
+  it("shows a stored description's paragraphs, and saves them back as they were", async () => {
+    const written = { ...stored, description: "Fast and warming.\n\nNotes: Freezes for a month." };
+    const backend = formBackend({
+      "GET /api/recipes/:id": written,
+      "PUT /api/recipes/:id": written,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Description")).toHaveValue(written.description),
+    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").description).toBe(written.description);
   });
 
   it("keeps the line a row was imported from, so it can be parsed again later", async () => {

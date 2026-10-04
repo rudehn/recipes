@@ -9,6 +9,7 @@ import {
   type RecipeSummary,
   type TagCount,
 } from "../api";
+import { firstParagraph } from "../description";
 import { ISSUE_LABELS, NO_SERVINGS_LABEL } from "../issues";
 import { recipeIngredientPath, recipeNutritionPath } from "../recipeLink";
 import { LoadFailure } from "../components/LoadError";
@@ -218,7 +219,9 @@ export default function RecipesPage() {
               <div className="body">
                 <h3>{r.title}</h3>
                 <TagChips tags={r.tags} />
-                {r.description && <p className="desc">{r.description}</p>}
+                {/* Cut to a line or two, so the first paragraph only:
+                    the rest would run on into it. */}
+                {r.description.trim() && <p className="desc">{firstParagraph(r.description)}</p>}
                 <TimeChips recipe={r} />
               </div>
             </Link>

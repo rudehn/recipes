@@ -46,9 +46,9 @@ def test_an_ai_chat_answer_is_read_without_its_small_talk():
             "Tender penne in a silky tomato cream sauce, finished with fresh basil and"
             " plenty of Parmesan. It's an easy weeknight dinner that tastes like a"
             " restaurant meal."
-            " Notes: Swap the cream for half-and-half for a lighter sauce."
+            "\n\nNotes: Swap the cream for half-and-half for a lighter sauce."
             " Leftovers keep for 3 days in the fridge."
-            " Tips: Save more pasta water than you think you need; it loosens the"
+            "\n\nTips: Save more pasta water than you think you need; it loosens the"
             " sauce as it sits."
         ),
         "prep_minutes": 15,
@@ -140,7 +140,7 @@ def test_a_recipe_card_copied_from_a_web_page_is_read_past_its_buttons():
         "description": (
             "This chicken fried rice is quicker than takeout and a great way to use up"
             " leftover rice."
-            " Notes: Day-old rice fries best, so cook it the night before if you can."
+            "\n\nNotes: Day-old rice fries best, so cook it the night before if you can."
         ),
         "prep_minutes": 10,
         "cook_minutes": 25,
@@ -351,7 +351,24 @@ def test_storage_and_serving_ideas_are_notes():
 
     assert draft.instructions == "Simmer it."
     assert draft.description == (
-        "Serving suggestions: Top with cheddar. Storage: Freezes for 3 months."
+        "Serving suggestions: Top with cheddar.\n\nStorage: Freezes for 3 months."
+    )
+
+
+def test_the_description_keeps_each_heading_and_note_as_its_own_paragraph():
+    """The form's description is several lines, and the recipe page shows
+    paragraphs, so what was written under its own heading stays apart."""
+    text = (
+        "Black Bean Soup\nA cheap soup.\nIt freezes well.\n\n## Why it works\n"
+        "The beans thicken it.\n\n## Ingredients\n- 2 cans beans\n"
+        "Tip: rinse them first.\n\n## Notes\n- Add lime"
+    )
+
+    assert read_recipe_text(text).description == (
+        "A cheap soup. It freezes well."
+        "\n\nWhy it works: The beans thicken it."
+        "\n\nTip: rinse them first."
+        "\n\nNotes: Add lime."
     )
 
 

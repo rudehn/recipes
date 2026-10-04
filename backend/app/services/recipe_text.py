@@ -863,17 +863,33 @@ def _as_sentence(text: str) -> str:
     return text if text.endswith(":") or _SENTENCE_END.search(text) else text + "."
 
 
-def _description(lead: list[str], notes: list[tuple[str | None, list[str]]]) -> str:
-    """The description, one line for the form's one-line field: the text
-    before the first section, then every note, each under its heading, so
-    nothing written down is lost."""
-    parts = list(lead)
-    for label, items in notes:
-        if not items:
-            continue
-        sentences = " ".join(_as_sentence(item) for item in items)
-        parts.append(f"{label}: {sentences}" if label else sentences)
+def _paragraph(items: list[str], *, sentences: bool) -> str:
+    """Items run together as one paragraph. With `sentences` each ends as a
+    sentence, as a list of notes should read; without, only those another
+    follows, so a lone "Source: Aunt May" stays as it was written."""
     return " ".join(
-        part if index == len(parts) - 1 else _as_sentence(part)
-        for index, part in enumerate(parts)
+        _as_sentence(item) if sentences or index < len(items) - 1 else item
+        for index, item in enumerate(items)
     )
+
+
+def _description(lead: list[str], notes: list[tuple[str | None, list[str]]]) -> str:
+    """The description: the text before the first section, then every note,
+    so nothing written down is lost.
+
+    Paragraphs are separated by a blank line, as the recipe page shows them.
+    The text before the first section is one, except that a heading inside
+    it starts another; each note, under its heading, is one of its own.
+    """
+    groups: list[list[str]] = []
+    for item in lead:
+        heading = item.endswith(":")
+        if not groups or (heading and not groups[-1][-1].endswith(":")):
+            groups.append([])
+        groups[-1].append(item)
+    paragraphs = [_paragraph(group, sentences=False) for group in groups]
+    for label, items in notes:
+        if items:
+            text = _paragraph(items, sentences=True)
+            paragraphs.append(f"{label}: {text}" if label else text)
+    return "\n\n".join(paragraphs)

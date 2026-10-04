@@ -22,6 +22,7 @@ import {
   type SegmentedOption,
 } from "../components/ui";
 import { formatAmount, parseQuantity } from "../quantity";
+import { useAutoGrow } from "../useAutoGrow";
 import { errorMessage, useLoad } from "../useLoad";
 
 interface IngredientDraft {
@@ -110,6 +111,7 @@ export default function RecipeFormPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const descriptionField = useAutoGrow(description);
   const [instructions, setInstructions] = useState("");
   const [prep, setPrep] = useState("");
   const [cook, setCook] = useState("");
@@ -446,8 +448,13 @@ export default function RecipeFormPage() {
         </Field>
 
         <Field label="Description" htmlFor="description">
-          <input
+          {/* Several lines, since pasted notes and tips land here as their
+              own paragraphs; it grows with them. See useAutoGrow. */}
+          <textarea
             id="description"
+            ref={descriptionField}
+            className="description-input"
+            rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="A short note about this dish (optional)"

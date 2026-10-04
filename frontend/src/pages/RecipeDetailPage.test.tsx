@@ -96,6 +96,25 @@ describe("RecipeDetailPage", () => {
     expect(screen.getByText("dinner")).toBeInTheDocument();
   });
 
+  it("shows a description written in paragraphs as paragraphs", async () => {
+    mockBackend({
+      "GET /api/recipes/:id": {
+        ...curry,
+        description: "Fast and warming.\n\n\nNotes: Freezes for a month.\nThaw overnight.",
+      },
+    });
+    renderApp("/recipes/1");
+
+    const first = await screen.findByText("Fast and warming.");
+    const second = screen.getByText(/^Notes: Freezes for a month\./);
+    expect(first.tagName).toBe("P");
+    expect(second.tagName).toBe("P");
+    expect(first.parentElement).toBe(second.parentElement);
+    expect(first.parentElement).toHaveClass("recipe-description");
+    // A single line break inside a paragraph is kept as written.
+    expect(second.textContent).toBe("Notes: Freezes for a month.\nThaw overnight.");
+  });
+
   it("requests the recipe named in the URL", async () => {
     const backend = mockBackend({ "GET /api/recipes/:id": curry });
     renderApp("/recipes/1");

@@ -270,6 +270,21 @@ describe("a tap", () => {
 });
 
 /**
+ * A description is written in paragraphs and lines, so it is shown in them,
+ * and the field it is written in grows with it - but only so far, or a long
+ * one would push the rest of the form off the screen.
+ */
+describe("a description", () => {
+  it("keeps the line breaks written inside a paragraph", () => {
+    expect(css).toMatch(/\.recipe-description p\s*\{[^}]*white-space:\s*pre-line/);
+  });
+
+  it("is written in a field that stops growing and scrolls", () => {
+    expect(css).toMatch(/\.description-input\s*\{[^}]*max-height/);
+  });
+});
+
+/**
  * A button that cannot be pressed has to look it. Without a rule of its own a
  * disabled .btn kept its full colour and still lit up under the pointer, so
  * an empty import box's "Import" read as ready to go.

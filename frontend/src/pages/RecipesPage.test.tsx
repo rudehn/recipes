@@ -103,6 +103,19 @@ describe("RecipesPage", () => {
     expect(screen.getByText("87 saved")).toBeInTheDocument();
   });
 
+  it("shows only a description's first paragraph on its card", async () => {
+    // The card cuts its description to a line or two; the paragraphs after
+    // the first would only run on into it.
+    recipesBackend(
+      page([{ ...curry, description: "Fast and warming.\n\nNotes: Freezes for a month." }]),
+    );
+    renderApp("/recipes");
+
+    const card = (await screen.findByRole("heading", { name: curry.title })).closest("a")!;
+    expect(within(card).getByText("Fast and warming.")).toHaveClass("desc");
+    expect(card).not.toHaveTextContent("Freezes for a month");
+  });
+
   it("links each card to its recipe", async () => {
     recipesBackend(page([curry, bread]));
     renderApp("/recipes");

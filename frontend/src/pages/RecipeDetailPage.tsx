@@ -4,7 +4,7 @@ import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, type CostLine, type FoodChoice, type NutritionLine } from "../api";
 import { FoodPickerModal, NutritionBreakdown, NutritionStatus } from "../components/Nutrition";
 import { ProductPickerModal } from "../components/ProductPicker";
-import { RecipePhoto } from "../components/RecipeBits";
+import { DescriptionParagraphs, RecipePhoto } from "../components/RecipeBits";
 import {
   Banner,
   Button,
@@ -204,7 +204,11 @@ export default function RecipeDetailPage() {
       <div className="detail-hero">
         <RecipePhoto recipe={recipe} />
         <div>
-          {recipe.description && <p className="recipe-description">{recipe.description}</p>}
+          {recipe.description.trim() && (
+            <div className="recipe-description">
+              <DescriptionParagraphs text={recipe.description} />
+            </div>
+          )}
           {recipe.source_url && (
             // Someone else's site, so a new tab: the recipe stays open here,
             // and noopener noreferrer hand the other page nothing of this one.
