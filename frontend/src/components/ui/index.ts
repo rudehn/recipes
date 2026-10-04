@@ -6,4 +6,5 @@ export { Field, FieldRow } from "./Field";
 export { Modal } from "./Modal";
 export { PageHead, Toolbar } from "./PageHead";
 export { Panel } from "./Panel";
+export { Segmented, type SegmentedOption } from "./Segmented";
 export { Switch } from "./Switch";

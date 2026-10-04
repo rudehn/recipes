@@ -21,6 +21,7 @@ import type {
   Page,
   PantryItem,
   PastedLine,
+  PastedRecipeDraft,
   PastePlan,
   PlanCost,
   Recipe,
@@ -87,6 +88,15 @@ export function recipeDraft(overrides: Partial<RecipeDraft> = {}): RecipeDraft {
     source_url: "https://www.budgetbytes.com/banana-bread/",
     saved_recipe_id: null,
     source_label: "Budget Bytes",
+    ...overrides,
+  };
+}
+
+/** A draft read from pasted text, which names no page unless the text did. */
+export function pastedRecipeDraft(overrides: Partial<PastedRecipeDraft> = {}): PastedRecipeDraft {
+  return {
+    ...recipeDraft({ source_url: null, source_label: "" }),
+    missing: [],
     ...overrides,
   };
 }

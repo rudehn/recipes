@@ -3,7 +3,7 @@ import logging
 import httpx
 import pytest
 
-from app.services.recipe_import import _parse_instructions, _parse_servings
+from app.services.recipe_import import _parse_instructions, parse_servings
 from app.services.recipe_search import (
     ALLOWLIST,
     MAX_FETCHES,
@@ -360,7 +360,7 @@ def test_every_allowlisted_site_is_searched_the_wordpress_way():
     ],
 )
 def test_parse_servings(value, expected):
-    assert _parse_servings(value) == expected
+    assert parse_servings(value) == expected
 
 
 def test_parse_instructions_splits_a_single_prose_blob():

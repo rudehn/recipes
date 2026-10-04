@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import StyleguidePage from "./StyleguidePage";
@@ -29,6 +29,20 @@ describe("StyleguidePage", () => {
     expect(screen.getAllByRole("button", { name: "Primary" })).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "Danger" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "An icon button" })).toBeInTheDocument();
+  });
+
+  it("shows a segmented control with one option chosen at a time", async () => {
+    const { user } = renderInRouter(<StyleguidePage />);
+    const group = screen.getByRole("group", { name: "Show" });
+    const [first, second] = within(group).getAllByRole("button");
+
+    expect(first).toHaveAttribute("aria-pressed", "true");
+    expect(second).toHaveAttribute("aria-pressed", "false");
+
+    await user.click(second);
+
+    expect(first).toHaveAttribute("aria-pressed", "false");
+    expect(second).toHaveAttribute("aria-pressed", "true");
   });
 
   it("opens the dialog it documents", async () => {

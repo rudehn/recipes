@@ -28,6 +28,7 @@ from ..schemas import MAX_CART_QUANTITY
 from .canonical import canonical_key
 from .grocery import normalize_unit
 from .kroger.units import Measure, measure
+from .list_marks import read_list_marks
 from .quantity import format_quantity
 from .recipe_import import parse_ingredient_line
 
@@ -35,13 +36,6 @@ from .recipe_import import parse_ingredient_line
 # a whole email, a recipe's method - stops rather than searching the store a
 # hundred times over.
 MAX_LINES = 100
-
-# Bullets and list numbering, as Notes, Reminders, markdown and word
-# processors write them. Numbering needs a space after it, so "1.5 lb" is an
-# amount and not item one.
-_BULLET = re.compile(r"^(?:[-*•·–—◦▪●○‣⁃]|\d+[.)](?=\s|$))\s*")
-_OPEN_BOX = re.compile(r"^(?:\[\s?\]|☐|□)\s*")
-_TICKED_BOX = re.compile(r"^(?:\[[xX✓✔]\]|[☑☒✓✔✅])\s*")
 
 # "eggs x2", "eggs ×2", "eggs (2)"; and in front, "2x eggs", "x2 eggs".
 _COUNT_AFTER = re.compile(r"(?:\s+[x×]\s*(\d+)|\s*\((\d+)\))$", re.I)
@@ -149,18 +143,9 @@ def read_shopping_text(text: str) -> ShoppingText:
     amounts: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     ticked: list[str] = []
 
-    for row in _items(text):
-        is_ticked = False
-        while True:
-            stripped = _BULLET.sub("", row, count=1)
-            stripped = _OPEN_BOX.sub("", stripped, count=1)
-            if _TICKED_BOX.match(stripped):
-                is_ticked = True
-                stripped = _TICKED_BOX.sub("", stripped, count=1)
-            if stripped == row:
-                break
-            row = stripped
-        row = row.strip()
+    for item in _items(text):
+        marks = read_list_marks(item)
+        row = marks.text
         if not row or row.endswith(":") or row.startswith("#"):
             continue
 
@@ -171,7 +156,7 @@ def read_shopping_text(text: str) -> ShoppingText:
         key = canonical_key(line.name)
         if not key:
             continue
-        if is_ticked:
+        if marks.ticked:
             ticked.append(line.name)
             continue
 

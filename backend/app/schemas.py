@@ -863,10 +863,18 @@ class RecipeSearchRequest(BaseModel):
     query: str = Field(min_length=2, max_length=100)
 
 
+class RecipeTextRequest(BaseModel):
+    """A recipe pasted in as text. Its length and emptiness are checked by the
+    reader rather than here, so a refusal comes back as a sentence the form
+    can show instead of a validation error. See services.recipe_text."""
+
+    text: str
+
+
 class RecipeDraft(BaseModel):
-    """Parsed but unsaved recipe returned by the URL importer and the recipe
-    search; the client prefills the form with it so the user can review before
-    saving."""
+    """Parsed but unsaved recipe returned by the URL importer, the recipe
+    search and the pasted-text reader; the client prefills the form with it so
+    the user can review before saving."""
 
     title: str
     description: str = ""
@@ -880,7 +888,9 @@ class RecipeDraft(BaseModel):
     # for the person to keep or drop, and nothing is tagged until they save.
     tags: list[str] = []
     image_url: str | None = None
-    source_url: str
+    # The page the recipe came from. Absent only for pasted text that names
+    # no link, which has no page.
+    source_url: str | None = None
     # The saved recipe imported from this same page, if there is one, so the
     # page can offer it instead of a second copy. Set by the route, which is
     # what can see the recipe box. See routes.import_recipe.
@@ -892,12 +902,31 @@ class RecipeDraft(BaseModel):
 
     @field_validator("source_url")
     @classmethod
-    def _source_without_tracking(cls, value: str) -> str:
+    def _source_without_tracking(cls, value: str | None) -> str | None:
         """The form saves this link as the recipe's source and shows it as the
         one it will save, so the tags a shared link arrives with come off here,
-        once, for the importer and the search alike. The page itself is fetched
-        at the link as given, before a draft exists."""
-        return without_tracking(value)
+        once, for the importer, the search and pasted text alike. The page
+        itself is fetched at the link as given, before a draft exists."""
+        return without_tracking(value) if value is not None else None
+
+
+# The parts of a recipe the form cannot do without, named when a pasted text
+# did not seem to have one.
+RecipePart = Literal["title", "ingredients", "instructions"]
+
+
+class PastedRecipeDraft(RecipeDraft):
+    """A draft read from pasted text rather than a page.
+
+    A page either carries a recipe's data or it does not, and an import
+    without it is refused. Pasted text is read by how recipes are written
+    down, so it can come out partly read: a note with no ingredients list, a
+    list with no title. What was found is still worth having, so it is
+    returned with `missing` naming what was not, for the form to say so
+    rather than leave a blank field to be noticed.
+    """
+
+    missing: list[RecipePart] = []
 
 
 class ImageFromUrl(BaseModel):

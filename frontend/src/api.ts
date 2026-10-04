@@ -134,11 +134,21 @@ export interface RecipeDraft {
    */
   tags: string[];
   image_url: string | null;
-  source_url: string;
+  /** The page it came from. Null only for pasted text that named no link. */
+  source_url: string | null;
   /** The recipe already saved from this same page, so it can be opened instead of copied. */
   saved_recipe_id: number | null;
-  /** Display name of the source site, e.g. "Budget Bytes". */
+  /** Display name of the source site, e.g. "Budget Bytes"; empty without a link. */
   source_label: string;
+}
+
+/** The parts of a recipe the form cannot do without. */
+export type RecipePart = "title" | "ingredients" | "instructions";
+
+/** A draft read from pasted text, which can come out partly read. */
+export interface PastedRecipeDraft extends RecipeDraft {
+  /** What the text did not seem to have, for the form to point out. */
+  missing: RecipePart[];
 }
 
 export interface MealPlanEntry {
@@ -717,6 +727,12 @@ export const api = {
     request<RecipeDraft>("/api/import/recipe", {
       method: "POST",
       body: JSON.stringify({ url }),
+    }),
+  /** A recipe pasted in as text, read into a draft. Nothing is fetched or saved. */
+  importRecipeText: (text: string) =>
+    request<PastedRecipeDraft>("/api/import/text", {
+      method: "POST",
+      body: JSON.stringify({ text }),
     }),
   searchRecipes: (query: string) =>
     request<RecipeDraft[]>("/api/import/search", {

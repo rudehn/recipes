@@ -12,6 +12,10 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   The recipe keeps the link, so its page can take you back to the original, and a link to a recipe already in your box is pointed out before it is saved twice.
   Links match however they arrive - with tracking parameters, without "www.", over http - and are kept without the tracking.
   A link can be added to or corrected on any recipe from its edit form.
+* Import a recipe from pasted text: a note, a text file, or an answer from an AI chat.
+  The title, ingredients, steps, times, servings and tags are read from how the recipe is written - Markdown headings, "Ingredients:" labels, bullets, "Serves 4" - with no AI model and nothing sent anywhere, and fill in the form for you to review.
+  Notes and tips are kept at the end of the description, the chat's small talk is left out, and the form says what it could not find, such as an ingredients list.
+  A "Source:" link in the text becomes the recipe's link, and is checked against your box like an imported one.
 * Tags you can combine: tap several to narrow the box to recipes carrying all of them, with each tag counting how many recipes it would leave.
   Search also matches ingredients ("what can I make with basil?").
   An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.

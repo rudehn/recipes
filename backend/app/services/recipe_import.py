@@ -7,7 +7,7 @@ structured quantity / unit / name."""
 
 import json
 import re
-from collections.abc import Collection
+from collections.abc import Collection, Iterable
 
 from bs4 import BeautifulSoup
 
@@ -94,13 +94,14 @@ def _parse_iso_minutes(value: object) -> int | None:
     return total or None
 
 
-def _parse_servings(value: object) -> int | None:
+def parse_servings(value: object) -> int | None:
     """Servings from a recipeYield, which is rarely a plain number.
 
     Sites commonly publish a list whose first entry is a useless unit count:
     ``["1", "1 loaf (12 slices)"]`` means twelve servings, not one. We take the
     largest number on offer, since the informative figure is the bigger one and
     understating servings inflates quantities once the planner scales a recipe.
+    A pasted "Serves 4-6" or "Yield: 1 loaf (12 slices)" is read the same way.
     """
     candidates = value if isinstance(value, list) else [value]
     best: int | None = None
@@ -143,11 +144,12 @@ def _meta_description(soup: BeautifulSoup) -> str:
     return ""
 
 
-def _tag_names(value: object) -> list[str]:
+def tag_names(value: object) -> list[str]:
     """The names in a schema.org text field, spelled the way a tag is stored.
 
     recipeCategory, recipeCuisine and keywords may each be a string, a
-    comma-separated string, or a list of either; whatever else a site puts
+    comma-separated string, or a list of either, as may the value of a pasted
+    "Cuisine:" line; whatever else a site puts
     there - an object, a number - is not a name. A name longer than a tag can
     be is a sentence rather than a tag, and is dropped rather than cut: cut
     at the limit it would be a tag nobody would ever type.
@@ -182,13 +184,17 @@ def _plural_variants(tag: str) -> list[str]:
     return variants
 
 
-def _suggest_tags(recipe: dict, known_tags: Collection[str]) -> list[str]:
-    """Tags for the recipe, from what its page says it is.
+def suggest_tags(
+    described: Iterable[str], keywords: Iterable[str], known_tags: Collection[str]
+) -> list[str]:
+    """Tags for a recipe, from what its source says it is.
 
-    Category and cuisine are suggested whatever they say. Keywords are not:
-    they are mostly written for search engines ("best chili recipe"), so one
-    is suggested only when it names a tag the box already has, which is the
-    one case where it is plainly the person's own word for the recipe.
+    `described` are the names that say what the recipe is - a page's category
+    and cuisine, a pasted "Course:" line - and are suggested whatever they
+    say. `keywords` are not: they are mostly written for search engines ("best
+    chili recipe"), so one is suggested only when it names a tag the box
+    already has, which is the one case where it is plainly the person's own
+    word for the recipe. Both are names as `tag_names` spells them.
 
     A suggestion one plural away from a tag in the box takes the box's
     spelling, so a page filed under "Sides" does not start a second tag
@@ -201,9 +207,8 @@ def _suggest_tags(recipe: dict, known_tags: Collection[str]) -> list[str]:
             return tag
         return next((v for v in _plural_variants(tag) if v in known), tag)
 
-    described = _tag_names(recipe.get("recipeCategory")) + _tag_names(recipe.get("recipeCuisine"))
     suggested = [spelled_as_known(tag) for tag in described]
-    suggested += [word for word in _tag_names(recipe.get("keywords")) if word in known]
+    suggested += [word for word in keywords if word in known]
     return list(dict.fromkeys(suggested))
 
 
@@ -359,7 +364,7 @@ def parse_recipe_html(
     """The page's recipe as a draft for the form.
 
     `known_tags` are the tags already in the recipe box, which the suggested
-    tags are spelled against (see `_suggest_tags`). They are handed in rather
+    tags are spelled against (see `suggest_tags`). They are handed in rather
     than looked up, so parsing stays a function of its arguments and never
     touches the database; the routes that have a session read them.
     """
@@ -407,13 +412,17 @@ def parse_recipe_html(
         instructions=_parse_instructions(recipe.get("recipeInstructions")),
         prep_minutes=prep,
         cook_minutes=cook,
-        servings=_parse_servings(recipe.get("recipeYield")),
+        servings=parse_servings(recipe.get("recipeYield")),
         ingredients=[
             parse_ingredient_line(line)
             for line in ingredients_raw
             if isinstance(line, str) and line.strip()
         ],
-        tags=_suggest_tags(recipe, known_tags),
+        tags=suggest_tags(
+            tag_names(recipe.get("recipeCategory")) + tag_names(recipe.get("recipeCuisine")),
+            tag_names(recipe.get("keywords")),
+            known_tags,
+        ),
         image_url=_parse_image(recipe.get("image")),
         source_url=source_url,
     )

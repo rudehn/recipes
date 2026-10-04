@@ -13,6 +13,7 @@ import {
   Modal,
   PageHead,
   Panel,
+  Segmented,
   Switch,
   Toolbar,
 } from "../components/ui";
@@ -112,6 +113,7 @@ export default function StyleguidePage() {
   const groups = tokenGroups;
   const [modalOpen, setModalOpen] = useState(false);
   const [stocked, setStocked] = useState(true);
+  const [segment, setSegment] = useState<"link" | "text">("link");
 
   return (
     <>
@@ -210,6 +212,23 @@ export default function StyleguidePage() {
           <Switch on={stocked} onToggle={() => setStocked((v) => !v)}>
             {stocked ? "In stock" : "Out of stock"}
           </Switch>
+        </div>
+      </Section>
+
+      <Section
+        title="Segmented"
+        note="A couple of ways of doing one thing, one in use at a time. Full width on a phone."
+      >
+        <div className="sg-row">
+          <Segmented
+            label="Show"
+            options={[
+              { value: "link", label: "From a link" },
+              { value: "text", label: "From text" },
+            ]}
+            value={segment}
+            onChange={setSegment}
+          />
         </div>
       </Section>
 

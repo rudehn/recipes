@@ -1,10 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { RecipeInput } from "../api";
+import type { RecipeInput, RecipePart } from "../api";
 import { HttpError, mockBackend, type MockBackend, type Routes } from "../test/backend";
-import { recipe, recipeDraft, tagCount } from "../test/fixtures";
-import { renderApp } from "../test/render";
+import { pastedRecipeDraft, recipe, recipeDraft, tagCount } from "../test/fixtures";
+import { renderApp, type AppRender } from "../test/render";
 
 /**
  * The backend the form talks to. The form asks for the box's tags to suggest,
@@ -468,6 +468,7 @@ describe("RecipeFormPage: editing a recipe", () => {
 });
 
 describe("RecipeFormPage: importing from a URL", () => {
+  const page = "https://www.budgetbytes.com/banana-bread/";
   const draft = recipeDraft({
     title: "Banana bread",
     prep_minutes: 15,
@@ -478,6 +479,7 @@ describe("RecipeFormPage: importing from a URL", () => {
       { name: "flour", quantity: 1.5, unit: "cups" },
     ],
     image_url: "https://example.com/bread.jpg",
+    source_url: page,
   });
 
   it("fills the form from the imported page", async () => {
@@ -596,15 +598,13 @@ describe("RecipeFormPage: importing from a URL", () => {
     });
     const { user } = renderApp("/recipes/new");
 
-    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), page);
     await user.click(screen.getByRole("button", { name: "Import" }));
     // Shown in the form, so what will be saved can be seen and changed.
-    await waitFor(() =>
-      expect(screen.getByLabelText("Source link")).toHaveValue(draft.source_url),
-    );
+    await waitFor(() => expect(screen.getByLabelText("Source link")).toHaveValue(page));
     await user.click(screen.getByRole("button", { name: "Create recipe" }));
 
-    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(draft.source_url);
+    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(page);
   });
 
   it("says when the imported recipe is already in the box, and still lets it be saved", async () => {
@@ -617,7 +617,7 @@ describe("RecipeFormPage: importing from a URL", () => {
     });
     const { user } = renderApp("/recipes/new");
 
-    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), page);
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     const notice = await screen.findByText(/Already in your box/);
@@ -635,7 +635,7 @@ describe("RecipeFormPage: importing from a URL", () => {
     formBackend({ "POST /api/import/recipe": draft });
     const { user } = renderApp("/recipes/new");
 
-    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), page);
     await user.click(screen.getByRole("button", { name: "Import" }));
 
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
@@ -659,6 +659,319 @@ describe("RecipeFormPage: importing from a URL", () => {
 
     expect(await screen.findByRole("heading", { name: "Banana bread" })).toBeVisible();
     expect(backend.requestsTo("POST /api/recipes/:id/image-from-url")).toHaveLength(0);
+  });
+});
+
+describe("RecipeFormPage: reading a pasted recipe", () => {
+  const draft = pastedRecipeDraft({
+    title: "Black bean soup",
+    servings: 6,
+    ingredients: [
+      { name: "olive oil", quantity: 2, unit: "tbsp", source_line: "2 tbsp olive oil" },
+      { name: "smoked paprika", quantity: 0.5, unit: "tsp", source_line: "½ tsp smoked paprika" },
+    ],
+    instructions: "Soften the onion\nSimmer 20 minutes",
+  });
+  const pasted = "Black bean soup\nServes 6\n\nIngredients:\n2 tbsp olive oil";
+
+  /** Switch the import box to text and paste `text` into it. */
+  async function pasteText(user: AppRender["user"], text: string) {
+    await user.click(screen.getByRole("button", { name: "From text" }));
+    await user.click(screen.getByLabelText("Recipe text"));
+    await user.paste(text);
+  }
+
+  it("imports from a link until text is asked for", async () => {
+    formBackend({});
+    const { user } = renderApp("/recipes/new");
+
+    expect(screen.getByRole("button", { name: "From a link" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByLabelText("Recipe text")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "From text" }));
+
+    expect(screen.getByRole("button", { name: "From text" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByLabelText("Recipe text")).toHaveAttribute(
+      "placeholder",
+      "Paste a recipe: a note, a text file, an AI chat",
+    );
+    expect(screen.queryByPlaceholderText(/paste a recipe url/i)).not.toBeInTheDocument();
+  });
+
+  it("fills the form from the pasted text", async () => {
+    const backend = formBackend({ "POST /api/import/text": draft });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+    expect(screen.getByLabelText("Servings")).toHaveValue(6);
+    expect(screen.getAllByLabelText("Quantity")[1]).toHaveValue("½");
+    expect(screen.getAllByLabelText("Ingredient name")[1]).toHaveValue("smoked paprika");
+    expect(screen.getByLabelText("Instructions")).toHaveValue(
+      "Soften the onion\nSimmer 20 minutes",
+    );
+    expect(backend.requestsTo("POST /api/import/text")[0].body).toEqual({ text: pasted });
+  });
+
+  it("keeps the pasted text, to change and read again", async () => {
+    const backend = formBackend({ "POST /api/import/text": draft });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+
+    expect(screen.getByLabelText("Recipe text")).toHaveValue(pasted);
+    await user.type(screen.getByLabelText("Recipe text"), "\n1 can beans");
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    await waitFor(() => expect(backend.requestsTo("POST /api/import/text")).toHaveLength(2));
+    expect(backend.requestsTo("POST /api/import/text")[1].body).toEqual({
+      text: `${pasted}\n1 can beans`,
+    });
+  });
+
+  it("brings the form it filled into view, as little as it takes", async () => {
+    // On a phone a pasted recipe fills the screen, and the form it was read
+    // into is below it: without this, reading looks like it did nothing.
+    // "nearest" leaves a form already on screen where it is.
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+    formBackend({ "POST /api/import/text": draft });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+
+    const title = screen.getByLabelText("Title");
+    const call = scrolled.mock.calls.findIndex((_, i) =>
+      (scrolled.mock.contexts[i] as Element).contains(title),
+    );
+    expect(call).toBeGreaterThan(-1);
+    expect(scrolled.mock.calls[call][0]).toMatchObject({ block: "nearest" });
+  });
+
+  it("cannot be read with nothing pasted", async () => {
+    formBackend({});
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, "  \n ");
+
+    expect(screen.getByRole("button", { name: "Read recipe" })).toBeDisabled();
+  });
+
+  it.each<[RecipePart[], string]>([
+    [["ingredients"], "Couldn't find an ingredients list - add them below."],
+    [["title"], "Couldn't find a title - add one below."],
+    [["instructions"], "Couldn't find any steps - add them below."],
+    [["title", "ingredients"], "Couldn't find a title or an ingredients list - add them below."],
+    [
+      ["title", "ingredients", "instructions"],
+      "Couldn't find a title, an ingredients list or any steps - add them below.",
+    ],
+  ])("says what the text did not seem to have: %j", async (missing, notice) => {
+    formBackend({
+      "POST /api/import/text": pastedRecipeDraft({
+        ...(missing.includes("title") ? { title: "" } : {}),
+        ...(missing.includes("ingredients") ? { ingredients: [] } : {}),
+        ...(missing.includes("instructions") ? { instructions: "" } : {}),
+        missing,
+      }),
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, "Mix and bake.");
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    // Announced, since it arrives after the button was pressed.
+    expect(await screen.findByText(notice)).toHaveAttribute("role", "status");
+  });
+
+  it("stops pointing at what was missing once it is filled in", async () => {
+    formBackend({
+      "POST /api/import/text": pastedRecipeDraft({ title: "", missing: ["title"] }),
+    });
+    const { user } = renderApp("/recipes/new");
+    await pasteText(user, "1 egg\nFry it.");
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    expect(await screen.findByText(/Couldn't find a title/)).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Title"), "Fried egg");
+
+    expect(screen.queryByText(/Couldn't find/)).not.toBeInTheDocument();
+  });
+
+  it("says nothing is missing when everything was found", async () => {
+    formBackend({ "POST /api/import/text": draft });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+    expect(screen.queryByText(/Couldn't find/)).not.toBeInTheDocument();
+  });
+
+  it("shows why the text could not be read and leaves the form alone", async () => {
+    formBackend({
+      "POST /api/import/text": new HttpError(422, "That text is too long to be one recipe."),
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    expect(await screen.findByText("That text is too long to be one recipe.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Read recipe" })).toBeEnabled();
+  });
+
+  it("does not carry a link import's error over to the text", async () => {
+    formBackend({ "POST /api/import/recipe": new HttpError(422, "No recipe found on that page.") });
+    const { user } = renderApp("/recipes/new");
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), "https://example.com/x");
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    expect(await screen.findByText("No recipe found on that page.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "From text" }));
+
+    expect(screen.queryByText("No recipe found on that page.")).not.toBeInTheDocument();
+  });
+
+  it("saves the link the text named as the recipe's source", async () => {
+    const created = recipe({ id: 42, title: "Black bean soup" });
+    const backend = formBackend({
+      "POST /api/import/text": {
+        ...draft,
+        source_url: "https://www.budgetbytes.com/black-bean-soup/",
+        source_label: "Budget Bytes",
+      },
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Source link")).toHaveValue(
+        "https://www.budgetbytes.com/black-bean-soup/",
+      ),
+    );
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(
+      "https://www.budgetbytes.com/black-bean-soup/",
+    );
+  });
+
+  it("saves no link for text that named none", async () => {
+    const created = recipe({ id: 42, title: "Black bean soup" });
+    const backend = formBackend({
+      "POST /api/import/text": draft,
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+    expect(screen.getByLabelText("Source link")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes")).not.toHaveProperty("source_url");
+    // The lines the rows were read from are kept, as for a link import.
+    expect(savedPayload(backend, "POST /api/recipes").ingredients[0]).toEqual({
+      name: "olive oil",
+      quantity: 2,
+      unit: "tbsp",
+      source_line: "2 tbsp olive oil",
+    });
+  });
+
+  it("says when the recipe the text came from is already in the box", async () => {
+    formBackend({
+      "POST /api/import/text": {
+        ...draft,
+        source_url: "https://www.budgetbytes.com/black-bean-soup/",
+        saved_recipe_id: 12,
+      },
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+
+    const notice = await screen.findByText(/Already in your box/);
+    expect(within(notice).getByRole("link", { name: "Open the saved recipe" })).toHaveAttribute(
+      "href",
+      "/recipes/12",
+    );
+  });
+
+  it("keeps a photo chosen by hand when the text is read again", async () => {
+    // Text carries no photo, so reading it again after choosing one must not
+    // take the person's own choice away.
+    const created = recipe({ id: 42, title: "Black bean soup" });
+    const backend = formBackend({
+      "POST /api/import/text": draft,
+      "POST /api/recipes": created,
+      "POST /api/recipes/:id/image": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+    await user.upload(photoInput(), new File(["x"], "soup.jpg", { type: "image/jpeg" }));
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(backend.requestsTo("POST /api/import/text")).toHaveLength(2));
+
+    expect(screen.getByAltText("Recipe preview")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    await waitFor(() => expect(backend.requestsTo("POST /api/recipes/:id/image")).toHaveLength(1));
+  });
+
+  it("drops a linked page's photo when text is read in its place", async () => {
+    const created = recipe({ id: 42, title: "Black bean soup" });
+    const backend = formBackend({
+      "POST /api/import/recipe": recipeDraft({ image_url: "https://example.com/bread.jpg" }),
+      "POST /api/import/text": draft,
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), "https://example.com/x");
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(screen.getByAltText("Recipe preview")).toBeInTheDocument());
+
+    await pasteText(user, pasted);
+    await user.click(screen.getByRole("button", { name: "Read recipe" }));
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Black bean soup"));
+
+    expect(screen.queryByAltText("Recipe preview")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    await screen.findByRole("heading", { name: "Black bean soup" });
+    expect(backend.requestsTo("POST /api/recipes/:id/image-from-url")).toHaveLength(0);
+  });
+
+  it("is not offered while editing", async () => {
+    const stored = recipe({ id: 7, title: "Toast" });
+    formBackend({ "GET /api/recipes/:id": stored });
+    renderApp("/recipes/7/edit");
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Toast"));
+
+    expect(screen.queryByRole("button", { name: "From text" })).not.toBeInTheDocument();
   });
 });
 

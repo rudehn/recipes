@@ -40,6 +40,8 @@ def test_blank_lines_and_surrounding_space_are_ignored():
         "– milk",
         "◦ milk",
         "☐ milk",
+        # The box recipe cards draw beside each ingredient, copied with it.
+        "▢ milk",
         "[ ] milk",
         "- [ ] milk",
         "1. milk",

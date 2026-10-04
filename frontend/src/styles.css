@@ -810,6 +810,53 @@ input:focus, select:focus, textarea:focus {
   text-decoration: underline;
 }
 
+/* Tall enough to read a pasted recipe over before reading it in, and resized
+   only upwards: the box is already the width of the form. */
+.import-box .import-text {
+  display: block;
+  width: 100%;
+  min-height: 9rem;
+  resize: vertical;
+  line-height: var(--leading-normal);
+}
+
+/* Under the text: what reading it does, and the button that does it. */
+.import-box .import-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-16);
+}
+
+.import-box .import-actions .hint { flex: 1; }
+
+/* ---------- Segmented control: a couple of ways of doing one thing ---------- */
+
+.segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+}
+
+.segmented button {
+  min-height: 34px;
+  padding: 0 var(--space-16);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-soft);
+  transition: background var(--transition), color var(--transition);
+}
+
+.segmented button:hover { color: var(--ink); }
+
+.segmented button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--selected-ink);
+}
+
 /* ---------- Recipe detail ---------- */
 
 .detail-hero {
@@ -4036,6 +4083,23 @@ body.has-install-hint .page {
   .import-box .import-row input { flex: 1 0 100%; }
 
   .import-box .import-row .btn { flex: 1; justify-content: center; }
+
+  /* The same for reading pasted text: the hint keeps its sentence on as few
+     lines as it can, and the button takes a thumb-wide row under it. */
+  .import-box .import-actions { flex-wrap: wrap; gap: var(--space-10); }
+
+  .import-box .import-actions .btn { flex: 1 0 100%; justify-content: center; }
+
+  /* A field scrolled to - the title, once pasted text has filled it in - is
+     brought clear of the tab bar rather than stopping behind it. */
+  .form .field {
+    scroll-margin-bottom: calc(var(--tabbar) + var(--space-16) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Each option a thumb's width, the two together the width of the box. */
+  .segmented { display: flex; align-self: stretch; }
+
+  .segmented button { flex: 1; min-height: 40px; }
 
   /* Beside the photo the file input gets under two thirds of the width it
      asks for, and squeezed into that the browser cuts "No file chosen" down

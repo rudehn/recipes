@@ -150,7 +150,9 @@ export default function RecipeSearchPage() {
               >
                 {drafts.map((draft, i) => (
                   <button
-                    key={draft.source_url}
+                    // Every result is read from a page, so this is its link;
+                    // the type allows none only because pasted text has none.
+                    key={draft.source_url ?? i}
                     role="tab"
                     aria-selected={i === active}
                     className={`result-tab${i === active ? " active" : ""}`}
@@ -173,9 +175,13 @@ export default function RecipeSearchPage() {
             <Chip tone="green">{savedId !== null ? "Already in your box" : "Preview"}</Chip>
             <span>
               From{" "}
-              <a href={current.source_url} target="_blank" rel="noreferrer noopener">
-                {current.source_label}
-              </a>
+              {current.source_url ? (
+                <a href={current.source_url} target="_blank" rel="noreferrer noopener">
+                  {current.source_label}
+                </a>
+              ) : (
+                current.source_label
+              )}
               .{savedId === null && " Not saved yet."}
             </span>
             <span className="spacer" />

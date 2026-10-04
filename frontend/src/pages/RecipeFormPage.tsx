@@ -7,6 +7,7 @@ import {
   type Ingredient,
   type RecipeDraft,
   type RecipeInput,
+  type RecipePart,
 } from "../api";
 import { TagInput } from "../components/TagInput";
 import {
@@ -17,6 +18,8 @@ import {
   IconButton,
   LinkButton,
   PageHead,
+  Segmented,
+  type SegmentedOption,
 } from "../components/ui";
 import { formatAmount, parseQuantity } from "../quantity";
 import { errorMessage, useLoad } from "../useLoad";
@@ -59,6 +62,28 @@ function isWebLink(text: string): boolean {
   }
 }
 
+type ImportMode = "link" | "text";
+
+const IMPORT_MODES: readonly SegmentedOption<ImportMode>[] = [
+  { value: "link", label: "From a link" },
+  { value: "text", label: "From text" },
+];
+
+const MISSING_WORDS: Record<RecipePart, string> = {
+  title: "a title",
+  ingredients: "an ingredients list",
+  instructions: "any steps",
+};
+
+/** "Couldn't find a title or an ingredients list - add them below." */
+function missingNotice(parts: readonly RecipePart[]): string {
+  const words = parts.map((part) => MISSING_WORDS[part]);
+  const list =
+    words.length > 1 ? `${words.slice(0, -1).join(", ")} or ${words[words.length - 1]}` : words[0];
+  const fill = parts.length === 1 && parts[0] === "title" ? "add one below" : "add them below";
+  return `Couldn't find ${list} - ${fill}.`;
+}
+
 /**
  * The draft is of a page already saved. Said with a way to the saved one, and
  * no more than said: a second copy to change is a reasonable thing to want, so
@@ -99,9 +124,17 @@ export default function RecipeFormPage() {
   const errorBanner = useRef<HTMLDivElement>(null);
   // Counts saves, so a second refusal for the same reason is shown again.
   const [attempts, setAttempts] = useState(0);
+  const [importMode, setImportMode] = useState<ImportMode>("link");
   const [importUrl, setImportUrl] = useState("");
+  // Kept after reading, so the text can be put right and read again.
+  const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  // What the last text read did not seem to have.
+  const [missing, setMissing] = useState<RecipePart[]>([]);
+  // Counts texts read, so each one can bring the form it filled into view.
+  const [textsRead, setTextsRead] = useState(0);
+  const titleField = useRef<HTMLInputElement>(null);
   // Photo URL captured by the importer; downloaded server-side on save.
   const [importedImageUrl, setImportedImageUrl] = useState<string | null>(null);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -141,10 +174,15 @@ export default function RecipeFormPage() {
     // Suggestions from the page, shown as chips like any other tag: they
     // are the person's to drop, and nothing is tagged until they save.
     setTags(draft.tags);
+    // A photo from an earlier draft was that recipe's, so it goes either way.
+    // One chosen by hand goes only for a draft that brings its own: pasted
+    // text never does, and reading it again must not take the choice away.
     setImportedImageUrl(draft.image_url);
-    setImageFile(null);
-    setRemoveImage(false);
-    setSourceUrl(draft.source_url);
+    if (draft.image_url) {
+      setImageFile(null);
+      setRemoveImage(false);
+    }
+    setSourceUrl(draft.source_url ?? "");
     setSavedRecipeId(draft.saved_recipe_id);
   }, []);
 
@@ -159,6 +197,17 @@ export default function RecipeFormPage() {
     if (error) errorBanner.current?.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [error, attempts]);
 
+  // On a phone the pasted recipe fills the screen and the form it was read
+  // into sits below it, so reading would look like it did nothing. The title
+  // is brought up just far enough to be seen, with what was missing above it;
+  // a form already on screen, as under a desktop's box, does not move.
+  useEffect(() => {
+    if (textsRead === 0) return;
+    titleField.current
+      ?.closest(".field")
+      ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [textsRead]);
+
   function updateRow(index: number, patch: Partial<IngredientDraft>) {
     setRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -167,18 +216,51 @@ export default function RecipeFormPage() {
     setRows((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== index) : rows));
   }
 
+  function switchImportMode(mode: ImportMode) {
+    setImportMode(mode);
+    // The reason one way failed says nothing about the other.
+    setImportError(null);
+  }
+
   async function handleImport() {
     if (!importUrl.trim()) return;
     setImporting(true);
     setImportError(null);
     try {
       applyDraft(await api.importRecipe(importUrl.trim()));
+      setMissing([]);
     } catch (e) {
       setImportError(e instanceof Error ? e.message : "Import failed.");
     } finally {
       setImporting(false);
     }
   }
+
+  async function handleReadText() {
+    if (!importText.trim()) return;
+    setImporting(true);
+    setImportError(null);
+    try {
+      const draft = await api.importRecipeText(importText);
+      applyDraft(draft);
+      setMissing(draft.missing);
+      setTextsRead((n) => n + 1);
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : "Could not read that text.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Pointed out only while it is still missing, so the notice goes as the
+  // form is filled in rather than nagging about a title already typed.
+  const stillMissing = missing.filter((part) =>
+    part === "title"
+      ? !title.trim()
+      : part === "ingredients"
+        ? !rows.some((row) => row.name.trim())
+        : !instructions.trim(),
+  );
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -257,9 +339,13 @@ export default function RecipeFormPage() {
         <div className="import-box">
           <span className="hint">
             Prefilled from{" "}
-            <a href={pickedDraft.source_url} target="_blank" rel="noreferrer noopener">
-              {pickedDraft.source_label}
-            </a>
+            {pickedDraft.source_url ? (
+              <a href={pickedDraft.source_url} target="_blank" rel="noreferrer noopener">
+                {pickedDraft.source_label}
+              </a>
+            ) : (
+              "a search result"
+            )}
             . Edit anything you like, then save it to your recipe box.
           </span>
           {savedRecipeId !== null && <AlreadySaved recipeId={savedRecipeId} />}
@@ -268,31 +354,72 @@ export default function RecipeFormPage() {
 
       {!isEdit && !pickedDraft && (
         <div className="import-box">
-          <div className="import-row">
-            <input
-              type="url"
-              placeholder="Paste a recipe URL to import, e.g. https://www.budgetbytes.com/…"
-              value={importUrl}
-              onChange={(e) => setImportUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  void handleImport();
-                }
-              }}
-            />
-            <Button
-              variant="primary"
-              onClick={handleImport}
-              disabled={importing || !importUrl.trim()}
-            >
-              {importing ? "Importing…" : "Import"}
-            </Button>
-          </div>
-          <span className="hint">
-            Reads the recipe data most cooking sites embed and fills in the form
-            below for you to review.
-          </span>
+          <Segmented
+            label="Import a recipe"
+            options={IMPORT_MODES}
+            value={importMode}
+            onChange={switchImportMode}
+          />
+          {importMode === "link" ? (
+            <>
+              <div className="import-row">
+                <input
+                  type="url"
+                  placeholder="Paste a recipe URL to import, e.g. https://www.budgetbytes.com/…"
+                  value={importUrl}
+                  onChange={(e) => setImportUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void handleImport();
+                    }
+                  }}
+                />
+                <Button
+                  variant="primary"
+                  onClick={handleImport}
+                  disabled={importing || !importUrl.trim()}
+                >
+                  {importing ? "Importing…" : "Import"}
+                </Button>
+              </div>
+              <span className="hint">
+                Reads the recipe data most cooking sites embed and fills in the form
+                below for you to review.
+              </span>
+            </>
+          ) : (
+            <>
+              <textarea
+                className="import-text"
+                aria-label="Recipe text"
+                placeholder="Paste a recipe: a note, a text file, an AI chat"
+                // Grows with what is pasted, up to half a phone's screen;
+                // past that the box scrolls, and can be drawn taller.
+                rows={Math.min(12, Math.max(6, importText.split("\n").length + 1))}
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+              />
+              <div className="import-actions">
+                <span className="hint">
+                  Reads the title, ingredients and steps into the form below for you
+                  to review.
+                </span>
+                <Button
+                  variant="primary"
+                  onClick={handleReadText}
+                  disabled={importing || !importText.trim()}
+                >
+                  {importing ? "Reading…" : "Read recipe"}
+                </Button>
+              </div>
+              {stillMissing.length > 0 && (
+                <Banner tone="notice" role="status">
+                  {missingNotice(stillMissing)}
+                </Banner>
+              )}
+            </>
+          )}
           {importError && <Banner tone="error">{importError}</Banner>}
           {savedRecipeId !== null && <AlreadySaved recipeId={savedRecipeId} />}
         </div>
@@ -310,6 +437,7 @@ export default function RecipeFormPage() {
         <Field label="Title" htmlFor="title">
           <input
             id="title"
+            ref={titleField}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Weeknight chicken curry"
