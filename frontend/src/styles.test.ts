@@ -268,3 +268,20 @@ describe("a tap", () => {
     expect(css).toMatch(new RegExp(String.raw`:where\(${list}button${list}\):active\s*\{[^}]*opacity`));
   });
 });
+
+/**
+ * A button that cannot be pressed has to look it. Without a rule of its own a
+ * disabled .btn kept its full colour and still lit up under the pointer, so
+ * an empty import box's "Import" read as ready to go.
+ */
+describe("a disabled button", () => {
+  it("is drawn faded", () => {
+    expect(css).toMatch(/(?:^|\n)\.btn:disabled\s*\{[^}]*opacity/);
+  });
+
+  it("neither lights up nor presses in", () => {
+    const states = css.match(/(?:^|\n)\.btn[^{\n]*:(?:hover|active)[^{\n]*/g) ?? [];
+    expect(states.length).toBeGreaterThan(0);
+    for (const selector of states) expect(selector).toContain(":not(:disabled)");
+  });
+});

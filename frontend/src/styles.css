@@ -539,8 +539,8 @@ input:focus, select:focus, textarea:focus {
   white-space: nowrap;
 }
 
-.btn:hover { background: var(--surface-2); }
-.btn:active { transform: scale(0.98); }
+.btn:hover:not(:disabled) { background: var(--surface-2); }
+.btn:active:not(:disabled) { transform: scale(0.98); }
 
 .btn.primary {
   background: var(--accent);
@@ -548,15 +548,22 @@ input:focus, select:focus, textarea:focus {
   color: var(--ink-on-accent);
 }
 
-.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
 
 .btn.danger {
   color: var(--danger);
 }
 
-.btn.danger:hover {
+.btn.danger:hover:not(:disabled) {
   background: var(--danger-soft);
   border-color: var(--danger-line);
+}
+
+/* Faded, and still under the pointer, so a button waiting on something -
+   an empty import box, a save under way - does not read as ready to press. */
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .btn.small {
@@ -1441,12 +1448,6 @@ button.cook-duration:hover {
   min-height: 52px;
   padding-inline: var(--space-32);
   font-size: var(--text-lg);
-}
-
-.cook-controls .btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
 }
 
 /* ---------- Forms ---------- */
