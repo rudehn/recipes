@@ -345,6 +345,14 @@ export interface DayCost {
   total_lines: number;
 }
 
+/** One planned meal's cost at its planned servings: what its day is summed from. */
+export interface EntryCost {
+  entry_id: number;
+  total: number;
+  priced: number;
+  total_lines: number;
+}
+
 /**
  * What a range of planned meals costs to cook, and what shopping for it
  * costs. `total` prices the share of each package the meals use;
@@ -357,6 +365,7 @@ export interface PlanCost {
   priced: number;
   total_lines: number;
   days: DayCost[];
+  entries: EntryCost[];
   grocery_total: number | null;
 }
 
