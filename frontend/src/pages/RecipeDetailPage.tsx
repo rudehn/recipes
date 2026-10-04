@@ -293,51 +293,55 @@ export default function RecipeDetailPage() {
                   aria-current={marked ? "true" : undefined}
                 >
                   <span className="qty">{formatQuantity(quantity, ing.unit)}</span>
-                  <span>
-                    {ing.name}
-                    {ing.issue && (
-                      // The reason this row will shop wrongly, where the fix
-                      // is: the Edit button is at the top of the page.
-                      <span className="issue-tag">{ISSUE_LABELS[ing.issue]}</span>
+                  {/* The name, and beside it what it costs: one column of the list,
+                      so every name starts where the widest amount ends. */}
+                  <span className="ingredient">
+                    <span className="name">
+                      {ing.name}
+                      {ing.issue && (
+                        // The reason this row will shop wrongly, where the fix
+                        // is: the Edit button is at the top of the page.
+                        <span className="issue-tag">{ISSUE_LABELS[ing.issue]}</span>
+                      )}
+                    </span>
+                    {costLine && costLine.cost !== null && (
+                      <button
+                        type="button"
+                        className="line-cost"
+                        // A whole package rather than the share used, because
+                        // the amount could not be related to the package. Said
+                        // in the row rather than folded silently into the total.
+                        title={
+                          costLine.whole_package
+                            ? "Priced as a whole package: the amount could not be related to it"
+                            : undefined
+                        }
+                        aria-label={`${ing.name}: ${money(costLine.cost * factor)}${
+                          costLine.product ? `, ${costLine.product.description}` : ""
+                        }. Choose a different product`}
+                        onClick={() => setPricingFor(costLine)}
+                      >
+                        {money(costLine.cost * factor)}
+                        {costLine.whole_package && <span className="whole"> whole</span>}
+                      </button>
+                    )}
+                    {costLine && costLine.cost === null && ing.quantity != null && !ing.issue && (
+                      // Nothing priced it. Without this the row would say
+                      // nothing at all, and offer nothing to fix it with.
+                      <button
+                        type="button"
+                        className="line-cost unmatched"
+                        aria-label={`${ing.name}: not priced. Choose a product`}
+                        onClick={() => setPricingFor(costLine)}
+                      >
+                        {costLine.hand_picked
+                          ? "not priced"
+                          : costLine.product
+                            ? "no price"
+                            : ISSUE_LABELS.no_match}
+                      </button>
                     )}
                   </span>
-                  {costLine && costLine.cost !== null && (
-                    <button
-                      type="button"
-                      className="line-cost"
-                      // A whole package rather than the share used, because
-                      // the amount could not be related to the package. Said
-                      // in the row rather than folded silently into the total.
-                      title={
-                        costLine.whole_package
-                          ? "Priced as a whole package: the amount could not be related to it"
-                          : undefined
-                      }
-                      aria-label={`${ing.name}: ${money(costLine.cost * factor)}${
-                        costLine.product ? `, ${costLine.product.description}` : ""
-                      }. Choose a different product`}
-                      onClick={() => setPricingFor(costLine)}
-                    >
-                      {money(costLine.cost * factor)}
-                      {costLine.whole_package && <span className="whole"> whole</span>}
-                    </button>
-                  )}
-                  {costLine && costLine.cost === null && ing.quantity != null && !ing.issue && (
-                    // Nothing priced it. Without this the row would say
-                    // nothing at all, and offer nothing to fix it with.
-                    <button
-                      type="button"
-                      className="line-cost unmatched"
-                      aria-label={`${ing.name}: not priced. Choose a product`}
-                      onClick={() => setPricingFor(costLine)}
-                    >
-                      {costLine.hand_picked
-                        ? "not priced"
-                        : costLine.product
-                          ? "no price"
-                          : ISSUE_LABELS.no_match}
-                    </button>
-                  )}
                 </li>
               );
             })}

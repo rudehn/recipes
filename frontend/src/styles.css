@@ -793,18 +793,42 @@ input:focus, select:focus, textarea:focus {
 
 .servings-stepper button:hover { background: var(--accent-soft); }
 
+/* Amounts and names as two columns shared by every row. The amount column is
+   as wide as the recipe's widest amount, so "½ teaspoon" neither runs into its
+   name nor pushes that one name out of line with the rest, as it did when each
+   row was laid out on its own and a long amount was squeezed to the column's
+   minimum. Each row takes the list's columns as its own; a browser without
+   subgrid reads the first template instead and lays each row out alone -
+   every amount still clear of its name, only not lined up. */
 .ingredient-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  column-gap: var(--space-10);
 }
 
 .ingredient-list li {
-  display: flex;
-  gap: var(--space-10);
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  grid-template-columns: subgrid;
+  column-gap: var(--space-10);
   padding: var(--space-8) 0;
   border-bottom: 1px dashed var(--line);
 }
+
+/* The name and its price share the second column, row by row, rather than
+   the price having a column of its own: that would be as wide as the widest
+   price on every row, and the names are what the narrow panel is short of. */
+.ingredient-list .ingredient {
+  display: flex;
+  gap: var(--space-10);
+  min-width: 0;
+}
+
+.ingredient-list li.empty-note { display: block; }
 
 .ingredient-list li:last-child { border-bottom: none; }
 
@@ -849,7 +873,6 @@ input:focus, select:focus, textarea:focus {
   font-weight: var(--weight-bold);
   color: var(--accent-ink);
   white-space: nowrap;
-  min-width: 64px;
 }
 
 .steps {
@@ -2497,10 +2520,19 @@ body.has-install-hint .page {
   text-align: right;
 }
 
-.ingredient-list .issue-tag {
-  margin-left: var(--space-8);
-  white-space: nowrap;
+/* Beside the name when there is room, and under it, flush with it, when there
+   is not. Kept whole rather than breaking after the name's last word, but able
+   to wrap where the name column is narrower than the tag itself, rather than
+   holding the name that wide and pushing the price out of the panel. */
+.ingredient-list .name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-8);
+  min-width: 0;
 }
+
+.ingredient-list .issue-tag { text-align: left; }
 
 /* The row itself carries the tag when there is no price column to. */
 .grocery-item > .issue-tag { margin-top: var(--space-4); text-align: left; }

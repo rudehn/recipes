@@ -154,3 +154,18 @@ describe("the phone's edges", () => {
     );
   });
 });
+
+/**
+ * A recipe's amounts and names, which jsdom lays out no more than it does
+ * anything else. Laid out one row at a time, a long amount ("½ teaspoon") was
+ * squeezed to the column's minimum and ran into its name - found in real
+ * recipes, and only visible in a browser. What is assertable is that the rows
+ * still share the list's columns, which is what keeps the amount column as
+ * wide as the widest amount.
+ */
+describe("the ingredient list", () => {
+  it("gives every row the list's columns, so names start after the widest amount", () => {
+    expect(css).toMatch(/\.ingredient-list\s*\{[^}]*display:\s*grid/);
+    expect(css).toMatch(/\.ingredient-list li\s*\{[^}]*grid-template-columns:\s*subgrid/);
+  });
+});
