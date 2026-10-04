@@ -154,3 +154,42 @@ describe("the phone's edges", () => {
     );
   });
 });
+
+/**
+ * A recipe's amounts and names, which jsdom lays out no more than it does
+ * anything else. Laid out one row at a time, a long amount ("½ teaspoon") was
+ * squeezed to the column's minimum and ran into its name - found in real
+ * recipes, and only visible in a browser. What is assertable is that the rows
+ * still share the list's columns, which is what keeps the amount column as
+ * wide as the widest amount.
+ */
+/**
+ * The recipes page's folds: a card per recipe, the recipe on the left and its
+ * lines on the right. When the right-hand block was as wide as its longest
+ * line, every card's lines started somewhere else and the fold read ragged -
+ * visible only laid out, so what is assertable is that the split is the
+ * card's, not the content's.
+ */
+describe("the recipes page's folds", () => {
+  const rule = (selector: string) =>
+    new RegExp(`(?:^|\\n)${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
+
+  it("splits every card at the same place, whatever its lines say", () => {
+    expect(rule(".offer")).toMatch(/display:\s*grid/);
+    expect(rule(".offer")).toMatch(/grid-template-columns:\s*minmax\(0,\s*\d+fr\)\s+minmax\(0,\s*\d+fr\)/);
+  });
+
+  it("lets no right-hand block size itself to its content", () => {
+    for (const selector of [".offer-items", ".attention-groups"]) {
+      expect(rule(selector), `${selector} has no rule`).not.toBe("");
+      expect(rule(selector)).not.toMatch(/max-width|flex:\s*none/);
+    }
+  });
+});
+
+describe("the ingredient list", () => {
+  it("gives every row the list's columns, so names start after the widest amount", () => {
+    expect(css).toMatch(/\.ingredient-list\s*\{[^}]*display:\s*grid/);
+    expect(css).toMatch(/\.ingredient-list li\s*\{[^}]*grid-template-columns:\s*subgrid/);
+  });
+});

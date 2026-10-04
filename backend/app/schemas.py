@@ -425,17 +425,37 @@ class PlanCost(BaseModel):
     grocery_total: float | None = None
 
 
+# What a doubtful row stands in the way of: the recipe's price, and the
+# shopping that the same amounts drive, or its nutrition.
+Affects = Literal["price", "nutrition"]
+
+
 class IngredientIssue(BaseModel):
+    """One reason a row needs a look, and what it stands in the way of.
+
+    A row the recipe itself has wrong - the amount inside the name - is wrong
+    for the price and the nutrition alike, and is one reason with one fix. A
+    row the shop and the food tables each failed on in their own way -
+    nothing matched, and no food chosen - is two reasons with two fixes, and
+    is listed once for each. Said here rather than left to the page, so the
+    rule for which reason touches what is written down once.
+    """
+
     ingredient_id: int
     name: str
-    issue: LineIssue
+    issue: LineIssue | NutritionIssue
+    affects: list[Affects]
 
 
 class RecipeAttention(BaseModel):
-    """A recipe with ingredient rows that will price or shop wrongly."""
+    """A recipe with rows that will price, shop or count wrongly."""
 
     recipe: RecipeSummary
     issues: list[IngredientIssue]
+    # Nutrition is given per serving, so a recipe that does not say how many
+    # it serves has no figure however well its rows are counted. Only set
+    # for a recipe with something to count.
+    no_servings: bool = False
 
 
 class CheapRecipe(BaseModel):

@@ -93,10 +93,24 @@ async def forget(session: AsyncSession, key: str) -> None:
     await session.commit()
 
 
-async def recipe_nutrition(session: AsyncSession, recipe: Recipe) -> RecipeNutrition:
-    keys = [nutrition_key(ing.name) for ing in recipe.ingredients]
-    picked = await hand_picks(session, {k for k in keys if k})
+def recipe_keys(recipe: Recipe) -> set[str]:
+    """The nutrition keys a recipe's ingredients are chosen under."""
+    return {key for ing in recipe.ingredients if (key := nutrition_key(ing.name))}
 
+
+async def recipe_nutrition(session: AsyncSession, recipe: Recipe) -> RecipeNutrition:
+    return count_recipe(recipe, await hand_picks(session, recipe_keys(recipe)))
+
+
+def count_recipe(recipe: Recipe, picked: dict[str, int | None]) -> RecipeNutrition:
+    """A recipe's nutrition, given the foods people chose.
+
+    Apart from `recipe_nutrition` so a caller looking at many recipes - the
+    recipes page's "Needs a look" covers the whole box - can read every
+    choice in one query and count each recipe from it, rather than asking
+    once per recipe. `picked` may hold keys this recipe does not use.
+    """
+    keys = [nutrition_key(ing.name) for ing in recipe.ingredients]
     lines: list[NutritionLine] = []
     total = foods.Nutrients()
     counted = 0

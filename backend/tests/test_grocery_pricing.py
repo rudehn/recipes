@@ -855,10 +855,15 @@ async def test_recipes_needing_a_look_are_listed_with_their_rows(client, catalog
 
     assert resp.status_code == 200
     body = resp.json()
-    assert [r["recipe"]["title"] for r in body] == ["Salsa", "Test bake"]
-    assert body[0]["recipe"]["id"] == salsa
-    assert [(i["name"], i["issue"]) for i in body[0]["issues"]] == [
-        ("Optional: 1 diced ripe avocado", "amount_in_name")
+    assert [r["recipe"]["title"] for r in body] == ["Test bake", "Salsa"]
+    # Saffron has no food to count it as either, which is a second fault
+    # with its own fix; see test_attention.
+    assert [(i["name"], i["issue"], i["affects"]) for i in body[0]["issues"]] == [
+        ("saffron", "no_match", ["price"]),
+        ("saffron", "no_food", ["nutrition"]),
     ]
-    assert [(i["name"], i["issue"]) for i in body[1]["issues"]] == [("saffron", "no_match")]
+    assert body[1]["recipe"]["id"] == salsa
+    assert [(i["name"], i["issue"], i["affects"]) for i in body[1]["issues"]] == [
+        ("Optional: 1 diced ripe avocado", "amount_in_name", ["price", "nutrition"])
+    ]
     assert catalog.calls == calls_before

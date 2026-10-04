@@ -1,5 +1,5 @@
 import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { FoodChoice, NutritionLine, RecipeNutrition } from "../api";
 import { mockBackend, type Routes } from "../test/backend";
@@ -324,6 +324,57 @@ describe("RecipeDetailPage nutrition", () => {
       "/recipes/1/edit",
     );
     expect(within(row).queryByRole("button", { name: "Choose food" })).not.toBeInTheDocument();
+  });
+
+  describe("arriving from the recipes page's “Needs a look”", () => {
+    /** Put the breakdown's rows `top` pixels down, under an 88px header. */
+    function layoutRowsAt(top: number) {
+      vi.spyOn(window, "getComputedStyle").mockReturnValue({
+        scrollMarginTop: "88px",
+      } as CSSStyleDeclaration);
+      vi.spyOn(HTMLLIElement.prototype, "getBoundingClientRect").mockReturnValue({
+        top,
+        bottom: top + 40,
+      } as DOMRect);
+    }
+
+    it("opens the breakdown at the ingredient the link was followed for", async () => {
+      // A complete figure keeps the breakdown folded, which would hide the
+      // very line the link pointed at.
+      layoutRowsAt(2_000);
+      const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+      withNutrition(nutrition({}));
+      renderApp("/recipes/1?nutrition=11");
+      await screen.findByText("321 kcal a serving");
+
+      expect(document.querySelector("#nutrition")).toHaveAttribute("open");
+      const row = breakdownRow("almond flour");
+      expect(row).toHaveClass("highlighted");
+      expect(row).toHaveAttribute("aria-current", "true");
+      expect(breakdownRow("all-purpose flour")).not.toHaveClass("highlighted");
+      expect(scrollIntoView.mock.instances).toEqual([row]);
+      expect(row).toHaveFocus();
+    });
+
+    it("marks the line in the breakdown, not the ingredient list", async () => {
+      withNutrition(INCOMPLETE);
+      renderApp("/recipes/1?nutrition=11");
+      await screen.findByText("Nutrition unavailable");
+
+      const listed = screen.getByText("almond flour", { selector: ".ingredient-list span" });
+      expect(listed.closest("li")).not.toHaveClass("highlighted");
+      expect(breakdownRow("almond flour")).toHaveClass("highlighted");
+    });
+
+    it("can still be folded away once it has been read", async () => {
+      withNutrition(nutrition({}));
+      const { user } = renderApp("/recipes/1?nutrition=11");
+      await screen.findByText("321 kcal a serving");
+
+      await user.click(screen.getByText("Nutrition breakdown"));
+
+      expect(document.querySelector("#nutrition")).not.toHaveAttribute("open");
+    });
   });
 
   it("says nothing about a recipe with nothing measured", async () => {

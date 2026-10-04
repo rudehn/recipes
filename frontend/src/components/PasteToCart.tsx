@@ -6,8 +6,8 @@ import {
   type Modality,
   type PastedLine,
   type PastePlan,
-  type PasteProblem,
 } from "../api";
+import { PASTE_PROBLEM_LABELS, unsizedLabel } from "../issues";
 import { errorMessage } from "../useLoad";
 import { CartStepper } from "./CartStepper";
 import { ProductPickerModal } from "./ProductPicker";
@@ -41,12 +41,6 @@ function saveDraft(text: string) {
     // Only a convenience; the list on screen is unaffected.
   }
 }
-
-const PROBLEM: Record<PasteProblem, string> = {
-  no_match: "Nothing at your store matched",
-  out_of_stock: "Out of stock today",
-  not_orderable: "Kroger can't take this in a cart",
-};
 
 const PLACEHOLDER = "milk\neggs x2\n2 lb ground beef\npaper towels";
 
@@ -354,14 +348,11 @@ function PasteRow({
             {line.problem && (
               <span className="why">
                 {product ? " · " : ""}
-                {PROBLEM[line.problem]}
+                {PASTE_PROBLEM_LABELS[line.problem]}
               </span>
             )}
             {line.issue === "unsized" && line.amount && (
-              <span className="why">
-                {" "}
-                · can&rsquo;t size {line.amount} against {product?.size || "this"}
-              </span>
+              <span className="why"> · {unsizedLabel(line.amount, product?.size)}</span>
             )}{" "}
             <button
               type="button"

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { api, type CostLine, type FoodChoice, type LineIssue, type NutritionLine } from "../api";
+import { api, type CostLine, type FoodChoice, type NutritionLine } from "../api";
 import { FoodPickerModal, NutritionBreakdown, NutritionStatus } from "../components/Nutrition";
 import { ProductPickerModal } from "../components/ProductPicker";
 import { RecipePhoto } from "../components/RecipeBits";
@@ -16,22 +16,39 @@ import {
   Panel,
   Toolbar,
 } from "../components/ui";
+import { ISSUE_LABELS } from "../issues";
 import { formatQuantity } from "../quantity";
-
-const money = (n: number) => `$${n.toFixed(2)}`;
-
-const ROW_ISSUES: Record<LineIssue, string> = {
-  amount_in_name: "amount is in the name",
-  no_amount: "no amount",
-  check_line: "check this line",
-  no_match: "nothing matched",
-  unsized: "can't size the amount",
-  out_of_stock: "out of stock",
-};
-import { highlightedIngredients } from "../recipeLink";
+import { highlightedIngredients, highlightedNutritionLine } from "../recipeLink";
 import { recipeSteps } from "../steps";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
+
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * Bring a row the app sent the cook to into view, and give it focus.
+ *
+ * Scrolled and focused, not just tinted: the ingredients and the nutrition
+ * breakdown sit below the photo, often past the fold on a phone, where a
+ * highlight nobody scrolls to is no answer at all - and focus is what carries
+ * the same arrival to a screen reader. The scroll is separate from the focus
+ * because focus() alone leaves the row wherever the browser likes, usually
+ * flush against an edge.
+ *
+ * Only when it is actually out of view. Centring a row the cook can already
+ * see would scroll the page for nothing, and take the recipe's title under
+ * the sticky header on the way. What counts as out of view is the row's own
+ * scroll-margin, so the stylesheet keeps the one measurement of the header
+ * that hides the top of the page.
+ */
+function bringIntoView(row: HTMLElement) {
+  const clearOfHeader = parseFloat(getComputedStyle(row).scrollMarginTop) || 0;
+  const box = row.getBoundingClientRect();
+  if (box.top < clearOfHeader || box.bottom > window.innerHeight) {
+    row.scrollIntoView({ block: "center" });
+  }
+  row.focus({ preventScroll: true });
+}
 
 export default function RecipeDetailPage() {
   const { id } = useParams();
@@ -51,7 +68,14 @@ export default function RecipeDetailPage() {
   const { data: nutrition, reload: reloadNutrition } = useLoad(
     useCallback(() => api.recipeNutrition(Number(id)), [id]),
   );
-  const [explaining, setExplaining] = useState(false);
+  // Arriving from "Needs a look" on the recipes page: the ingredient whose
+  // nutrition is held up, so the breakdown opens at its line - opened even
+  // when the figure is complete and it would otherwise stay folded, since a
+  // fix made in another tab can leave the link pointing at a line that is
+  // fine now, which is still the line the reader came for.
+  const nutritionLine = highlightedNutritionLine(params);
+  const markedNutritionLine = useRef<HTMLLIElement | null>(null);
+  const [explaining, setExplaining] = useState(() => nutritionLine !== null);
   const [choosingFor, setChoosingFor] = useState<NutritionLine | null>(null);
   const [pricingFor, setPricingFor] = useState<CostLine | null>(null);
   const nutritionSection = useRef<HTMLDetailsElement | null>(null);
@@ -64,31 +88,22 @@ export default function RecipeDetailPage() {
   const highlighted = useMemo(() => highlightedIngredients(params), [params]);
   const firstHighlighted = useRef<HTMLLIElement | null>(null);
 
-  /**
-   * Bring the marked ingredient into view once the recipe is on screen.
-   *
-   * Scrolled and focused, not just tinted: the ingredients sit below the photo,
-   * often past the fold on a phone, where a highlight nobody scrolls to is no
-   * answer at all - and focus is what carries the same arrival to a screen
-   * reader. The scroll is separate from the focus because focus() alone leaves
-   * the row wherever the browser likes, usually flush against an edge.
-   *
-   * Only when it is actually out of view. Centring a row the cook can already
-   * see would scroll the page for nothing, and take the recipe's title under
-   * the sticky header on the way. What counts as out of view is the row's own
-   * scroll-margin, so the stylesheet keeps the one measurement of the header
-   * that hides the top of the page.
-   */
+  // The marked ingredient, once the recipe is on screen.
   useEffect(() => {
-    const ingredient = firstHighlighted.current;
-    if (!ingredient) return;
-    const clearOfHeader = parseFloat(getComputedStyle(ingredient).scrollMarginTop) || 0;
-    const box = ingredient.getBoundingClientRect();
-    if (box.top < clearOfHeader || box.bottom > window.innerHeight) {
-      ingredient.scrollIntoView({ block: "center" });
-    }
-    ingredient.focus({ preventScroll: true });
+    if (firstHighlighted.current) bringIntoView(firstHighlighted.current);
   }, [recipe, highlighted]);
+
+  // The marked nutrition line, once both the recipe and its nutrition are on
+  // screen, which arrive separately. Once per arrival: the nutrition reloads
+  // after every food chosen, and taking the focus each time would pull it off
+  // the button the food picker hands it back to.
+  const broughtIntoView = useRef<string | null>(null);
+  useEffect(() => {
+    const line = markedNutritionLine.current;
+    if (!line || broughtIntoView.current === nutritionLine) return;
+    broughtIntoView.current = nutritionLine;
+    bringIntoView(line);
+  }, [recipe, nutrition, nutritionLine]);
 
   // Two ways to get here that want different offers: a recipe that is not
   // there, where the only move is back to the list, and a server that could
@@ -278,47 +293,55 @@ export default function RecipeDetailPage() {
                   aria-current={marked ? "true" : undefined}
                 >
                   <span className="qty">{formatQuantity(quantity, ing.unit)}</span>
-                  <span>
-                    {ing.name}
-                    {ing.issue && (
-                      // The reason this row will shop wrongly, where the fix
-                      // is: the Edit button is at the top of the page.
-                      <span className="issue-tag">{ROW_ISSUES[ing.issue]}</span>
+                  {/* The name, and beside it what it costs: one column of the list,
+                      so every name starts where the widest amount ends. */}
+                  <span className="ingredient">
+                    <span className="name">
+                      {ing.name}
+                      {ing.issue && (
+                        // The reason this row will shop wrongly, where the fix
+                        // is: the Edit button is at the top of the page.
+                        <span className="issue-tag">{ISSUE_LABELS[ing.issue]}</span>
+                      )}
+                    </span>
+                    {costLine && costLine.cost !== null && (
+                      <button
+                        type="button"
+                        className="line-cost"
+                        // A whole package rather than the share used, because
+                        // the amount could not be related to the package. Said
+                        // in the row rather than folded silently into the total.
+                        title={
+                          costLine.whole_package
+                            ? "Priced as a whole package: the amount could not be related to it"
+                            : undefined
+                        }
+                        aria-label={`${ing.name}: ${money(costLine.cost * factor)}${
+                          costLine.product ? `, ${costLine.product.description}` : ""
+                        }. Choose a different product`}
+                        onClick={() => setPricingFor(costLine)}
+                      >
+                        {money(costLine.cost * factor)}
+                        {costLine.whole_package && <span className="whole"> whole</span>}
+                      </button>
+                    )}
+                    {costLine && costLine.cost === null && ing.quantity != null && !ing.issue && (
+                      // Nothing priced it. Without this the row would say
+                      // nothing at all, and offer nothing to fix it with.
+                      <button
+                        type="button"
+                        className="line-cost unmatched"
+                        aria-label={`${ing.name}: not priced. Choose a product`}
+                        onClick={() => setPricingFor(costLine)}
+                      >
+                        {costLine.hand_picked
+                          ? "not priced"
+                          : costLine.product
+                            ? "no price"
+                            : ISSUE_LABELS.no_match}
+                      </button>
                     )}
                   </span>
-                  {costLine && costLine.cost !== null && (
-                    <button
-                      type="button"
-                      className="line-cost"
-                      // A whole package rather than the share used, because
-                      // the amount could not be related to the package. Said
-                      // in the row rather than folded silently into the total.
-                      title={
-                        costLine.whole_package
-                          ? "Priced as a whole package: the amount could not be related to it"
-                          : undefined
-                      }
-                      aria-label={`${ing.name}: ${money(costLine.cost * factor)}${
-                        costLine.product ? `, ${costLine.product.description}` : ""
-                      }. Choose a different product`}
-                      onClick={() => setPricingFor(costLine)}
-                    >
-                      {money(costLine.cost * factor)}
-                      {costLine.whole_package && <span className="whole"> whole</span>}
-                    </button>
-                  )}
-                  {costLine && costLine.cost === null && ing.quantity != null && !ing.issue && (
-                    // Nothing priced it. Without this the row would say
-                    // nothing at all, and offer nothing to fix it with.
-                    <button
-                      type="button"
-                      className="line-cost unmatched"
-                      aria-label={`${ing.name}: not priced. Choose a product`}
-                      onClick={() => setPricingFor(costLine)}
-                    >
-                      {costLine.hand_picked ? "not priced" : costLine.product ? "no price" : "no match"}
-                    </button>
-                  )}
                 </li>
               );
             })}
@@ -348,6 +371,8 @@ export default function RecipeDetailPage() {
           onChoose={setChoosingFor}
           onForget={forgetFood}
           sectionRef={nutritionSection}
+          marked={nutritionLine}
+          markedRef={markedNutritionLine}
         />
       )}
 

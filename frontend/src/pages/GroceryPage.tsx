@@ -20,6 +20,7 @@ import { LoadFailure } from "../components/LoadError";
 import { PasteToCart } from "../components/PasteToCart";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, formatWhen, fromISODate, startOfWeek, toISODate } from "../dates";
+import { ISSUE_LABELS, unsizedLabel } from "../issues";
 import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
 import { useDebounced } from "../useDebounced";
@@ -126,24 +127,11 @@ function applyPrices(list: GroceryList | null, prices: GroceryPrices | null): Gr
   };
 }
 
-/** What a line's issue says on screen. */
+/** What a line's issue says on screen, with the sizes when they are known. */
 function issueLabel(issue: LineIssue, item?: GroceryItem): string {
-  switch (issue) {
-    case "amount_in_name":
-      return "amount is in the name";
-    case "no_amount":
-      return "no amount";
-    case "check_line":
-      return "check the recipe line";
-    case "no_match":
-      return "no match";
-    case "unsized":
-      return item?.price?.size && item.amounts.length > 0
-        ? `can't size ${item.amounts.join(" + ")} against ${item.price.size}`
-        : "can't size the amount";
-    case "out_of_stock":
-      return "out of stock today";
-  }
+  return issue === "unsized" && item
+    ? unsizedLabel(item.amounts.join(" + "), item.price?.size)
+    : ISSUE_LABELS[issue];
 }
 
 export default function GroceryPage() {
@@ -851,10 +839,7 @@ function CartReview({
                     {line.issue === "unsized" && (
                       // The count is one by default, not worked out, and the
                       // stepper is the shopper's to use knowingly.
-                      <span className="why">
-                        {" "}
-                        · can't size {line.amounts.join(" + ")} against {line.size || "this"}
-                      </span>
+                      <span className="why"> · {unsizedLabel(line.amounts.join(" + "), line.size)}</span>
                     )}
                   </span>
                 </li>
@@ -928,7 +913,7 @@ function ItemPriceTag({ item }: { item: GroceryItem }) {
       </span>
       {item.issue && <span className="issue-tag">{issueLabel(item.issue, item)}</span>}
       {item.hand_picked && <span className="pick-tag">your pick</span>}
-      {!in_stock && !item.issue && <span className="stock-tag">out of stock today</span>}
+      {!in_stock && !item.issue && <span className="stock-tag">{ISSUE_LABELS.out_of_stock}</span>}
     </span>
   );
 }
@@ -1219,7 +1204,7 @@ function GroceryRow({
                   ? issueLabel(item.issue, item)
                   : item.hand_picked
                     ? "not priced"
-                    : "no match"}
+                    : ISSUE_LABELS.no_match}
                 {item.hand_picked && <span className="pick-tag">your pick</span>}
               </span>
             )}

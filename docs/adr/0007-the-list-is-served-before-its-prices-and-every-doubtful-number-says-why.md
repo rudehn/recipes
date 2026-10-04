@@ -59,3 +59,11 @@ Showing them on the shopping page with a link to the recipe row, and on the reci
 - The first load after a deploy of new matching rules is still slow once, since every automatic match is remade; it is now six at a time rather than one.
 - `test_grocery_pricing.fetch` merges the two responses the way the page does, so tests still read like a priced list.
 - A vegetable section joined the density table, starting with corn.
+
+## Note, October 2026
+
+"Needs a look" now covers nutrition as well (ADR 8), and lives in `services.attention` rather than with the Kroger costing.
+It adds no food chosen, an amount that cannot be weighed, and a recipe that does not say how many it serves, none of which needs a store.
+A recipe's lines are listed under what they hold up - the price, the nutrition, or both - and the three recipe-side reasons hold up both.
+A row that matched nothing and has no food either is listed under each, since each has its own fix, and a nutrition line opens the recipe's breakdown at that row.
+The words for every reason now come from one frontend module, `issues.ts`, after the copies on each page had drifted apart.

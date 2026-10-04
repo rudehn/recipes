@@ -793,31 +793,59 @@ input:focus, select:focus, textarea:focus {
 
 .servings-stepper button:hover { background: var(--accent-soft); }
 
+/* Amounts and names as two columns shared by every row. The amount column is
+   as wide as the recipe's widest amount, so "½ teaspoon" neither runs into its
+   name nor pushes that one name out of line with the rest, as it did when each
+   row was laid out on its own and a long amount was squeezed to the column's
+   minimum. Each row takes the list's columns as its own; a browser without
+   subgrid reads the first template instead and lays each row out alone -
+   every amount still clear of its name, only not lined up. */
 .ingredient-list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  column-gap: var(--space-10);
 }
 
 .ingredient-list li {
-  display: flex;
-  gap: var(--space-10);
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(64px, max-content) minmax(0, 1fr);
+  grid-template-columns: subgrid;
+  column-gap: var(--space-10);
   padding: var(--space-8) 0;
   border-bottom: 1px dashed var(--line);
 }
 
+/* The name and its price share the second column, row by row, rather than
+   the price having a column of its own: that would be as wide as the widest
+   price on every row, and the names are what the narrow panel is short of. */
+.ingredient-list .ingredient {
+  display: flex;
+  gap: var(--space-10);
+  min-width: 0;
+}
+
+.ingredient-list li.empty-note { display: block; }
+
 .ingredient-list li:last-child { border-bottom: none; }
 
-/* The ingredient a grocery line was followed here for. Tinted and marked down
-   the edge rather than recoloured, so it is findable at a glance in a long list
-   while still reading as an ingredient like the rest. The negative margin pays
-   the padding back, so the amounts stay in one column. */
-.ingredient-list li.highlighted {
+/* The ingredient a grocery line was followed here for, or the nutrition line a
+   "Needs a look" line was. Tinted and marked down the edge rather than
+   recoloured, so it is findable at a glance in a long list while still reading
+   as a row like the rest. The negative margins pay the padding back, so the
+   amounts stay in one column - on both sides, so a price or a button at the
+   end of the row has the same room inside the tint as the amount at its
+   start, rather than sitting against its edge. */
+.ingredient-list li.highlighted,
+.nutrition-lines li.highlighted {
   background: var(--accent-soft);
   box-shadow: inset 3px 0 0 var(--accent);
   border-radius: var(--radius-sm);
-  padding-left: var(--space-10);
-  margin-left: calc(-1 * var(--space-10));
+  padding-inline: var(--space-10);
+  margin-inline: calc(-1 * var(--space-10));
   /* Clear of the sticky topbar - 73px at its tallest - plus room to breathe.
      RecipeDetailPage reads this back to decide whether a row needs scrolling to
      at all, so it is the one place the height that hides the top of the page is
@@ -830,19 +858,21 @@ input:focus, select:focus, textarea:focus {
    are dropped - the row's own, and the one above it. Browsers without :has keep
    that upper line, which is the same list with one faint rule more. */
 .ingredient-list li.highlighted,
-.ingredient-list li:has(+ li.highlighted) {
+.ingredient-list li:has(+ li.highlighted),
+.nutrition-lines li.highlighted,
+.nutrition-lines li:has(+ li.highlighted) {
   border-bottom-color: transparent;
 }
 
 /* Focused only because the app moved the cook here, never by tabbing. The
    highlight is already the marker; a ring on top of it would be noise. */
-.ingredient-list li.highlighted:focus { outline: none; }
+.ingredient-list li.highlighted:focus,
+.nutrition-lines li.highlighted:focus { outline: none; }
 
 .ingredient-list .qty {
   font-weight: var(--weight-bold);
   color: var(--accent-ink);
   white-space: nowrap;
-  min-width: 64px;
 }
 
 .steps {
@@ -2341,12 +2371,18 @@ body.has-install-hint .page {
 
 .cart-connection .page-note { margin: 0; }
 
-/* One recipe with something on offer in it: the recipe on the left, its
-   discounted ingredients on the right as a column the eye can add up. */
+/* One recipe in a fold on the recipes page: the recipe on the left, its lines
+   - what is on offer, what needs a look - on the right. The card decides where
+   the right-hand side starts, not its lines: sized to its longest line, each
+   card's lines began somewhere else and the fold read ragged. Split here, the
+   lines start at one edge down the whole fold and end at another, so the
+   prices and the reasons form columns the eye can run down. Two fifths for
+   the recipe keeps a long title to a line or two at full width without
+   stretching the lines so wide a name sits far from its reason. */
 .offer {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
   gap: var(--space-16);
   padding: var(--space-12) var(--space-16);
   background: var(--surface);
@@ -2386,18 +2422,26 @@ body.has-install-hint .page {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
-  flex: none;
-  max-width: 55%;
 }
 
+/* The name at the column's start and the price at its end, so both line up
+   from one card to the next. */
 .offer-items li {
   display: flex;
   align-items: flex-start;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: var(--space-12);
 }
 
-.offer-items .name { font-weight: var(--weight-semibold); }
+/* The ingredient keeps its line - "hash browns" broken over two reads as two
+   things - and Kroger's longer description beside it wraps instead. Up to two
+   fifths of the column, past which a long name wraps too, so the price
+   always has room for its figures. */
+.offer-items .name {
+  flex-shrink: 0;
+  max-width: 40%;
+  font-weight: var(--weight-semibold);
+}
 
 /* Right-aligned and narrow, so the prices form a column the eye can add up
    rather than sitting wherever each name happens to end. */
@@ -2428,6 +2472,10 @@ body.has-install-hint .page {
   overflow-wrap: anywhere;
   max-width: 100%;
 }
+
+/* "4 sticks / 16 oz" is one thing, so the line breaks before it rather than
+   leaving "oz" alone on a line of its own. */
+.item-price .product-size { white-space: nowrap; }
 
 .grocery-item.checked { opacity: 0.55; }
 
@@ -2544,11 +2592,19 @@ body.has-install-hint .page {
   text-align: right;
 }
 
-.ingredient-list .issue-tag,
-.attention-items .issue-tag {
-  margin-left: var(--space-8);
-  white-space: nowrap;
+/* Beside the name when there is room, and under it, flush with it, when there
+   is not. Kept whole rather than breaking after the name's last word, but able
+   to wrap where the name column is narrower than the tag itself, rather than
+   holding the name that wide and pushing the price out of the panel. */
+.ingredient-list .name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--space-8);
+  min-width: 0;
 }
+
+.ingredient-list .issue-tag { text-align: left; }
 
 /* The row itself carries the tag when there is no price column to. */
 .grocery-item > .issue-tag { margin-top: var(--space-4); text-align: left; }
@@ -2562,12 +2618,47 @@ body.has-install-hint .page {
 
 .cart-lines .why { color: var(--accent-ink); }
 
+/* A recipe's lines in "Needs a look", a list for each thing they hold up, in
+   the card's right-hand column. */
+.attention-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-16);
+  min-width: 0;
+}
+
+/* What the lines under it hold up: the price, the nutrition, or both. Set
+   like an aisle's name over its rows, quiet enough that the reasons stay the
+   part that is read. */
+.attention-heading {
+  margin: 0 0 var(--space-6);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.attention-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+/* The reasons line up down the right edge, where the eye can run down them. */
 .attention-items li {
+  display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: var(--space-12);
 }
 
 .attention-items a { color: inherit; text-decoration: underline; text-decoration-color: var(--line); }
+
+.attention-items .issue-tag { white-space: nowrap; }
 
 /* Kroger says the shelf is empty today. Muted rather than alarming: the
    product is still the right one, it just cannot be ordered this morning. */
@@ -2654,8 +2745,9 @@ body.has-install-hint .page {
 
 /* A figure on the right of a suggestion row, for the folds that have one
    number rather than a column of prices. */
+/* A single figure stands at the card's end, where the prices end. */
 .offer-figure {
-  flex: none;
+  justify-self: end;
   font-weight: var(--weight-semibold);
   white-space: nowrap;
 }
@@ -3545,14 +3637,18 @@ body.has-install-hint .page {
 
   .grocery-item.stocked .btn { flex: 1; }
 
-  /* The offers' two columns become two rows on a phone. */
-  .offer { flex-direction: column; gap: var(--space-8); }
+  /* The cards' two columns become two rows on a phone, and a single figure
+     sits under the recipe rather than across from it. */
+  .offer {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+  }
 
-  /* Full width, or the column is only as wide as its longest line and the
-     prices sit in the middle of the row rather than at its edge. */
-  .offer-items { max-width: 100%; width: 100%; }
+  .offer-figure { justify-self: start; }
 
-  .offer-items li { justify-content: space-between; }
+  /* Stood a little further off the recipe's summary than the offers' items
+     are, so the first heading does not read as a second line of it. */
+  .attention-groups { margin-top: var(--space-4); }
 
   /* A cart line wraps to two rows: the stepper and name first, then Kroger's
      wording for the product on its own line under them. */
