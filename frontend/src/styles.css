@@ -1307,6 +1307,11 @@ button.cook-duration:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-8);
+  /* A flex item will not shrink below its content, and a file input's content
+     is a button and a file name at whatever width the browser likes - about
+     360px on a phone, which made the whole page wider than the screen.
+     Allowed to shrink, the input's max-width keeps it inside the field. */
+  min-width: 0;
 }
 
 /* A button in a field column sizes to its label rather than stretching the
@@ -1328,6 +1333,10 @@ button.cook-duration:hover {
   gap: var(--space-12);
   align-items: center;
 }
+
+/* Inside a form the column's gap spaces these. After a recipe's panels, on
+   the search page, nothing did, and the buttons sat against the card. */
+.detail-cols + .form-actions { margin-top: var(--space-24); }
 
 .error-banner {
   background: var(--danger-soft);
@@ -3546,7 +3555,10 @@ body.has-install-hint .page {
 
   .import-box .import-row .btn { flex: 1; justify-content: center; }
 
-  .image-drop { gap: var(--space-12); }
+  /* Beside the photo the file input gets under two thirds of the width it
+     asks for, and squeezed into that the browser cuts "No file chosen" down
+     to "No fil...hosen". Under the photo it has the field's whole width. */
+  .image-drop { gap: var(--space-12); flex-wrap: wrap; }
 
   .image-drop img { width: 120px; }
 
