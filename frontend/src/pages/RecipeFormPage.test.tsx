@@ -1,5 +1,5 @@
 import { screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RecipeInput } from "../api";
 import { HttpError, mockBackend, type MockBackend } from "../test/backend";
@@ -109,6 +109,26 @@ describe("RecipeFormPage: writing a recipe", () => {
 
     expect(screen.getByText("Give your recipe a title.")).toBeInTheDocument();
     expect(backend.requests).toHaveLength(0);
+  });
+
+  it("brings the reason into view when it will not save", async () => {
+    // The button is at the foot of a long form and the reason at its head, so
+    // a refusal nobody scrolls up to read looks like a button that does nothing.
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+    mockBackend({});
+    const { user } = renderApp("/recipes/new");
+
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    const reason = screen.getByRole("alert");
+    expect(reason).toHaveTextContent("Give your recipe a title.");
+    const toReason = () =>
+      scrolled.mock.contexts.filter((el) => (el as Element).contains(reason)).length;
+    expect(toReason()).toBe(1);
+
+    // Scrolled away and pressed again, the same reason is brought back.
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    expect(toReason()).toBe(2);
   });
 
   it("explains an unreadable quantity instead of sending NaN", async () => {

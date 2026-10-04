@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -63,6 +63,9 @@ export default function RecipeFormPage() {
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const errorBanner = useRef<HTMLDivElement>(null);
+  // Counts saves, so a second refusal for the same reason is shown again.
+  const [attempts, setAttempts] = useState(0);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -104,6 +107,13 @@ export default function RecipeFormPage() {
     if (pickedDraft) applyDraft(pickedDraft);
   }, [pickedDraft, applyDraft]);
 
+  // The save button is at the foot of a long form and the reason it refused
+  // is at the head, so without this a refusal looks like a button that does
+  // nothing. Centred rather than at the top, where the sticky header sits.
+  useEffect(() => {
+    if (error) errorBanner.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [error, attempts]);
+
   function updateRow(index: number, patch: Partial<IngredientDraft>) {
     setRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
@@ -128,6 +138,7 @@ export default function RecipeFormPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAttempts((n) => n + 1);
 
     const ingredients = rows
       .filter((r) => r.name.trim())
@@ -233,7 +244,13 @@ export default function RecipeFormPage() {
       )}
 
       <form className="form" onSubmit={handleSubmit}>
-        {error && <Banner tone="error">{error}</Banner>}
+        {error && (
+          <div ref={errorBanner}>
+            <Banner tone="error" role="alert">
+              {error}
+            </Banner>
+          </div>
+        )}
 
         <Field label="Title" htmlFor="title">
           <input
