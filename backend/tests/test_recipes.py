@@ -1,3 +1,5 @@
+import pytest
+
 PANCAKES = {
     "title": "Pancakes",
     "description": "Fluffy weekend pancakes",
@@ -135,3 +137,115 @@ async def test_a_recipe_says_which_rows_need_a_look(client):
     assert rows["corn"]["issue"] is None
     # The line as imported is kept for a later re-parse.
     assert rows["corn"]["source_line"] == "3 cups corn"
+
+
+async def test_a_recipe_remembers_where_it_came_from(client):
+    url = "https://www.budgetbytes.com/one-pot-chili/"
+    resp = await client.post("/api/recipes", json={**PANCAKES, "source_url": url})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] == url
+    # Named the way the search tabs name it, for "View original on ...".
+    assert resp.json()["source_label"] == "Budget Bytes"
+
+    stored = (await client.get(f"/api/recipes/{resp.json()['id']}")).json()
+    assert stored["source_url"] == url
+    assert stored["source_label"] == "Budget Bytes"
+
+
+async def test_a_source_off_the_allowlist_is_named_by_its_host(client):
+    resp = await client.post(
+        "/api/recipes",
+        json={**PANCAKES, "source_url": "https://www.seriouseats.com/pancakes"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_label"] == "seriouseats.com"
+
+
+async def test_a_typed_source_is_named_whatever_case_its_host_is_in(client):
+    """Links the importer hands over arrive with the host lowercased; one
+    pasted into the form arrives however it was typed."""
+    resp = await client.post(
+        "/api/recipes",
+        json={**PANCAKES, "source_url": "https://WWW.BudgetBytes.com/one-pot-chili/"},
+    )
+    assert resp.json()["source_label"] == "Budget Bytes"
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+async def test_a_recipe_without_a_source_has_none(client, blank):
+    """Typed in by hand, or saved before sources were kept. A blank field on
+    the form is no link, not a link to nowhere."""
+    resp = await client.post("/api/recipes", json={**PANCAKES, "source_url": blank})
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] is None
+    assert resp.json()["source_label"] is None
+
+
+async def test_a_source_is_kept_without_the_space_around_it(client):
+    resp = await client.post(
+        "/api/recipes",
+        json={**PANCAKES, "source_url": "  https://cookieandkate.com/pancakes/\n"},
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] == "https://cookieandkate.com/pancakes/"
+
+
+async def test_a_source_is_kept_without_its_tracking(client):
+    """"View original" should not carry a newsletter's campaign tags back to
+    the site, on a recipe saved with them or edited to have them."""
+    resp = await client.post(
+        "/api/recipes",
+        json={
+            **PANCAKES,
+            "source_url": "https://example.com/?p=123&utm_source=newsletter&fbclid=x#recipe",
+        },
+    )
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["source_url"] == "https://example.com/?p=123#recipe"
+
+    resp = await client.put(
+        f"/api/recipes/{resp.json()['id']}",
+        json={**PANCAKES, "source_url": "https://pinchofyum.com/pancakes?utm_medium=social"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source_url"] == "https://pinchofyum.com/pancakes"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        # Rendered as a link on the recipe page, so a script must never get in.
+        "javascript:alert(1)",
+        "ftp://example.com/pancakes",
+        # Without a scheme the browser would read it as a path on this app.
+        "www.budgetbytes.com/one-pot-chili/",
+        "https://exa mple.com/pancakes",
+        "https://example.com/" + "a" * 2048,
+    ],
+)
+async def test_a_source_must_be_a_web_link(client, bad):
+    resp = await client.post("/api/recipes", json={**PANCAKES, "source_url": bad})
+    assert resp.status_code == 422
+
+
+async def test_editing_adds_changes_and_clears_the_source(client):
+    """The edit form is how links are added to recipes saved before sources
+    were kept, and how a wrong one is fixed or taken off."""
+    recipe = (await client.post("/api/recipes", json=PANCAKES)).json()
+    assert recipe["source_url"] is None
+
+    first = "https://pinchofyum.com/pancakes"
+    resp = await client.put(f"/api/recipes/{recipe['id']}", json={**PANCAKES, "source_url": first})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source_url"] == first
+    assert resp.json()["source_label"] == "Pinch of Yum"
+
+    fixed = "https://cookieandkate.com/pancakes/"
+    resp = await client.put(f"/api/recipes/{recipe['id']}", json={**PANCAKES, "source_url": fixed})
+    assert resp.json()["source_url"] == fixed
+
+    # A PUT replaces the recipe, so a form that sends no link clears it.
+    resp = await client.put(f"/api/recipes/{recipe['id']}", json=PANCAKES)
+    assert resp.json()["source_url"] is None
+    stored = (await client.get(f"/api/recipes/{recipe['id']}")).json()
+    assert stored["source_url"] is None

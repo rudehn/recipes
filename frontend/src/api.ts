@@ -68,6 +68,10 @@ export interface RecipeSummary {
 export interface Recipe extends RecipeSummary {
   instructions: string;
   ingredients: Ingredient[];
+  /** The page it was imported from. Null for one typed in by hand, or saved before links were kept. */
+  source_url: string | null;
+  /** That page's site, e.g. "Budget Bytes", or its bare host. Null exactly when the URL is. */
+  source_label: string | null;
 }
 
 /** One page of a collection. `total` counts every match, not the page. */
@@ -102,6 +106,8 @@ export interface RecipeInput {
   servings: number | null;
   ingredients: Omit<Ingredient, "id">[];
   tags: string[];
+  /** Sent only when there is one. A save replaces the recipe, so leaving it out clears it. */
+  source_url?: string;
 }
 
 export interface RecipeDraft {
@@ -114,6 +120,8 @@ export interface RecipeDraft {
   ingredients: Omit<Ingredient, "id">[];
   image_url: string | null;
   source_url: string;
+  /** The recipe already saved from this same page, so it can be opened instead of copied. */
+  saved_recipe_id: number | null;
   /** Display name of the source site, e.g. "Budget Bytes". */
   source_label: string;
 }

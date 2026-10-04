@@ -66,6 +66,9 @@ export function recipe(overrides: Partial<Recipe> = {}): Recipe {
     ...recipeSummary(),
     instructions: "Season the chicken\nSimmer the sauce",
     ingredients: [{ id: id(), name: "chicken thighs", quantity: 2, unit: "lb" }],
+    // Typed in by hand, like every recipe saved before links were kept.
+    source_url: null,
+    source_label: null,
     ...overrides,
   };
 }
@@ -81,6 +84,7 @@ export function recipeDraft(overrides: Partial<RecipeDraft> = {}): RecipeDraft {
     ingredients: [{ name: "bananas", quantity: 3, unit: null }],
     image_url: null,
     source_url: "https://www.budgetbytes.com/banana-bread/",
+    saved_recipe_id: null,
     source_label: "Budget Bytes",
     ...overrides,
   };

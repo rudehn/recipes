@@ -1,5 +1,5 @@
-import { screen, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RecipeInput } from "../api";
 import { HttpError, mockBackend, type MockBackend } from "../test/backend";
@@ -111,6 +111,26 @@ describe("RecipeFormPage: writing a recipe", () => {
     expect(backend.requests).toHaveLength(0);
   });
 
+  it("brings the reason into view when it will not save", async () => {
+    // The button is at the foot of a long form and the reason at its head, so
+    // a refusal nobody scrolls up to read looks like a button that does nothing.
+    const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+    mockBackend({});
+    const { user } = renderApp("/recipes/new");
+
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    const reason = screen.getByRole("alert");
+    expect(reason).toHaveTextContent("Give your recipe a title.");
+    const toReason = () =>
+      scrolled.mock.contexts.filter((el) => (el as Element).contains(reason)).length;
+    expect(toReason()).toBe(1);
+
+    // Scrolled away and pressed again, the same reason is brought back.
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    expect(toReason()).toBe(2);
+  });
+
   it("explains an unreadable quantity instead of sending NaN", async () => {
     const backend = mockBackend({ "POST /api/recipes": recipe() });
     const { user } = renderApp("/recipes/new");
@@ -122,6 +142,53 @@ describe("RecipeFormPage: writing a recipe", () => {
 
     expect(
       screen.getByText("Ingredient quantities must be numbers or fractions like 1 1/2."),
+    ).toBeInTheDocument();
+    expect(backend.requests).toHaveLength(0);
+  });
+
+  it("saves a link to where the recipe came from", async () => {
+    const created = recipe({ id: 42, title: "Toast" });
+    const backend = mockBackend({
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByLabelText("Title"), "Toast");
+    await user.type(screen.getByLabelText("Source link"), " https://www.budgetbytes.com/toast/ ");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(
+      "https://www.budgetbytes.com/toast/",
+    );
+  });
+
+  it("saves no link when the source field is left blank", async () => {
+    const created = recipe({ id: 42, title: "Toast" });
+    const backend = mockBackend({
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByLabelText("Title"), "Toast");
+    await user.type(screen.getByLabelText("Source link"), "   ");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").source_url ?? null).toBeNull();
+  });
+
+  it("refuses a source link the recipe page could not open", async () => {
+    // The link is rendered on the recipe page; only a web address belongs there.
+    const backend = mockBackend({ "POST /api/recipes": recipe() });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByLabelText("Title"), "Toast");
+    await user.type(screen.getByLabelText("Source link"), "ftp://example.com/toast");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(
+      screen.getByText("Source links must start with http:// or https://."),
     ).toBeInTheDocument();
     expect(backend.requests).toHaveLength(0);
   });
@@ -294,6 +361,58 @@ describe("RecipeFormPage: editing a recipe", () => {
 
     expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
   });
+
+  it("adds a link to a recipe saved before links were kept", async () => {
+    const backend = mockBackend({
+      "GET /api/recipes/:id": stored,
+      "PUT /api/recipes/:id": stored,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue(stored.title));
+    expect(screen.getByLabelText("Source link")).toHaveValue("");
+
+    await user.type(screen.getByLabelText("Source link"), "https://pinchofyum.com/curry");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").source_url).toBe(
+      "https://pinchofyum.com/curry",
+    );
+  });
+
+  it("keeps a stored link through an edit that does not touch it", async () => {
+    const linked = { ...stored, source_url: "https://pinchofyum.com/curry", source_label: "Pinch of Yum" };
+    const backend = mockBackend({
+      "GET /api/recipes/:id": linked,
+      "PUT /api/recipes/:id": linked,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Source link")).toHaveValue("https://pinchofyum.com/curry"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").source_url).toBe(
+      "https://pinchofyum.com/curry",
+    );
+  });
+
+  it("takes a wrong link off when the field is emptied", async () => {
+    const linked = { ...stored, source_url: "https://pinchofyum.com/wrong", source_label: "Pinch of Yum" };
+    const backend = mockBackend({
+      "GET /api/recipes/:id": linked,
+      "PUT /api/recipes/:id": stored,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Source link")).toHaveValue("https://pinchofyum.com/wrong"),
+    );
+
+    await user.clear(screen.getByLabelText("Source link"));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").source_url ?? null).toBeNull();
+  });
 });
 
 describe("RecipeFormPage: importing from a URL", () => {
@@ -393,6 +512,62 @@ describe("RecipeFormPage: importing from a URL", () => {
     expect(await screen.findByRole("heading", { name: "Banana bread" })).toBeVisible();
   });
 
+  it("saves the imported page as the recipe's source link", async () => {
+    const created = recipe({ id: 42, title: "Banana bread" });
+    const backend = mockBackend({
+      "POST /api/import/recipe": draft,
+      "POST /api/recipes": created,
+      "POST /api/recipes/:id/image-from-url": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+    // Shown in the form, so what will be saved can be seen and changed.
+    await waitFor(() =>
+      expect(screen.getByLabelText("Source link")).toHaveValue(draft.source_url),
+    );
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(draft.source_url);
+  });
+
+  it("says when the imported recipe is already in the box, and still lets it be saved", async () => {
+    const created = recipe({ id: 42, title: "Banana bread" });
+    const backend = mockBackend({
+      "POST /api/import/recipe": { ...draft, saved_recipe_id: 12 },
+      "POST /api/recipes": created,
+      "POST /api/recipes/:id/image-from-url": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    const notice = await screen.findByText(/Already in your box/);
+    expect(within(notice).getByRole("link", { name: "Open the saved recipe" })).toHaveAttribute(
+      "href",
+      "/recipes/12",
+    );
+    // A second copy is a choice, not a mistake: the form is filled in as usual.
+    expect(screen.getByLabelText("Title")).toHaveValue("Banana bread");
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    expect(backend.requestsTo("POST /api/recipes")).toHaveLength(1);
+  });
+
+  it("says nothing about the box for a recipe not saved before", async () => {
+    mockBackend({ "POST /api/import/recipe": draft });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), draft.source_url);
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
+    expect(screen.queryByText(/Already in your box/)).not.toBeInTheDocument();
+  });
+
   it("does not fetch the photo that was removed before saving", async () => {
     const created = recipe({ id: 42, title: "Banana bread" });
     const backend = mockBackend({
@@ -436,6 +611,31 @@ describe("RecipeFormPage: a draft picked out of search", () => {
 
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
     expect(screen.queryByRole("button", { name: "Import" })).not.toBeInTheDocument();
+  });
+
+  it("saves the page it was picked from as its source link", async () => {
+    const created = recipe({ id: 42, title: "Banana bread" });
+    const backend = mockBackend({
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp({ pathname: "/recipes/new", state: { draft } });
+    await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
+
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").source_url).toBe(draft.source_url);
+  });
+
+  it("says when the picked recipe is already in the box", async () => {
+    mockBackend({});
+    renderApp({ pathname: "/recipes/new", state: { draft: { ...draft, saved_recipe_id: 12 } } });
+
+    const notice = await screen.findByText(/Already in your box/);
+    expect(within(notice).getByRole("link", { name: "Open the saved recipe" })).toHaveAttribute(
+      "href",
+      "/recipes/12",
+    );
   });
 });
 

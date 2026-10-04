@@ -123,6 +123,43 @@ async def test_search_endpoint_returns_drafts(client, fake_net):
     assert body[0]["source_url"] == url
 
 
+async def test_search_marks_results_already_in_the_box(client, fake_net):
+    """So a recipe saved last month is opened rather than imported again."""
+    saved_url = "https://www.budgetbytes.com/banana-bread/"
+    other_url = "https://cookieandkate.com/banana-bread/"
+    fake_net(
+        {"www.budgetbytes.com": [saved_url], "cookieandkate.com": [other_url]},
+        {
+            saved_url: _recipe_html("Budget Banana Bread"),
+            other_url: _recipe_html("Kate Banana Bread"),
+        },
+    )
+    # Saved by hand from an old bookmark: http, no "www.", no trailing slash.
+    saved = (
+        await client.post(
+            "/api/recipes",
+            json={"title": "Banana bread", "source_url": "http://budgetbytes.com/banana-bread"},
+        )
+    ).json()
+
+    resp = await client.post("/api/import/search", json={"query": "banana bread"})
+    assert resp.status_code == 200, resp.text
+    marks = {r["source_url"]: r["saved_recipe_id"] for r in resp.json()}
+    assert marks == {saved_url: saved["id"], other_url: None}
+
+
+async def test_search_drafts_carry_their_link_without_tracking(fake_net):
+    """A site's search can hand back links tagged for its own analytics; the
+    draft's link is the one the form will save, so the tags come off."""
+    tagged = "https://www.budgetbytes.com/banana-bread/?utm_source=wp-search"
+    net = fake_net({"www.budgetbytes.com": [tagged]}, {tagged: _recipe_html("Banana Bread")})
+
+    drafts = await search_recipes("banana bread")
+
+    assert [d.source_url for d in drafts] == ["https://www.budgetbytes.com/banana-bread/"]
+    assert net.fetched == [tagged]
+
+
 async def test_results_are_ordered_by_relevance(fake_net):
     """Sites nominate; we rank. Their own ordering is not evidence of much,
     so a recipe that is about the query outranks one that mentions it."""
@@ -265,6 +302,12 @@ def test_site_label_names_allowlisted_sites():
     assert site_label("https://www.budgetbytes.com/recipe/") == "Budget Bytes"
     assert site_label("https://cookieandkate.com/recipe/") == "Cookie and Kate"
     assert site_label("https://example.com/recipe/") == "example.com"
+
+
+def test_site_label_reads_a_host_typed_in_any_case():
+    """A source link pasted into the form arrives however it was typed."""
+    assert site_label("https://WWW.BudgetBytes.com/recipe/") == "Budget Bytes"
+    assert site_label("https://Example.com/recipe/") == "example.com"
 
 
 def test_every_allowlisted_site_has_a_distinct_label_and_https_base():

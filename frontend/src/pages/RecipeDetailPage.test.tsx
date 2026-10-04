@@ -352,6 +352,36 @@ describe("RecipeDetailPage", () => {
     );
   });
 
+  describe("where it came from", () => {
+    it("links to the original page, named for its site, in a new tab", async () => {
+      mockBackend({
+        "GET /api/recipes/:id": {
+          ...curry,
+          source_url: "https://www.budgetbytes.com/chicken-curry/",
+          source_label: "Budget Bytes",
+        },
+      });
+      renderApp("/recipes/1");
+
+      const link = await screen.findByRole("link", { name: "View original on Budget Bytes" });
+      expect(link).toHaveAttribute("href", "https://www.budgetbytes.com/chicken-curry/");
+      // Leaving the app for someone else's site: a new tab, so the recipe is
+      // still here, and nothing about this page handed to the other one.
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link.getAttribute("rel")?.split(" ")).toEqual(
+        expect.arrayContaining(["noopener", "noreferrer"]),
+      );
+    });
+
+    it("offers no link for a recipe saved without one", async () => {
+      mockBackend({ "GET /api/recipes/:id": curry });
+      renderApp("/recipes/1");
+
+      await screen.findByRole("heading", { name: "Weeknight chicken curry" });
+      expect(screen.queryByRole("link", { name: /View original/ })).toBeNull();
+    });
+  });
+
   describe("what it costs", () => {
     const STORE = {
       location_id: "01400765",

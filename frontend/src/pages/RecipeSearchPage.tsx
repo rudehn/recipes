@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { Link, useNavigate } from "react-router-dom";
 
 import { api, type RecipeDraft } from "../api";
-import { Banner, Button, EmptyState, LinkButton, PageHead, Panel } from "../components/ui";
+import { Banner, Button, Chip, EmptyState, LinkButton, PageHead, Panel } from "../components/ui";
 import { formatQuantity } from "../quantity";
 
 function totalMinutes(draft: RecipeDraft): number | null {
@@ -17,6 +17,32 @@ function CompareStat({ label, value }: { label: string; value: string }) {
       <span className="value">{value}</span>
       <span className="label">{label}</span>
     </div>
+  );
+}
+
+/**
+ * What can be done with the result on show.
+ *
+ * Already saved, the saved copy is what to open: it is the one carrying this
+ * household's edits. Using the page again stays on offer, since a second copy
+ * to change is a fair thing to want, but no longer as the button the eye
+ * lands on.
+ */
+function ResultActions({ savedId, onUse }: { savedId: number | null; onUse: () => void }) {
+  if (savedId === null) {
+    return (
+      <Button variant="primary" onClick={onUse}>
+        Use this recipe
+      </Button>
+    );
+  }
+  return (
+    <>
+      <LinkButton variant="primary" to={`/recipes/${savedId}`}>
+        Open saved recipe
+      </LinkButton>
+      <Button onClick={onUse}>Use this recipe</Button>
+    </>
   );
 }
 
@@ -78,6 +104,8 @@ export default function RecipeSearchPage() {
   }
 
   const current = drafts?.[active];
+  // The recipe in the box imported from this same page, if any.
+  const savedId = current?.saved_recipe_id ?? null;
   const steps = current
     ? current.instructions.split("\n").map((s) => s.trim()).filter(Boolean)
     : [];
@@ -151,6 +179,11 @@ export default function RecipeSearchPage() {
                   >
                     <span className="site">{draft.source_label}</span>
                     <span className="name">{draft.title}</span>
+                    {draft.saved_recipe_id !== null && (
+                      <span className="saved">
+                        <Chip tone="green">In your box</Chip>
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -158,18 +191,16 @@ export default function RecipeSearchPage() {
           </div>
 
           <div className="preview-banner">
-            <span className="chip green">Preview</span>
+            <Chip tone="green">{savedId !== null ? "Already in your box" : "Preview"}</Chip>
             <span>
               From{" "}
               <a href={current.source_url} target="_blank" rel="noreferrer noopener">
                 {current.source_label}
               </a>
-              . Not saved yet.
+              .{savedId === null && " Not saved yet."}
             </span>
             <span className="spacer" />
-            <Button variant="primary" onClick={() => pickDraft(current)}>
-              Use this recipe
-            </Button>
+            <ResultActions savedId={savedId} onUse={() => pickDraft(current)} />
           </div>
 
           <div className="detail-hero">
@@ -231,12 +262,12 @@ export default function RecipeSearchPage() {
           </div>
 
           <div className="form-actions">
-            <Button variant="primary" onClick={() => pickDraft(current)}>
-              Use this recipe
-            </Button>
-            <span className="hint">
-              You can edit everything before saving.
-            </span>
+            <ResultActions savedId={savedId} onUse={() => pickDraft(current)} />
+            {savedId === null && (
+              <span className="hint">
+                You can edit everything before saving.
+              </span>
+            )}
           </div>
         </>
       )}

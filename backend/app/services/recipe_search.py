@@ -32,13 +32,13 @@ import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from html import unescape
-from urllib.parse import urlsplit
 
 import httpx
 
 from ..schemas import RecipeDraft
 from .fetch import BROWSER_HEADERS
 from .recipe_import import RecipeNotFound, parse_recipe_html
+from .recipe_source import bare_host
 from .relevance import (
     MIN_RELEVANCE,
     WEAK_RELEVANCE,
@@ -141,10 +141,11 @@ MAX_CONCURRENT_FETCHES = 8
 
 
 def site_label(url: str) -> str:
-    """Human-readable source for a result URL, for the comparison tabs."""
-    host = urlsplit(url).netloc.removeprefix("www.")
+    """Human-readable source for a result URL, for the comparison tabs and
+    for a saved recipe's link back to where it came from."""
+    host = bare_host(url)
     for site in ALLOWLIST:
-        if urlsplit(site.base).netloc.removeprefix("www.") == host:
+        if bare_host(site.base) == host:
             return site.label
     return host
 

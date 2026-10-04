@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import {
   api,
@@ -42,6 +42,38 @@ function toRows(ingredients: Omit<Ingredient, "id">[]): IngredientDraft[] {
   }));
 }
 
+/**
+ * Whether the recipe page could open this as a link back to the original.
+ *
+ * The field's own type="url" already stops anything that is not an address,
+ * but an ftp: or javascript: address is one, and the server would refuse it
+ * with a reply that says nothing useful. Said here, in the form's words.
+ */
+function isWebLink(text: string): boolean {
+  try {
+    const { protocol } = new URL(text);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The draft is of a page already saved. Said with a way to the saved one, and
+ * no more than said: a second copy to change is a reasonable thing to want, so
+ * the form below stays exactly as usable as it was.
+ */
+function AlreadySaved({ recipeId }: { recipeId: number }) {
+  return (
+    <Banner tone="notice" role="status">
+      <span>
+        Already in your box. <Link to={`/recipes/${recipeId}`}>Open the saved recipe</Link>, or
+        save a second copy below.
+      </span>
+    </Banner>
+  );
+}
+
 export default function RecipeFormPage() {
   const { id } = useParams();
   const isEdit = id !== undefined;
@@ -63,11 +95,17 @@ export default function RecipeFormPage() {
   const [removeImage, setRemoveImage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const errorBanner = useRef<HTMLDivElement>(null);
+  // Counts saves, so a second refusal for the same reason is shown again.
+  const [attempts, setAttempts] = useState(0);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   // Photo URL captured by the importer; downloaded server-side on save.
   const [importedImageUrl, setImportedImageUrl] = useState<string | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  // The recipe already saved from the page the current draft came from.
+  const [savedRecipeId, setSavedRecipeId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -83,6 +121,7 @@ export default function RecipeFormPage() {
         setTags(r.tags.join(", "));
         setExistingImage(r.image_filename);
         setRows(toRows(r.ingredients));
+        setSourceUrl(r.source_url ?? "");
       })
       .catch((e: unknown) => setError(errorMessage(e)));
   }, [id, isEdit]);
@@ -98,11 +137,20 @@ export default function RecipeFormPage() {
     setImportedImageUrl(draft.image_url);
     setImageFile(null);
     setRemoveImage(false);
+    setSourceUrl(draft.source_url);
+    setSavedRecipeId(draft.saved_recipe_id);
   }, []);
 
   useEffect(() => {
     if (pickedDraft) applyDraft(pickedDraft);
   }, [pickedDraft, applyDraft]);
+
+  // The save button is at the foot of a long form and the reason it refused
+  // is at the head, so without this a refusal looks like a button that does
+  // nothing. Centred rather than at the top, where the sticky header sits.
+  useEffect(() => {
+    if (error) errorBanner.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [error, attempts]);
 
   function updateRow(index: number, patch: Partial<IngredientDraft>) {
     setRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -128,6 +176,7 @@ export default function RecipeFormPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAttempts((n) => n + 1);
 
     const ingredients = rows
       .filter((r) => r.name.trim())
@@ -144,6 +193,7 @@ export default function RecipeFormPage() {
       return;
     }
 
+    const source = sourceUrl.trim();
     const payload: RecipeInput = {
       title: title.trim(),
       description: description.trim(),
@@ -153,9 +203,16 @@ export default function RecipeFormPage() {
       servings: servings.trim() === "" ? null : Number(servings),
       ingredients,
       tags: tags.split(",").map((t) => t.trim()).filter(Boolean),
+      // Like an ingredient's source line, sent only when there is one. A save
+      // replaces the recipe, so an emptied field takes a stored link off.
+      ...(source ? { source_url: source } : {}),
     };
     if (!payload.title) {
       setError("Give your recipe a title.");
+      return;
+    }
+    if (source && !isWebLink(source)) {
+      setError("Source links must start with http:// or https://.");
       return;
     }
 
@@ -198,6 +255,7 @@ export default function RecipeFormPage() {
             </a>
             . Edit anything you like, then save it to your recipe box.
           </span>
+          {savedRecipeId !== null && <AlreadySaved recipeId={savedRecipeId} />}
         </div>
       )}
 
@@ -229,11 +287,18 @@ export default function RecipeFormPage() {
             below for you to review.
           </span>
           {importError && <Banner tone="error">{importError}</Banner>}
+          {savedRecipeId !== null && <AlreadySaved recipeId={savedRecipeId} />}
         </div>
       )}
 
       <form className="form" onSubmit={handleSubmit}>
-        {error && <Banner tone="error">{error}</Banner>}
+        {error && (
+          <div ref={errorBanner}>
+            <Banner tone="error" role="alert">
+              {error}
+            </Banner>
+          </div>
+        )}
 
         <Field label="Title" htmlFor="title">
           <input
@@ -251,6 +316,16 @@ export default function RecipeFormPage() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="A short note about this dish (optional)"
+          />
+        </Field>
+
+        <Field label="Source link" htmlFor="source-url">
+          <input
+            id="source-url"
+            type="url"
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            placeholder="Link to the original recipe (optional)"
           />
         </Field>
 

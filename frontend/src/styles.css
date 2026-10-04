@@ -724,6 +724,13 @@ input:focus, select:focus, textarea:focus {
   font-size: var(--text-sm);
 }
 
+/* "Prefilled from Budget Bytes" names the page the form will save as the
+   recipe's source, and the reset left that name reading as plain text. */
+.import-box .hint a {
+  color: var(--accent-ink);
+  text-decoration: underline;
+}
+
 /* ---------- Recipe detail ---------- */
 
 .detail-hero {
@@ -742,6 +749,42 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
 }
+
+/*
+ * The column beside the photo is spaced by what follows what, rather than by
+ * a paragraph's default margins. Those put a blank line above the
+ * description, so on a phone it sat twice the page's gap below the photo, and
+ * on a wide screen its first line started below the top of the photo it is
+ * beside. Now the column starts flush, whatever it opens with: the link back
+ * to the original sits close under the description it belongs to, and the
+ * chips keep the same distance from either that the cost keeps from them.
+ */
+.detail-hero .recipe-description { margin: 0; }
+
+.detail-hero .chips { padding-top: 0; }
+
+.recipe-description + .recipe-source { margin-top: var(--space-8); }
+
+.recipe-description + .chips,
+.recipe-source + .chips { margin-top: var(--space-12); }
+
+/* The link back to the page a recipe was imported from, under its
+   description: one quiet line in the accent ink the hero's other links use,
+   underlined because it leaves the app. */
+.recipe-source {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.recipe-source a {
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.recipe-source a:hover { text-decoration-color: currentColor; }
 
 .detail-cols {
   display: grid;
@@ -1337,6 +1380,11 @@ button.cook-duration:hover {
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-8);
+  /* A flex item will not shrink below its content, and a file input's content
+     is a button and a file name at whatever width the browser likes - about
+     360px on a phone, which made the whole page wider than the screen.
+     Allowed to shrink, the input's max-width keeps it inside the field. */
+  min-width: 0;
 }
 
 /* A button in a field column sizes to its label rather than stretching the
@@ -1358,6 +1406,10 @@ button.cook-duration:hover {
   gap: var(--space-12);
   align-items: center;
 }
+
+/* Inside a form the column's gap spaces these. After a recipe's panels, on
+   the search page, nothing did, and the buttons sat against the card. */
+.detail-cols + .form-actions { margin-top: var(--space-24); }
 
 .error-banner {
   background: var(--danger-soft);
@@ -3198,6 +3250,17 @@ body.has-install-hint .page {
   overflow: hidden;
 }
 
+/* A result already saved says so on its tab, so it can be passed over without
+   being opened. On a line of its own and pinned to the foot of the tab, since
+   beside the site name it fitted for two sites of six, and a strip of tabs
+   whose marks sat at different heights read as untidy rather than as news.
+   The padding is the least room it keeps under a two-line name. */
+.result-tab .saved {
+  display: flex;
+  margin-top: auto;
+  padding-top: var(--space-6);
+}
+
 .result-tab.active {
   background: var(--accent-soft);
   border-color: var(--accent);
@@ -3219,7 +3282,8 @@ body.has-install-hint .page {
   font-size: var(--text-md);
 }
 
-.preview-banner a {
+/* The credit's link, and not the button beside it that is also an <a>. */
+.preview-banner a:not(.btn) {
   color: var(--accent-ink);
   text-decoration: underline;
 }
@@ -3701,7 +3765,10 @@ body.has-install-hint .page {
 
   .import-box .import-row .btn { flex: 1; justify-content: center; }
 
-  .image-drop { gap: var(--space-12); }
+  /* Beside the photo the file input gets under two thirds of the width it
+     asks for, and squeezed into that the browser cuts "No file chosen" down
+     to "No fil...hosen". Under the photo it has the field's whole width. */
+  .image-drop { gap: var(--space-12); flex-wrap: wrap; }
 
   .image-drop img { width: 120px; }
 
@@ -3731,6 +3798,11 @@ body.has-install-hint .page {
   .compare-row { gap: var(--space-20); }
 
   .preview-banner .spacer { display: none; }
+
+  /* Wrapped under the credit, a button sized to its label sat stranded at
+     the left; full width, it reads as the banner's answer, the way the
+     search and import buttons do above it. */
+  .preview-banner .btn { flex: 1 0 100%; justify-content: center; }
 
   .cart-head .btn { flex: 1; justify-content: center; }
 
