@@ -1521,6 +1521,21 @@ body.has-install-hint .page {
 
 .day-head.today .dow, .day-head.today .date { color: var(--accent-ink); }
 
+/* What the day's meals cost, under its date. Quieter than the date it
+   belongs to, and only there at all when something in the day is priced. */
+.day-head .plan-cost {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: normal;
+  color: var(--muted);
+}
+
+.day-head.today .plan-cost { color: var(--accent-ink); }
+
 .meal-label {
   display: flex;
   align-items: center;
@@ -1572,6 +1587,36 @@ body.has-install-hint .page {
 }
 
 .plan-entry a { flex: 1; }
+
+/* The servings and what they cost, on the line under the title. The cost
+   keeps to the right edge whether or not a stepper sits to its left, and
+   wraps under the stepper rather than squeezing it if the two cannot fit. */
+.plan-entry-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-6);
+}
+
+/* The size and green of the count beside it: one line about this meal, not
+   a second thing competing with its name. */
+.plan-entry .plan-cost {
+  margin-left: auto;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--green-muted);
+}
+
+/* A grid column never has room for both: "− ×16 +" and "$18.75+" want about
+   110px, and an entry is 100px at the widest the page gets. Left to wrap on
+   its own, a short figure would share the line in one cell and a long one
+   drop under it in the next, so in the grid it always takes the line under
+   the stepper. */
+.week-grid .plan-entry .plan-cost {
+  flex-basis: 100%;
+  text-align: right;
+}
 
 .serv {
   display: flex;
@@ -1678,6 +1723,15 @@ body.has-install-hint .page {
   letter-spacing: var(--tracking-caps);
   color: var(--accent-ink);
 }
+
+/* At the right end of the header, over the meals' own figures, with today's
+   tag beside it rather than pushed apart from it. */
+.agenda-day > .day-head .plan-cost {
+  margin-top: 0;
+  margin-left: auto;
+}
+
+.agenda-day .today-tag + .plan-cost { margin-left: 0; }
 
 /* The label column is sized to the longest of the four names rather than to a
    round number: "BREAKFAST" is 86px of uppercase at this size and tracking, and
@@ -3238,6 +3292,11 @@ body.has-install-hint .page {
     height: 32px;
     font-size: var(--text-base);
   }
+
+  /* The stepper's height, so a meal costed without one - its recipe says
+     nothing of servings - sits its figure where the others sit theirs,
+     rather than tight against the bottom of the card. */
+  .plan-entry-meta { min-height: 32px; }
 
   .servings-stepper { padding: var(--space-4) var(--space-6); }
 

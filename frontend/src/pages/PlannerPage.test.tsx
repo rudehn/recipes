@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal } from "../api";
 import { WEEK_GRID } from "../layout";
-import { HttpError, mockBackend, type MockBackend } from "../test/backend";
-import { mealPlanEntry, page, recipeSummary } from "../test/fixtures";
+import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
+import { mealPlanEntry, page, planCost, recipeSummary } from "../test/fixtures";
 import { renderApp } from "../test/render";
 import { setViewportWidth } from "../test/viewport";
 
@@ -266,6 +266,60 @@ describe("PlannerPage", () => {
 
       await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
       expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({ servings: 1 });
+    });
+
+    it("counts every tap however fast, and saves them in the order they were made", async () => {
+      // Each tap used to count from the servings the page had loaded, so two
+      // taps before the reload both asked for five and the second was lost.
+      const recipe = recipeSummary({ servings: 4 });
+      let stored: number | null = null;
+      const held: (() => void)[] = [];
+      const backend = mockBackend({
+        "GET /api/meal-plan": () => [mealPlanEntry({ id: 3, servings: stored, recipe })],
+        "PATCH /api/meal-plan/:id": (req: MockRequest) =>
+          new Promise((resolve) =>
+            held.push(() => {
+              stored = (req.body as { servings: number | null }).servings;
+              resolve(mealPlanEntry({ id: 3, servings: stored, recipe }));
+            }),
+          ),
+      });
+      const { user } = renderApp("/planner");
+      const more = await screen.findByRole("button", { name: "More servings" });
+
+      await user.click(more);
+      await user.click(more);
+
+      // Shown at once, before the server has answered either tap.
+      expect(screen.getByText("×6")).toBeInTheDocument();
+      // One write at a time, so an older one can never land after a newer.
+      expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1);
+
+      held.shift()!();
+      await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(2));
+      held.shift()!();
+
+      await waitFor(() => expect(stored).toBe(6));
+      expect(backend.requestsTo("PATCH /api/meal-plan/:id").map((r) => r.body)).toEqual([
+        { servings: 5 },
+        { servings: 6 },
+      ]);
+      expect(screen.getByText("×6")).toBeInTheDocument();
+    });
+
+    it("puts the count back when the server refuses it", async () => {
+      mockBackend({
+        "GET /api/meal-plan": [
+          mealPlanEntry({ id: 3, servings: null, recipe: recipeSummary({ servings: 4 }) }),
+        ],
+        "PATCH /api/meal-plan/:id": new HttpError(503, "Server is restarting"),
+      });
+      const { user } = renderApp("/planner");
+
+      await user.click(await screen.findByRole("button", { name: "More servings" }));
+
+      expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
+      expect(screen.getByText("×4")).toBeInTheDocument();
     });
 
     it("hides the stepper for a recipe with no serving count", async () => {
@@ -539,14 +593,13 @@ describe("PlannerPage", () => {
       // surplus.
       mockBackend({
         "GET /api/meal-plan": [mealPlanEntry()],
-        "GET /api/meal-plan/cost": {
-          store: { location_id: "1", name: "Kroger - Riverside", address: "", chain: "KROGER" },
+        "GET /api/meal-plan/cost": planCost({
           total: 61.2,
           priced: 40,
           total_lines: 44,
           days: [{ plan_date: "2026-07-27", total: 61.2, priced: 40, total_lines: 44 }],
           grocery_total: 84.1,
-        },
+        }),
       });
       renderApp("/planner");
 
@@ -577,11 +630,187 @@ describe("PlannerPage", () => {
     });
 
     it("looks like the ordinary planner without pricing", async () => {
-      mockBackend({ "GET /api/meal-plan": [], "GET /api/meal-plan/cost": null });
+      const backend = mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry()],
+        "GET /api/meal-plan/cost": null,
+      });
       renderApp("/planner");
 
-      await screen.findByText("Jul 27 – Aug 2, 2026");
+      await screen.findByText("Weeknight chicken curry");
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan/cost")).toHaveLength(1));
       expect(screen.queryByText(/to cook/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    });
+
+    /** The heading of one day, in either layout. */
+    function dayHead(dayIndex: number): HTMLElement {
+      return document.querySelectorAll<HTMLElement>(".day-head")[dayIndex];
+    }
+
+    it("heads each day with what its meals cost", async () => {
+      mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-27" })],
+        "GET /api/meal-plan/cost": planCost({
+          days: [{ plan_date: "2026-07-27", total: 12.4, priced: 4, total_lines: 4 }],
+          entries: [{ entry_id: 3, total: 12.4, priced: 4, total_lines: 4 }],
+        }),
+      });
+      renderApp("/planner");
+
+      expect(
+        await within(dayHead(0)).findByRole("img", { name: "$12.40, 4 of 4 ingredients priced" }),
+      ).toHaveTextContent(/^\$12\.40$/);
+      expect(dayHead(1)).not.toHaveTextContent("$");
+    });
+
+    it("says a day with unpriced ingredients costs at least its figure", async () => {
+      // A plus rather than a bare number: the figure is a floor, and read
+      // plain it would claim to be the whole.
+      mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-28" })],
+        "GET /api/meal-plan/cost": planCost({
+          days: [{ plan_date: "2026-07-28", total: 6.2, priced: 9, total_lines: 11 }],
+          entries: [{ entry_id: 3, total: 6.2, priced: 9, total_lines: 11 }],
+        }),
+      });
+      renderApp("/planner");
+
+      const figure = await within(dayHead(1)).findByRole("img", {
+        name: "at least $6.20, 9 of 11 ingredients priced",
+      });
+      expect(figure).toHaveTextContent(/^\$6\.20\+$/);
+      expect(figure).toHaveAttribute("title", "at least $6.20, 9 of 11 ingredients priced");
+    });
+
+    it("puts each meal's cost on the line with its servings", async () => {
+      mockBackend({
+        "GET /api/meal-plan": [
+          mealPlanEntry({ id: 3, plan_date: "2026-07-27", meal: "breakfast" }),
+          mealPlanEntry({ id: 4, plan_date: "2026-07-27", meal: "dinner" }),
+        ],
+        "GET /api/meal-plan/cost": planCost({
+          days: [{ plan_date: "2026-07-27", total: 9.1, priced: 7, total_lines: 9 }],
+          entries: [
+            { entry_id: 3, total: 2.9, priced: 3, total_lines: 3 },
+            { entry_id: 4, total: 6.2, priced: 4, total_lines: 6 },
+          ],
+        }),
+      });
+      renderApp("/planner");
+
+      const breakfast = await within(cell("breakfast", 0)).findByRole("img", {
+        name: "$2.90, 3 of 3 ingredients priced",
+      });
+      const dinner = within(cell("dinner", 0)).getByRole("img", {
+        name: "at least $6.20, 4 of 6 ingredients priced",
+      });
+      expect(breakfast.parentElement).toContainElement(
+        within(cell("breakfast", 0)).getByRole("button", { name: "More servings" }),
+      );
+      expect(dinner.parentElement).toContainElement(
+        within(cell("dinner", 0)).getByRole("button", { name: "More servings" }),
+      );
+    });
+
+    it("still costs a meal whose recipe has no serving count", async () => {
+      mockBackend({
+        "GET /api/meal-plan": [
+          mealPlanEntry({ id: 3, plan_date: "2026-07-27", recipe: recipeSummary({ servings: null }) }),
+        ],
+        "GET /api/meal-plan/cost": planCost({
+          days: [{ plan_date: "2026-07-27", total: 3.1, priced: 2, total_lines: 2 }],
+          entries: [{ entry_id: 3, total: 3.1, priced: 2, total_lines: 2 }],
+        }),
+      });
+      renderApp("/planner");
+
+      expect(
+        await within(cell("dinner", 0)).findByRole("img", {
+          name: "$3.10, 2 of 2 ingredients priced",
+        }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "More servings" })).not.toBeInTheDocument();
+    });
+
+    it("shows no figure for a meal or a day with nothing priced", async () => {
+      // Any number there would be invented.
+      const backend = mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-27" })],
+        "GET /api/meal-plan/cost": planCost({
+          total: 0,
+          priced: 0,
+          total_lines: 5,
+          days: [{ plan_date: "2026-07-27", total: 0, priced: 0, total_lines: 5 }],
+          entries: [{ entry_id: 3, total: 0, priced: 0, total_lines: 5 }],
+        }),
+      });
+      renderApp("/planner");
+
+      await screen.findByText("Weeknight chicken curry");
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan/cost")).toHaveLength(1));
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    });
+
+    it("follows a changed serving count once the cost comes back", async () => {
+      const recipe = recipeSummary({ servings: 4 });
+      let stored: number | null = null;
+      mockBackend({
+        "GET /api/meal-plan": () => [
+          mealPlanEntry({ id: 3, plan_date: "2026-07-27", servings: stored, recipe }),
+        ],
+        "PATCH /api/meal-plan/:id": (req: MockRequest) => {
+          stored = (req.body as { servings: number | null }).servings;
+          return mealPlanEntry({ id: 3, plan_date: "2026-07-27", servings: stored, recipe });
+        },
+        // A dollar a serving, so the figure says which count it was priced at.
+        "GET /api/meal-plan/cost": () => {
+          const total = stored ?? 4;
+          return planCost({
+            days: [{ plan_date: "2026-07-27", total, priced: 2, total_lines: 2 }],
+            entries: [{ entry_id: 3, total, priced: 2, total_lines: 2 }],
+          });
+        },
+      });
+      const { user } = renderApp("/planner");
+      await within(cell("dinner", 0)).findByRole("img", {
+        name: "$4.00, 2 of 2 ingredients priced",
+      });
+
+      await user.click(screen.getByRole("button", { name: "More servings" }));
+
+      expect(
+        await within(cell("dinner", 0)).findByRole("img", {
+          name: "$5.00, 2 of 2 ingredients priced",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("costs each day and meal in the agenda too", async () => {
+      setViewportWidth(375);
+      mockBackend({
+        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-29" })],
+        "GET /api/meal-plan/cost": planCost({
+          days: [{ plan_date: "2026-07-29", total: 6.2, priced: 9, total_lines: 11 }],
+          entries: [{ entry_id: 3, total: 6.2, priced: 9, total_lines: 11 }],
+        }),
+      });
+      renderApp("/planner");
+
+      // Wednesday, the third card, and today.
+      await screen.findByText("Weeknight chicken curry");
+      const wednesday = document.querySelectorAll<HTMLElement>(".agenda-day")[2];
+      const head = within(wednesday).getByRole("heading");
+      expect(
+        await within(head).findByRole("img", {
+          name: "at least $6.20, 9 of 11 ingredients priced",
+        }),
+      ).toBeInTheDocument();
+      expect(within(head).getByText("Today")).toBeVisible();
+      const meal = wednesday.querySelector<HTMLElement>(".plan-entry")!;
+      expect(
+        within(meal).getByRole("img", { name: "at least $6.20, 9 of 11 ingredients priced" }),
+      ).toBeInTheDocument();
     });
   });
 });

@@ -613,6 +613,32 @@ async def test_a_week_of_meals_is_costed_at_its_planned_servings(client, catalog
     assert body["grocery_total"] == 2.59
 
 
+async def test_each_planned_meal_is_costed_on_its_own_as_well_as_in_its_day(client, catalog):
+    """The planner puts a figure on every meal, not only on its day, so the
+    entries a day is summed from come back too. Each carries its own
+    coverage: the paella's saffron matched nothing, so its figure is a floor
+    and has to be able to say so."""
+    await seed([])
+    bread = await make_recipe("Bread", [("flour", 2, "cup")], servings=4)
+    paella = await make_recipe("Paella", [("flour", 1, "cup"), ("saffron", 1, "tsp")])
+    async with session_factory() as session:
+        loaf = MealPlanEntry(plan_date=DAY, meal="breakfast", recipe_id=bread, servings=8)
+        rice = MealPlanEntry(plan_date=DAY, meal="dinner", recipe_id=paella)
+        session.add_all([loaf, rice])
+        await session.commit()
+        loaf_id, rice_id = loaf.id, rice.id
+
+    body = await plan_cost(client)
+
+    # Keyed, since `seed` plans an empty recipe on the same day.
+    by_entry = {entry["entry_id"]: entry for entry in body["entries"]}
+    assert by_entry[loaf_id] == {"entry_id": loaf_id, "total": 0.57, "priced": 1, "total_lines": 1}
+    assert by_entry[rice_id] == {"entry_id": rice_id, "total": 0.14, "priced": 1, "total_lines": 2}
+    assert body["days"] == [
+        {"plan_date": str(DAY), "total": 0.71, "priced": 2, "total_lines": 3}
+    ]
+
+
 async def test_plan_cost_is_null_without_a_store(client, catalog):
     await seed([], store=False)
 

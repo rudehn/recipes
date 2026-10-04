@@ -392,6 +392,20 @@ class DayCost(BaseModel):
     total_lines: int
 
 
+class EntryCost(BaseModel):
+    """What one planned meal costs, at its planned servings.
+
+    The figures a day is summed from, kept so the planner can show each meal
+    its own. Coverage rides along for the same reason it does on the day: a
+    meal with an ingredient nothing priced costs at least this, not this.
+    """
+
+    entry_id: int
+    total: float
+    priced: int
+    total_lines: int
+
+
 class PlanCost(BaseModel):
     """What a range of planned meals costs, and what the shopping for it costs.
 
@@ -407,6 +421,7 @@ class PlanCost(BaseModel):
     priced: int
     total_lines: int
     days: list[DayCost]
+    entries: list[EntryCost]
     grocery_total: float | None = None
 
 

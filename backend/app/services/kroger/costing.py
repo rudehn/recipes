@@ -32,6 +32,7 @@ from ...schemas import (
     CheapRecipe,
     CostLine,
     DayCost,
+    EntryCost,
     IngredientIssue,
     PantryRecipe,
     PlanCost,
@@ -167,12 +168,13 @@ async def recipe_cost(session: AsyncSession, recipe: Recipe) -> RecipeCost | Non
 
 
 async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost | None:
-    """What the meals planned between two dates cost, day by day.
+    """What the meals planned between two dates cost, meal by meal and day by day.
 
     Each entry is scaled to its planned servings the same way the grocery
-    list scales it. The grocery total for the same days rides along so the
-    two can be read against each other: the difference is what is left in
-    the cupboard after the week.
+    list scales it, and is answered on its own as well as summed into its
+    day, so the planner can put a figure on each meal. The grocery total for
+    the same days rides along so the two can be read against each other: the
+    difference is what is left in the cupboard after the week.
     """
     store = await settings_service.selected_store(session)
     if not enabled() or store is None:
@@ -196,11 +198,20 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
         return None
 
     by_day: dict[date, DayCost] = {}
+    per_entry: list[EntryCost] = []
     total = 0.0
     priced = 0
     total_lines = 0
     for entry in entries:
         _, entry_total, entry_priced = _cost_recipe(entry.recipe, found, scale_factor(entry))
+        per_entry.append(
+            EntryCost(
+                entry_id=entry.id,
+                total=to_cents(entry_total),
+                priced=entry_priced,
+                total_lines=len(entry.recipe.ingredients),
+            )
+        )
         day = by_day.setdefault(
             entry.plan_date, DayCost(plan_date=entry.plan_date, total=0.0, priced=0, total_lines=0)
         )
@@ -217,6 +228,7 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
         priced=priced,
         total_lines=total_lines,
         days=list(by_day.values()),
+        entries=per_entry,
         grocery_total=grocery_list.pricing.total if grocery_list.pricing else None,
     )
 

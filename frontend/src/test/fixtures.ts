@@ -22,6 +22,7 @@ import type {
   PantryItem,
   PastedLine,
   PastePlan,
+  PlanCost,
   Recipe,
   RecipeDraft,
   RecipeSummary,
@@ -92,6 +93,23 @@ export function mealPlanEntry(overrides: Partial<MealPlanEntry> = {}): MealPlanE
     meal: "dinner" as Meal,
     servings: null,
     recipe: recipeSummary(),
+    ...overrides,
+  };
+}
+
+/**
+ * What a week costs, with nothing in it priced unless a test says so. The
+ * days and meals are the test's to give, since they are what it is about.
+ */
+export function planCost(overrides: Partial<PlanCost> = {}): PlanCost {
+  return {
+    store: { location_id: "01400765", name: "Kroger - Riverside", address: "", chain: "KROGER" },
+    total: 0,
+    priced: 0,
+    total_lines: 0,
+    days: [],
+    entries: [],
+    grocery_total: null,
     ...overrides,
   };
 }
