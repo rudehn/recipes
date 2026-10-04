@@ -67,6 +67,23 @@ function lastListRequest(backend: { requestsTo(p: string): MockRequest[] }): Moc
   return requests[requests.length - 1];
 }
 
+function lastTagsRequest(backend: { requestsTo(p: string): MockRequest[] }): MockRequest {
+  const requests = backend.requestsTo("GET /api/recipes/tags");
+  return requests[requests.length - 1];
+}
+
+function pill(name: string | RegExp): HTMLElement {
+  return screen.getByRole("button", { name: typeof name === "string" ? new RegExp(`^${name}`) : name });
+}
+
+/** The tag chips a card shows, in order; spares wait out of sight to be measured. */
+function cardChips(title: string): string[] {
+  const card = screen.getByRole("heading", { name: title }).closest("a")!;
+  return [...card.querySelectorAll(".card-tags .chip:not(.spare)")].map(
+    (c) => c.textContent ?? "",
+  );
+}
+
 describe("RecipesPage", () => {
   it("lists a page of recipes with the total count", async () => {
     recipesBackend(page([curry, bread]));
@@ -218,6 +235,160 @@ describe("RecipesPage", () => {
       "dinner, 1 recipe",
       "quick, 1 recipe",
     ]);
+  });
+
+  describe("filtering by several tags", () => {
+    it("narrows to the recipes carrying every tag selected", async () => {
+      const backend = recipesBackend((req) => {
+        const tags = req.searchParams.getAll("tag");
+        if (tags.includes("dinner") && tags.includes("quick")) return page([curry]);
+        if (tags.includes("dinner")) return page([curry, bread]);
+        return page([curry, bread]);
+      });
+      const { user } = renderApp("/recipes");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(pill("dinner"));
+      await user.click(pill("quick"));
+
+      await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
+      expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner", "quick"]);
+      expect(pill("dinner")).toHaveAttribute("aria-pressed", "true");
+      expect(pill("quick")).toHaveAttribute("aria-pressed", "true");
+      expect(pill("baking")).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("drops one tag of several when it is tapped again", async () => {
+      const backend = recipesBackend(page([curry]));
+      const { user } = renderApp("/recipes?tag=dinner&tag=quick");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(pill("dinner"));
+
+      await waitFor(() =>
+        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["quick"]),
+      );
+      expect(pill("dinner")).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("clears every selected tag with All", async () => {
+      const backend = recipesBackend(page([curry]));
+      const { user } = renderApp("/recipes?tag=dinner&tag=quick");
+      await screen.findByText("Weeknight chicken curry");
+      expect(pill("All")).toHaveAttribute("aria-pressed", "false");
+
+      await user.click(pill("All"));
+
+      await waitFor(() =>
+        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual([]),
+      );
+      expect(pill("All")).toHaveAttribute("aria-pressed", "true");
+      expect(pill("dinner")).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("opens with every tag the URL names applied", async () => {
+      const backend = recipesBackend(page([curry]));
+      renderApp("/recipes?tag=dinner&tag=quick");
+
+      expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
+      expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner", "quick"]);
+      expect(pill("dinner")).toHaveClass("active");
+      expect(pill("quick")).toHaveClass("active");
+    });
+
+    it("counts each tag within the search and the tags already selected", async () => {
+      // A count is what tapping the pill would leave, so it has to be asked
+      // of the same filters the list is showing.
+      const backend = recipesBackend(page([curry]));
+      const { user } = renderApp("/recipes");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(pill("dinner"));
+      await user.type(screen.getByPlaceholderText(/search recipes/i), "curry");
+
+      await waitFor(() => {
+        const request = lastTagsRequest(backend);
+        expect(request.searchParams.get("q")).toBe("curry");
+        expect(request.searchParams.getAll("tag")).toEqual(["dinner"]);
+      });
+    });
+
+    it("dims a tag that would leave nothing, but never a selected one", async () => {
+      recipesBackend(page([]), (req: MockRequest) =>
+        req.searchParams.getAll("tag").includes("dinner")
+          ? [tagCount("baking", 0), tagCount("dinner", 0), tagCount("quick", 0)]
+          : [tagCount("baking", 1), tagCount("dinner", 1), tagCount("quick", 1)],
+      );
+      const { user } = renderApp("/recipes?q=zuppa");
+      await screen.findByText("No matches");
+
+      await user.click(pill("dinner"));
+
+      await waitFor(() => expect(pill("baking")).toBeDisabled());
+      expect(pill("quick")).toBeDisabled();
+      // Selected and leading nowhere, it still has to be tappable: it is the
+      // way back out.
+      expect(pill("dinner")).toBeEnabled();
+      expect(pill("dinner")).toHaveAccessibleName("dinner, 0 recipes");
+    });
+
+    it("keeps a selected tag the box no longer has, so it can be taken off", async () => {
+      // A link from before the tag was renamed would otherwise filter by
+      // something the bar has no pill for.
+      const backend = recipesBackend(page([]));
+      const { user } = renderApp("/recipes?tag=gone");
+      await screen.findByText("No matches");
+
+      expect(pill("gone")).toHaveAttribute("aria-pressed", "true");
+      await user.click(pill("gone"));
+
+      await waitFor(() =>
+        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual([]),
+      );
+      expect(screen.queryByRole("button", { name: /^gone/ })).not.toBeInTheDocument();
+    });
+
+    it("names every selected tag when nothing matches them all", async () => {
+      recipesBackend(page([]));
+      renderApp("/recipes?tag=dinner&tag=quick&tag=baking");
+
+      expect(
+        await screen.findByText("No recipes match with tags “dinner”, “quick” and “baking”."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("tags on cards", () => {
+    it("shows a recipe's tags under its title", async () => {
+      recipesBackend(page([curry]));
+      renderApp("/recipes");
+      await screen.findByText("Weeknight chicken curry");
+
+      expect(cardChips("Weeknight chicken curry")).toEqual(["quick", "dinner"]);
+    });
+
+    it("shows three and counts the rest, naming them on hover", async () => {
+      const busy = recipeSummary({
+        id: 5,
+        title: "Dan dan noodles",
+        tags: ["chinese", "dinner", "noodles", "spicy", "weeknight"],
+      });
+      recipesBackend(page([busy]));
+      renderApp("/recipes");
+      await screen.findByText("Dan dan noodles");
+
+      expect(cardChips("Dan dan noodles")).toEqual(["chinese", "dinner", "noodles", "+2"]);
+      expect(screen.getByText("+2")).toHaveAttribute("title", "spicy, weeknight");
+    });
+
+    it("leaves the row off a recipe with no tags", async () => {
+      recipesBackend(page([recipeSummary({ id: 9, title: "Plain toast", tags: [] })]));
+      renderApp("/recipes");
+      await screen.findByText("Plain toast");
+
+      const card = screen.getByRole("heading", { name: "Plain toast" }).closest("a")!;
+      expect(card.querySelector(".card-tags")).toBeNull();
+    });
   });
 
   it("loads the next page and appends it to what is already shown", async () => {

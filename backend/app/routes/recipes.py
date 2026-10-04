@@ -1,8 +1,9 @@
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from pydantic import StringConstraints
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
@@ -11,6 +12,7 @@ from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
 from ..models import Ingredient, Recipe, RecipeTag
 from ..schemas import (
+    MAX_TAG_LENGTH,
     ImageFromUrl,
     RecipeAttention,
     RecipeCost,
@@ -38,6 +40,12 @@ DEFAULT_PER_PAGE = 24
 MAX_PER_PAGE = 100
 
 RecipeSort = Literal["title", "newest"]
+
+# A tag filter names tags no longer than a tag can be, and no more of them
+# than anyone narrowing a recipe box would tap. Each one is a subquery, so an
+# unbounded list would be an unbounded query.
+TagName = Annotated[str, StringConstraints(max_length=MAX_TAG_LENGTH)]
+MAX_TAG_FILTERS = 20
 
 # Every sort ends on a unique column. Ordering by title alone is not stable -
 # two recipes may share one - and an unstable order lets offsets skip or repeat
@@ -69,17 +77,27 @@ def _contains(text: str) -> str:
     return f"%{escaped}%"
 
 
-def _filtered_recipes(q: str, tag: str) -> Select:
+def _tag_filter(tags: list[str]) -> list[str]:
+    """The tags a filter names, spelled the way they are stored.
+
+    Tags are stored trimmed and lowercased, so a filter has to be to match
+    one, and naming the same tag twice is still asking for it once.
+    """
+    return list(dict.fromkeys(name for name in (t.strip().lower() for t in tags) if name))
+
+
+def _filtered_recipes(q: str, tags: list[str]) -> Select:
     """Recipes matching the filters, unordered and unpaginated.
 
     Both the page query and the count run off this, so a total can never
     disagree with the rows it counts. Related tables are matched with EXISTS
     rather than a join, so a recipe with three matching ingredients is still
-    one result.
+    one result - and each tag is an EXISTS of its own, so a recipe has to
+    carry every tag named, not just one of them.
     """
     stmt = select(Recipe)
-    if tag:
-        stmt = stmt.where(Recipe.tag_rows.any(RecipeTag.name == tag))
+    for name in tags:
+        stmt = stmt.where(Recipe.tag_rows.any(RecipeTag.name == name))
     if q:
         pattern = _contains(q)
         stmt = stmt.where(
@@ -96,14 +114,13 @@ def _filtered_recipes(q: str, tag: str) -> Select:
 @router.get("", response_model=RecipePage)
 async def list_recipes(
     q: str = Query(default="", max_length=100),
-    tag: str = Query(default="", max_length=50),
+    tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
     sort: RecipeSort = "title",
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=DEFAULT_PER_PAGE, ge=1, le=MAX_PER_PAGE),
     session: AsyncSession = Depends(get_session),
 ):
-    # Tags are stored lowercased, so a filter has to be to match one.
-    filtered = _filtered_recipes(q.strip(), tag.strip().lower())
+    filtered = _filtered_recipes(q.strip(), _tag_filter(tag))
     total = await session.scalar(select(func.count()).select_from(filtered.subquery()))
 
     # A page past the end is an empty page, not an error: the collection can
@@ -123,13 +140,27 @@ async def list_recipes(
 
 
 @router.get("/tags", response_model=list[TagCount])
-async def list_tags(session: AsyncSession = Depends(get_session)):
-    """Every tag in use, for the filter bar.
+async def list_tags(
+    q: str = Query(default="", max_length=100),
+    tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
+    session: AsyncSession = Depends(get_session),
+):
+    """Every tag in use, each counted within the filters, for the filter bar.
+
+    Takes the list's own filters, so a tag's count is how many recipes the
+    list would show with that tag selected too. A tag none of them carry is
+    still listed, at zero, rather than left out: the bar keeps every pill
+    where it was and dims the ones that lead nowhere, instead of reshuffling
+    under the finger that just tapped it.
 
     Declared above /{recipe_id} so that path does not swallow "tags".
     """
+    matching = _filtered_recipes(q.strip(), _tag_filter(tag)).with_only_columns(Recipe.id)
     result = await session.execute(
-        select(RecipeTag.name, func.count(RecipeTag.recipe_id))
+        select(
+            RecipeTag.name,
+            func.count(RecipeTag.recipe_id).filter(RecipeTag.recipe_id.in_(matching)),
+        )
         .group_by(RecipeTag.name)
         .order_by(RecipeTag.name)
     )

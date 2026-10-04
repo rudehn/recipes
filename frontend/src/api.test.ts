@@ -109,6 +109,30 @@ describe("request", () => {
     await expect(api.deleteRecipe(7)).resolves.toBeUndefined();
   });
 
+  it("names each tag of a filter as a parameter of its own", async () => {
+    // The server reads a repeated `tag` as "carrying all of these"; joined
+    // into one value it would be a single tag nobody has.
+    const fetchMock = stubFetch(() => jsonResponse({ items: [], total: 0, page: 1, per_page: 24 }));
+
+    await api.listRecipes({ q: "noodles", tags: ["dinner", "chinese"], page: 1 });
+
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe(
+      "/api/recipes?q=noodles&tag=dinner&tag=chinese&page=1",
+    );
+  });
+
+  it("asks for tag counts within the same filters as the list", async () => {
+    const fetchMock = stubFetch(() => jsonResponse([]));
+
+    await api.listRecipeTags({ q: "noodles", tags: ["dinner", "chinese"] });
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe(
+      "/api/recipes/tags?q=noodles&tag=dinner&tag=chinese",
+    );
+
+    await api.listRecipeTags();
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/tags");
+  });
+
   it("passes the date range as query parameters", async () => {
     const fetchMock = stubFetch(() => jsonResponse([]));
 

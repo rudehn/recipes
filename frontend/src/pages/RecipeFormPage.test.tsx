@@ -1,10 +1,19 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { RecipeInput } from "../api";
-import { HttpError, mockBackend, type MockBackend } from "../test/backend";
-import { recipe, recipeDraft } from "../test/fixtures";
+import { HttpError, mockBackend, type MockBackend, type Routes } from "../test/backend";
+import { recipe, recipeDraft, tagCount } from "../test/fixtures";
 import { renderApp } from "../test/render";
+
+/**
+ * The backend the form talks to. The form asks for the box's tags to suggest,
+ * so every test answers that, with none unless it says otherwise; left out,
+ * "GET /api/recipes/:id" would answer it with a recipe.
+ */
+function formBackend(routes: Routes): MockBackend {
+  return mockBackend({ "GET /api/recipes/tags": [], ...routes });
+}
 
 /** The recipe body the form posted, as the backend would receive it. */
 function savedPayload(backend: MockBackend, pattern: string): RecipeInput {
@@ -17,6 +26,14 @@ function ingredientRows(): HTMLElement[] {
   return screen.getAllByLabelText("Ingredient name");
 }
 
+/** The tags on the form, read off their chips' remove buttons. */
+function tagChips(): string[] {
+  const field = screen.getByRole("combobox", { name: "Tags" }).closest<HTMLElement>(".tag-input")!;
+  return within(field)
+    .queryAllByRole("button", { name: /^Remove / })
+    .map((b) => b.getAttribute("aria-label")!.replace(/^Remove /, ""));
+}
+
 /** The photo picker, which has a plain label with nothing to query it by. */
 function photoInput(): HTMLInputElement {
   return document.querySelector<HTMLInputElement>('input[type="file"]')!;
@@ -25,7 +42,7 @@ function photoInput(): HTMLInputElement {
 describe("RecipeFormPage: writing a recipe", () => {
   it("saves what was typed, then opens the saved recipe", async () => {
     const created = recipe({ id: 42, title: "Sheet pan salmon" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/recipes": created,
       "GET /api/recipes/:id": created,
     });
@@ -60,7 +77,7 @@ describe("RecipeFormPage: writing a recipe", () => {
   it("leaves blank optional fields null rather than zero", async () => {
     // A recipe with no stated prep time is not a zero-minute recipe.
     const created = recipe({ id: 42, title: "Toast" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/recipes": created,
       "GET /api/recipes/:id": created,
     });
@@ -81,7 +98,7 @@ describe("RecipeFormPage: writing a recipe", () => {
   it("drops ingredient rows left empty", async () => {
     // Rows are added optimistically; unfilled ones are not ingredients.
     const created = recipe({ id: 42 });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/recipes": created,
       "GET /api/recipes/:id": created,
     });
@@ -101,18 +118,18 @@ describe("RecipeFormPage: writing a recipe", () => {
   });
 
   it("refuses to save without a title", async () => {
-    const backend = mockBackend({ "POST /api/recipes": recipe() });
+    const backend = formBackend({ "POST /api/recipes": recipe() });
     const { user } = renderApp("/recipes/new");
 
     await user.type(screen.getByLabelText("Ingredient name"), "bread");
     await user.click(screen.getByRole("button", { name: "Create recipe" }));
 
     expect(screen.getByText("Give your recipe a title.")).toBeInTheDocument();
-    expect(backend.requests).toHaveLength(0);
+    expect(backend.requestsTo("POST /api/recipes")).toHaveLength(0);
   });
 
   it("explains an unreadable quantity instead of sending NaN", async () => {
-    const backend = mockBackend({ "POST /api/recipes": recipe() });
+    const backend = formBackend({ "POST /api/recipes": recipe() });
     const { user } = renderApp("/recipes/new");
 
     await user.type(screen.getByLabelText("Title"), "Toast");
@@ -123,11 +140,11 @@ describe("RecipeFormPage: writing a recipe", () => {
     expect(
       screen.getByText("Ingredient quantities must be numbers or fractions like 1 1/2."),
     ).toBeInTheDocument();
-    expect(backend.requests).toHaveLength(0);
+    expect(backend.requestsTo("POST /api/recipes")).toHaveLength(0);
   });
 
   it("keeps the form filled in and re-enables saving when the server rejects it", async () => {
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/recipes": new HttpError(409, "A recipe with that title already exists."),
     });
     const { user } = renderApp("/recipes/new");
@@ -144,7 +161,7 @@ describe("RecipeFormPage: writing a recipe", () => {
   });
 
   it("adds and removes ingredient rows, keeping one row to type in", async () => {
-    mockBackend({});
+    formBackend({});
     const { user } = renderApp("/recipes/new");
 
     expect(ingredientRows()).toHaveLength(1);
@@ -158,8 +175,28 @@ describe("RecipeFormPage: writing a recipe", () => {
     expect(ingredientRows()).toHaveLength(1);
   });
 
+  it("offers the tags already in the box as the tags are typed", async () => {
+    // Picking "weeknight" from the box beats typing "week night" beside it.
+    const backend = formBackend({
+      "GET /api/recipes/tags": [tagCount("dinner", 4), tagCount("weeknight", 2)],
+      "POST /api/recipes": recipe({ id: 42 }),
+      "GET /api/recipes/:id": recipe({ id: 42 }),
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByLabelText("Title"), "Sheet pan salmon");
+    await user.type(screen.getByLabelText("Tags"), "wee");
+    await user.click(await screen.findByRole("option", { name: "weeknight" }));
+    expect(tagChips()).toEqual(["weeknight"]);
+
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+    expect(savedPayload(backend, "POST /api/recipes").tags).toEqual(["weeknight"]);
+    // Every tag in the box, not the counts within some filter.
+    expect(backend.requestsTo("GET /api/recipes/tags")[0].searchParams.toString()).toBe("");
+  });
+
   it("removes the row that was clicked, not the last one", async () => {
-    mockBackend({});
+    formBackend({});
     const { user } = renderApp("/recipes/new");
 
     await user.click(screen.getByRole("button", { name: "+ Add ingredient" }));
@@ -190,20 +227,35 @@ describe("RecipeFormPage: editing a recipe", () => {
   });
 
   it("fills the form from the stored recipe", async () => {
-    mockBackend({ "GET /api/recipes/:id": stored });
+    formBackend({ "GET /api/recipes/:id": stored });
     renderApp("/recipes/7/edit");
 
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue(stored.title));
     expect(screen.getByLabelText("Description")).toHaveValue("Fast and warming.");
     expect(screen.getByLabelText("Prep (min)")).toHaveValue(10);
     expect(screen.getByLabelText("Servings")).toHaveValue(4);
-    expect(screen.getByLabelText("Tags")).toHaveValue("quick, dinner");
+    expect(tagChips()).toEqual(["quick", "dinner"]);
     expect(screen.getByLabelText("Instructions")).toHaveValue("Season the chicken");
+  });
+
+  it("saves the tags as edited", async () => {
+    const backend = formBackend({
+      "GET /api/recipes/:id": stored,
+      "PUT /api/recipes/:id": stored,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(tagChips()).toEqual(["quick", "dinner"]));
+
+    await user.click(screen.getByRole("button", { name: "Remove quick" }));
+    await user.type(screen.getByLabelText("Tags"), "Curry{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(savedPayload(backend, "PUT /api/recipes/:id").tags).toEqual(["dinner", "curry"]);
   });
 
   it("shows stored amounts as the fractions the rest of the app shows", async () => {
     // Editing a recipe should not turn "¾" into "0.75" in front of the cook.
-    mockBackend({ "GET /api/recipes/:id": stored });
+    formBackend({ "GET /api/recipes/:id": stored });
     renderApp("/recipes/7/edit");
 
     await waitFor(() => expect(screen.getAllByLabelText("Quantity")[0]).toHaveValue("¾"));
@@ -214,7 +266,7 @@ describe("RecipeFormPage: editing a recipe", () => {
   it("saves an untouched recipe back unchanged", async () => {
     // The fraction shown must parse back to the number that produced it, or
     // every edit would nudge the amounts.
-    const backend = mockBackend({
+    const backend = formBackend({
       "GET /api/recipes/:id": stored,
       "PUT /api/recipes/:id": stored,
     });
@@ -233,7 +285,7 @@ describe("RecipeFormPage: editing a recipe", () => {
   });
 
   it("keeps the line a row was imported from, so it can be parsed again later", async () => {
-    const backend = mockBackend({
+    const backend = formBackend({
       "GET /api/recipes/:id": recipe({
         id: 7,
         ingredients: [
@@ -264,7 +316,7 @@ describe("RecipeFormPage: editing a recipe", () => {
   });
 
   it("updates the recipe named in the URL rather than creating a new one", async () => {
-    const backend = mockBackend({
+    const backend = formBackend({
       "GET /api/recipes/:id": stored,
       "PUT /api/recipes/:id": stored,
     });
@@ -278,7 +330,7 @@ describe("RecipeFormPage: editing a recipe", () => {
   });
 
   it("cancels back to the recipe being edited", async () => {
-    mockBackend({ "GET /api/recipes/:id": stored });
+    formBackend({ "GET /api/recipes/:id": stored });
     renderApp("/recipes/7/edit");
 
     expect(await screen.findByRole("link", { name: "Cancel" })).toHaveAttribute(
@@ -288,7 +340,7 @@ describe("RecipeFormPage: editing a recipe", () => {
   });
 
   it("hides the URL importer, which only makes sense for a new recipe", async () => {
-    mockBackend({ "GET /api/recipes/:id": stored });
+    formBackend({ "GET /api/recipes/:id": stored });
     renderApp("/recipes/7/edit");
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue(stored.title));
 
@@ -310,7 +362,7 @@ describe("RecipeFormPage: importing from a URL", () => {
   });
 
   it("fills the form from the imported page", async () => {
-    const backend = mockBackend({ "POST /api/import/recipe": draft });
+    const backend = formBackend({ "POST /api/import/recipe": draft });
     const { user } = renderApp("/recipes/new");
 
     await user.type(
@@ -328,8 +380,30 @@ describe("RecipeFormPage: importing from a URL", () => {
     });
   });
 
+  it("puts the page's suggested tags in the form, to keep or drop before saving", async () => {
+    const created = recipe({ id: 42, title: "Banana bread" });
+    const backend = formBackend({
+      "POST /api/import/recipe": { ...draft, image_url: null, tags: ["bread", "american"] },
+      "POST /api/recipes": created,
+      "GET /api/recipes/:id": created,
+    });
+    const { user } = renderApp("/recipes/new");
+
+    await user.type(screen.getByPlaceholderText(/paste a recipe url/i), "https://example.com/x");
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(tagChips()).toEqual(["bread", "american"]));
+    // Suggested is not saved: nothing has been sent but the import itself.
+    expect(backend.requestsTo("POST /api/recipes")).toHaveLength(0);
+
+    await user.click(screen.getByRole("button", { name: "Remove american" }));
+    await user.click(screen.getByRole("button", { name: "Create recipe" }));
+
+    expect(savedPayload(backend, "POST /api/recipes").tags).toEqual(["bread"]);
+  });
+
   it("shows why an import failed and leaves the form alone", async () => {
-    mockBackend({
+    formBackend({
       "POST /api/import/recipe": new HttpError(422, "No recipe found on that page."),
     });
     const { user } = renderApp("/recipes/new");
@@ -343,7 +417,7 @@ describe("RecipeFormPage: importing from a URL", () => {
   });
 
   it("cannot be triggered with an empty URL", async () => {
-    mockBackend({});
+    formBackend({});
     renderApp("/recipes/new");
 
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
@@ -353,7 +427,7 @@ describe("RecipeFormPage: importing from a URL", () => {
     // The photo lives on the source site; the backend downloads it once the
     // recipe exists and has an id to attach it to.
     const created = recipe({ id: 42, title: "Banana bread" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/import/recipe": draft,
       "POST /api/recipes": created,
       "POST /api/recipes/:id/image-from-url": created,
@@ -377,7 +451,7 @@ describe("RecipeFormPage: importing from a URL", () => {
   it("still saves the recipe when its photo cannot be fetched", async () => {
     // A recipe without its photo is worth having; the save must not fail.
     const created = recipe({ id: 42, title: "Banana bread" });
-    mockBackend({
+    formBackend({
       "POST /api/import/recipe": draft,
       "POST /api/recipes": created,
       "POST /api/recipes/:id/image-from-url": new HttpError(502, "Image host unreachable."),
@@ -395,7 +469,7 @@ describe("RecipeFormPage: importing from a URL", () => {
 
   it("does not fetch the photo that was removed before saving", async () => {
     const created = recipe({ id: 42, title: "Banana bread" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/import/recipe": draft,
       "POST /api/recipes": created,
       "GET /api/recipes/:id": created,
@@ -420,7 +494,7 @@ describe("RecipeFormPage: a draft picked out of search", () => {
   });
 
   it("prefills the form and credits the source", async () => {
-    mockBackend({});
+    formBackend({});
     renderApp({ pathname: "/recipes/new", state: { draft } });
 
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
@@ -430,8 +504,15 @@ describe("RecipeFormPage: a draft picked out of search", () => {
     );
   });
 
+  it("puts the draft's suggested tags in the form", async () => {
+    formBackend({});
+    renderApp({ pathname: "/recipes/new", state: { draft: { ...draft, tags: ["breakfast"] } } });
+
+    await waitFor(() => expect(tagChips()).toEqual(["breakfast"]));
+  });
+
   it("hides the URL importer, since the form is already filled", async () => {
-    mockBackend({});
+    formBackend({});
     renderApp({ pathname: "/recipes/new", state: { draft } });
 
     await waitFor(() => expect(screen.getByLabelText("Title")).toHaveValue("Banana bread"));
@@ -441,7 +522,7 @@ describe("RecipeFormPage: a draft picked out of search", () => {
 
 describe("RecipeFormPage: photos", () => {
   it("previews a chosen file and offers to remove it", async () => {
-    mockBackend({});
+    formBackend({});
     const { user } = renderApp("/recipes/new");
     const file = new File(["x"], "curry.jpg", { type: "image/jpeg" });
 
@@ -453,7 +534,7 @@ describe("RecipeFormPage: photos", () => {
 
   it("uploads the chosen file after the recipe is created", async () => {
     const created = recipe({ id: 42, title: "Toast" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "POST /api/recipes": created,
       "POST /api/recipes/:id/image": created,
       "GET /api/recipes/:id": created,
@@ -472,7 +553,7 @@ describe("RecipeFormPage: photos", () => {
 
   it("deletes the existing photo when it is removed while editing", async () => {
     const stored = recipe({ id: 7, title: "Toast", image_filename: "abc.jpg" });
-    const backend = mockBackend({
+    const backend = formBackend({
       "GET /api/recipes/:id": stored,
       "PUT /api/recipes/:id": stored,
       "DELETE /api/recipes/:id/image": stored,

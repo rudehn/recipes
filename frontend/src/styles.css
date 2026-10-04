@@ -328,6 +328,22 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--ring);
 }
 
+/* Read out, never drawn: for words a screen reader needs and a sighted
+   reader already has from the layout, such as a live region saying what a
+   control just did. Clipped rather than display: none, which would take it
+   out of the accessibility tree too. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- App shell ---------- */
 
 .shell {
@@ -665,13 +681,56 @@ input:focus, select:focus, textarea:focus {
   color: var(--green);
 }
 
+/* A recipe's tags on its card, under the title they describe - not .chips,
+   which pins itself to the bottom of the card. One line: TagChips gives a
+   chip that would wrap up to the count. */
+.card-tags {
+  position: relative;
+  display: flex;
+  gap: var(--space-4);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.card-tags .chip {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A tag can be fifty characters. The first chip, which is always shown, is
+   the only one allowed to give way, ending in an ellipsis rather than
+   running off the card. */
+.card-tags .chip:first-child {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Given up to the count, but still laid out at its own width so the row can
+   be measured again when the card widens. Out of the flow, so it takes no
+   room from the chips that are shown, and hidden from sight and from screen
+   readers alike - the count's title names it. */
+.card-tags .chip.spare {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
 /* ---------- Tag filter & URL import ---------- */
+
+/* Holds the fades over the bar's edges, drawn by the rules it shares with
+   the search tabs further down. Only a phone's single scrolling row ever
+   shows them: here the pills wrap, and nothing is ever past either edge. */
+.tag-filter-wrap {
+  margin: calc(var(--space-6) * -1) 0 var(--space-24);
+}
 
 .tag-filter {
   display: flex;
   gap: var(--space-8);
   flex-wrap: wrap;
-  margin: calc(var(--space-6) * -1) 0 var(--space-24);
 }
 
 .tag-pill {
@@ -691,6 +750,15 @@ input:focus, select:focus, textarea:focus {
   background: var(--selected);
   border-color: var(--selected);
   color: var(--selected-ink);
+}
+
+/* A tag that would leave nothing under the filters already applied. Dimmed
+   rather than hidden, so the bar keeps its shape while the filters change.
+   Never a selected pill: that one is the way back out. */
+.tag-pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+  background: var(--surface);
 }
 
 .tag-pill .count {
@@ -1326,6 +1394,118 @@ button.cook-duration:hover {
   object-fit: cover;
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
+}
+
+/* ---------- Tag input ---------- */
+
+/* What the suggestions hang from. */
+.tag-input-wrap {
+  position: relative;
+}
+
+/* A text field holding its chips in line with the typing, so the tags read
+   as the field's value. The box wears the field's border and focus ring;
+   the input inside it is borderless and just takes the room that is left. */
+.tag-input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  /* The typing line is cut to a chip's height below, so every line of the
+     box is the same height and the space between lines matches the space
+     around them. */
+  gap: var(--space-8) var(--space-6);
+  padding: var(--space-8);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: text;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.tag-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.tag-input input,
+.tag-input input:focus {
+  flex: 1;
+  /* Room for the placeholder before the typing drops to a line of its own. */
+  min-width: 120px;
+  /* Its text lines up with every other field's: the box's padding and this
+     add up to an input's own. */
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+
+.tag-input .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-4);
+  max-width: 100%;
+}
+
+/* A fifty-character tag stays a one-line chip, cut short with its x still in
+   reach; the chip's title has the whole of it. */
+.tag-input-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-input-remove {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  transition: background var(--transition);
+}
+
+.tag-input-remove:hover { background: var(--green-wash); }
+
+.tag-suggestions {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+  z-index: var(--z-raised);
+  margin: 0;
+  padding: var(--space-4);
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  /* Six or so rows, then it scrolls: below it is the rest of the form, and
+     on a phone the keyboard. */
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.tag-suggestions li {
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-xs);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.tag-suggestions li strong {
+  color: var(--ink);
+  font-weight: var(--weight-semibold);
+}
+
+.tag-suggestions li:hover,
+.tag-suggestions li.active {
+  background: var(--surface-2);
+  color: var(--ink);
 }
 
 .form-actions {
@@ -2979,14 +3159,18 @@ body.has-install-hint .page {
   font-size: var(--text-sm);
 }
 
-/* Fades mark tabs scrolled out of view, so a long result set does not just
-   look like it was clipped. Each side appears only when there is more there. */
-.result-tabs-wrap {
+/* Fades mark tabs - or tag pills, on a phone - scrolled out of view, so a
+   long strip does not just look like it was clipped. Each side appears only
+   when there is more there; see useScrollEdges. */
+.result-tabs-wrap,
+.tag-filter-wrap {
   position: relative;
 }
 
 .result-tabs-wrap::before,
-.result-tabs-wrap::after {
+.result-tabs-wrap::after,
+.tag-filter-wrap::before,
+.tag-filter-wrap::after {
   content: "";
   position: absolute;
   top: 0;
@@ -2998,18 +3182,28 @@ body.has-install-hint .page {
   z-index: var(--z-raised);
 }
 
-.result-tabs-wrap::before {
+/* The tabs leave room under themselves for a scrollbar; the pills do not. */
+.tag-filter-wrap::before,
+.tag-filter-wrap::after {
+  bottom: 0;
+}
+
+.result-tabs-wrap::before,
+.tag-filter-wrap::before {
   left: 0;
   background: linear-gradient(to right, var(--bg), transparent);
 }
 
-.result-tabs-wrap::after {
+.result-tabs-wrap::after,
+.tag-filter-wrap::after {
   right: 0;
   background: linear-gradient(to left, var(--bg), transparent);
 }
 
 .result-tabs-wrap.fade-left::before,
-.result-tabs-wrap.fade-right::after {
+.result-tabs-wrap.fade-right::after,
+.tag-filter-wrap.fade-left::before,
+.tag-filter-wrap.fade-right::after {
   opacity: 1;
 }
 
@@ -3261,7 +3455,49 @@ body.has-install-hint .page {
 
   .tag-pill { padding: var(--space-8) var(--space-16); }
 
+  /* A chip's x reaches past the chip rather than making it taller, so a
+     field of tags stays the height of every other field. */
+  .tag-input-remove {
+    width: 32px;
+    height: 32px;
+    margin: calc(var(--space-6) * -1) calc(var(--space-4) * -1) calc(var(--space-6) * -1) 0;
+  }
+
+  .tag-suggestions li {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap);
+  }
+
   /* --------------------------------------------------------- recipes --- */
+
+  /* One row of tags that scrolls sideways, however many there are: wrapped,
+     a dozen tags stood three rows of pills between the search field and the
+     first recipe. The row runs out to the screen's edges, so a pill cut off
+     by one says there is more that way, and the fades say it again. The
+     padding inside it is the page's own gutter, which keeps the first and
+     last pills lined up with everything else when scrolled to either end. */
+  .tag-filter-wrap {
+    /* Under the page's action buttons here rather than beside a heading, so
+       it keeps to the toolbar's own spacing. */
+    margin-top: calc(var(--space-4) * -1);
+    margin-left: calc(-1 * max(var(--space-16), env(safe-area-inset-left)));
+    margin-right: calc(-1 * max(var(--space-16), env(safe-area-inset-right)));
+  }
+
+  .tag-filter {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* A phone draws no scrollbar track anyway; this stops the browsers that
+       would from putting one under the pills. */
+    scrollbar-width: none;
+    padding-left: max(var(--space-16), env(safe-area-inset-left));
+    padding-right: max(var(--space-16), env(safe-area-inset-right));
+  }
+
+  .tag-filter::-webkit-scrollbar { display: none; }
+
+  .tag-filter .tag-pill { flex: none; }
 
   /* The food takes the whole line, and what it counts and the way to fix it
      share the one under it. */

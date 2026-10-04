@@ -43,8 +43,17 @@ interface MatchedRoute {
   params: Record<string, string>;
 }
 
+/**
+ * The route for a request. A pattern spelling a segment out beats one that
+ * captures it, whatever order they were listed in: "GET /api/recipes/tags"
+ * answers /api/recipes/tags even when "GET /api/recipes/:id" came first. The
+ * server declares its literal paths above its parameter ones for the same
+ * reason, and a test that listed them the other way round used to be
+ * answered with a recipe where it asked for tags, and never know.
+ */
 function matchRoute(routes: Routes, method: string, path: string): MatchedRoute | null {
   const segments = path.split("/");
+  let best: (MatchedRoute & { captured: number }) | null = null;
   for (const [pattern, route] of Object.entries(routes)) {
     const [patternMethod, patternPath] = pattern.split(" ");
     if (patternMethod !== method) continue;
@@ -60,9 +69,12 @@ function matchRoute(routes: Routes, method: string, path: string): MatchedRoute 
       }
       return patternSegment === segments[i];
     });
-    if (matches) return { route, params };
+    const captured = Object.keys(params).length;
+    if (matches && (best === null || captured < best.captured)) {
+      best = { route, params, captured };
+    }
   }
-  return null;
+  return best && { route: best.route, params: best.params };
 }
 
 async function parseBody(init: RequestInit | undefined): Promise<unknown> {

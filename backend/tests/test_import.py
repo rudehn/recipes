@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app.schemas import IngredientIn
@@ -155,6 +157,121 @@ def test_description_falls_back_to_meta_tag():
         "<head>", '<head><meta name="description" content="Blurb from the page." />'
     )
     assert parse_recipe_html(html, "https://x.test").description == "Blurb from the page."
+
+
+def _page_with(**fields: object) -> str:
+    """The sample page with more schema.org fields on its Recipe node."""
+    anchor = '"description": "Moist and easy.",'
+    extra = "".join(f" {json.dumps(name)}: {json.dumps(value)}," for name, value in fields.items())
+    return SAMPLE_HTML.replace(anchor, anchor + extra)
+
+
+def test_category_and_cuisine_are_suggested_as_tags():
+    html = _page_with(recipeCategory="Bread", recipeCuisine="American")
+    assert parse_recipe_html(html, "https://x.test").tags == ["bread", "american"]
+
+
+def test_a_page_without_category_or_cuisine_suggests_no_tags():
+    assert parse_recipe_html(SAMPLE_HTML, "https://x.test").tags == []
+
+
+@pytest.mark.parametrize(
+    ("category", "expected"),
+    [
+        ("Breakfast, Brunch", ["breakfast", "brunch"]),
+        (["Breakfast", "Brunch"], ["breakfast", "brunch"]),
+        (["Breakfast, Brunch", "Snack"], ["breakfast", "brunch", "snack"]),
+        # Lowercased and trimmed the way a saved tag is, then said once.
+        (["  Main Course ", "main course", "MAIN COURSE"], ["main course"]),
+        # Entities and markup are a page's typesetting, not part of the name.
+        ("Soups &amp; <b>Stews</b>", ["soups & stews"]),
+        # A category longer than a tag can be is a sentence, not a tag, and
+        # cut at the limit it would be a tag nobody would ever type.
+        (["Dinner", "x" * 51, "", " , "], ["dinner"]),
+        # Whatever else a site puts there is not a name.
+        ([{"@type": "Thing"}, 7, None, "Dinner"], ["dinner"]),
+        (12, []),
+    ],
+)
+def test_suggested_tags_are_read_from_any_shape_a_site_uses(category, expected):
+    html = _page_with(recipeCategory=category)
+    assert parse_recipe_html(html, "https://x.test").tags == expected
+
+
+def test_keywords_alone_suggest_nothing():
+    """Keywords are mostly search-engine filler: "best chili recipe"."""
+    html = _page_with(keywords="best chili recipe, chili, weeknight dinner")
+    assert parse_recipe_html(html, "https://x.test").tags == []
+
+
+@pytest.mark.parametrize(
+    "keywords",
+    ["Best chili recipe, WEEKNIGHT, chili con carne", ["Best chili recipe", "Weeknight"]],
+)
+def test_a_keyword_naming_a_tag_already_in_the_box_is_suggested(keywords):
+    html = _page_with(recipeCuisine="Mexican", keywords=keywords)
+    draft = parse_recipe_html(html, "https://x.test", known_tags={"weeknight", "chili"})
+    assert draft.tags == ["mexican", "weeknight"]
+
+
+def test_a_keyword_repeating_a_category_is_suggested_once():
+    html = _page_with(recipeCategory="Dinner", keywords="dinner")
+    assert parse_recipe_html(html, "https://x.test", known_tags={"dinner"}).tags == ["dinner"]
+
+
+@pytest.mark.parametrize(
+    ("category", "known", "expected"),
+    [
+        ("Sides", {"side"}, "side"),
+        ("Side", {"sides"}, "sides"),
+        ("Side Dishes", {"side dish"}, "side dish"),
+        ("Dish", {"dishes"}, "dishes"),
+        ("Berries", {"berry"}, "berry"),
+        ("Smoothie", {"smoothies"}, "smoothies"),
+        # Spelled exactly as the box has it, even when its plural is there too.
+        ("Sides", {"side", "sides"}, "sides"),
+        # Only a plural counts: a tag that merely starts the same is another tag.
+        ("Soup", {"soups and stews"}, "soup"),
+        ("Pie", {"pies", "piece"}, "pies"),
+    ],
+)
+def test_a_suggestion_takes_the_spelling_the_box_already_uses(category, known, expected):
+    html = _page_with(recipeCategory=category)
+    assert parse_recipe_html(html, "https://x.test", known_tags=known).tags == [expected]
+
+
+def test_two_suggestions_one_spelling_apart_are_suggested_once():
+    html = _page_with(recipeCategory="Sides", recipeCuisine="Side")
+    assert parse_recipe_html(html, "https://x.test", known_tags={"side"}).tags == ["side"]
+
+
+async def test_import_endpoint_suggests_tags_spelled_the_way_the_box_spells_them(
+    client, monkeypatch
+):
+    import httpx
+
+    for title, tags in [("Slaw", ["side", "weeknight"]), ("Cornbread", ["side"])]:
+        resp = await client.post("/api/recipes", json={"title": title, "tags": tags})
+        assert resp.status_code == 201, resp.text
+
+    page = _page_with(
+        recipeCategory="Sides",
+        recipeCuisine="American",
+        keywords="easy side dish recipe, Weeknight",
+    )
+
+    async def fake_get(self, url):
+        return httpx.Response(200, text=page, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+    resp = await client.post("/api/import/recipe", json={"url": "https://example.com/slaw"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["tags"] == ["side", "american", "weeknight"]
+    # The page's keywords served only to recognise tags already in the box;
+    # the filler around them is nobody's business downstream.
+    assert "keywords" not in body
+    assert "easy side dish recipe" not in resp.text
 
 
 async def test_import_endpoint_rejects_pages_without_recipe(client, monkeypatch):

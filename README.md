@@ -9,7 +9,9 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   Compare ingredient count, steps, total time, and servings, then pick the one you like and edit it before saving.
   Nothing is written to your recipe box until you save.
 * Import a recipe from a URL: paste a link and the schema.org data most cooking sites embed fills in the form, photo included.
-* Tags with one-tap filtering, and search that also matches ingredients ("what can I make with basil?").
+* Tags you can combine: tap several to narrow the box to recipes carrying all of them, with each tag counting how many recipes it would leave.
+  Search also matches ingredients ("what can I make with basil?").
+  An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.
 * Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.

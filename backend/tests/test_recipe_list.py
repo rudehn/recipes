@@ -186,3 +186,86 @@ async def test_tags_endpoint_covers_recipes_beyond_the_first_page(client):
 
     names = [t["name"] for t in (await client.get("/api/recipes/tags")).json()]
     assert names == ["soup"]
+
+
+async def test_several_tags_narrow_to_recipes_carrying_all_of_them(client):
+    await make_recipe(client, "Kung Pao Chicken", tags=["dinner", "chinese"])
+    await make_recipe(client, "Congee", tags=["breakfast", "chinese"])
+    await make_recipe(client, "Meatloaf", tags=["dinner"])
+
+    body = (await client.get("/api/recipes", params={"tag": ["dinner", "chinese"]})).json()
+    assert [r["title"] for r in body["items"]] == ["Kung Pao Chicken"]
+    assert body["total"] == 1
+
+
+async def test_several_tags_are_normalized_like_one(client):
+    """Repeated, padded or capitalized, a tag is still the tag it names."""
+    await make_recipe(client, "Kung Pao Chicken", tags=["dinner", "chinese"])
+    await make_recipe(client, "Meatloaf", tags=["dinner"])
+
+    assert await titles(client, tag=["Dinner", " chinese ", "dinner"]) == ["Kung Pao Chicken"]
+
+
+async def test_search_and_several_tags_combine(client):
+    await make_recipe(client, "Chicken Chow Mein", tags=["dinner", "chinese"])
+    await make_recipe(client, "Beef Chow Mein", tags=["dinner", "chinese"])
+    await make_recipe(client, "Chicken Fried Rice", tags=["chinese"])
+    await make_recipe(client, "Chicken Pie", tags=["dinner"])
+
+    assert await titles(client, q="chicken", tag=["dinner", "chinese"]) == ["Chicken Chow Mein"]
+
+
+async def test_a_tag_filter_longer_than_any_tag_is_rejected(client):
+    resp = await client.get("/api/recipes", params={"tag": ["x" * 51, "dinner"]})
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("path", ["/api/recipes", "/api/recipes/tags"])
+async def test_a_tag_filter_naming_more_tags_than_anyone_would_tap_is_rejected(client, path):
+    """Every tag is a subquery of its own, so the list has to end somewhere."""
+    resp = await client.get(path, params={"tag": [f"tag{n}" for n in range(21)]})
+    assert resp.status_code == 422
+    resp = await client.get(path, params={"tag": [f"tag{n}" for n in range(20)]})
+    assert resp.status_code == 200
+
+
+async def test_tags_endpoint_counts_what_adding_each_tag_would_leave(client):
+    """With a tag selected, each count is what selecting that one too gives.
+
+    A tag none of the remaining recipes carry is still listed, at zero, so the
+    bar keeps its shape and can dim it rather than have it vanish under the
+    finger.
+    """
+    await make_recipe(client, "Kung Pao Chicken", tags=["dinner", "chinese", "spicy"])
+    await make_recipe(client, "Mapo Tofu", tags=["dinner", "chinese", "spicy"])
+    await make_recipe(client, "Meatloaf", tags=["dinner"])
+    await make_recipe(client, "Congee", tags=["breakfast", "chinese"])
+
+    resp = await client.get("/api/recipes/tags", params={"tag": "dinner"})
+    assert resp.status_code == 200
+    assert resp.json() == [
+        {"name": "breakfast", "count": 0},
+        {"name": "chinese", "count": 2},
+        {"name": "dinner", "count": 3},
+        {"name": "spicy", "count": 2},
+    ]
+
+
+async def test_tags_endpoint_counts_within_several_tags(client):
+    await make_recipe(client, "Kung Pao Chicken", tags=["dinner", "chinese", "spicy"])
+    await make_recipe(client, "Chow Mein", tags=["dinner", "chinese"])
+    await make_recipe(client, "Meatloaf", tags=["dinner"])
+
+    resp = await client.get("/api/recipes/tags", params={"tag": ["Dinner", "chinese"]})
+    counts = {t["name"]: t["count"] for t in resp.json()}
+    assert counts == {"chinese": 2, "dinner": 2, "spicy": 1}
+
+
+async def test_tags_endpoint_counts_within_the_search(client):
+    await make_recipe(client, "Chicken Curry", tags=["dinner", "indian"])
+    await make_recipe(client, "Chicken Soup", tags=["dinner", "soup"])
+    await make_recipe(client, "Lentil Soup", tags=["soup"])
+
+    resp = await client.get("/api/recipes/tags", params={"q": "chicken"})
+    counts = {t["name"]: t["count"] for t in resp.json()}
+    assert counts == {"dinner": 2, "indian": 1, "soup": 1}

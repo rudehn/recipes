@@ -5,6 +5,11 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
+# The longest a tag can be. Saving cuts a tag to it, the list filter refuses
+# a longer one, and the importer drops a longer suggestion; one number, so
+# none of them can admit a tag another would not.
+MAX_TAG_LENGTH = 50
+
 
 class StoreOut(BaseModel):
     """A Kroger store, carried exactly as Kroger describes it."""
@@ -74,7 +79,7 @@ class RecipeIn(BaseModel):
     def normalized_tags(self) -> list[str]:
         seen: dict[str, None] = {}
         for tag in self.tags:
-            cleaned = tag.strip().lower()[:50]
+            cleaned = tag.strip().lower()[:MAX_TAG_LENGTH]
             if cleaned:
                 seen.setdefault(cleaned, None)
         return list(seen)
@@ -799,6 +804,10 @@ class RecipeDraft(BaseModel):
     cook_minutes: int | None = None
     servings: int | None = None
     ingredients: list[IngredientIn] = []
+    # Suggested from the page's own category and cuisine, spelled the way the
+    # recipe box already spells them. Only suggestions: the form shows them
+    # for the person to keep or drop, and nothing is tagged until they save.
+    tags: list[str] = []
     image_url: str | None = None
     source_url: str
     # Human-readable name of the site this came from ("Budget Bytes"), for the

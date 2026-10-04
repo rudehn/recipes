@@ -29,7 +29,7 @@ dropped. See ``relevance``."""
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from html import unescape
 from urllib.parse import urlsplit
@@ -167,7 +167,9 @@ async def _search_site(
         return []
 
 
-async def _fetch_draft(client: httpx.AsyncClient, url: str) -> RecipeDraft | None:
+async def _fetch_draft(
+    client: httpx.AsyncClient, url: str, known_tags: Collection[str]
+) -> RecipeDraft | None:
     """Parsed recipe at ``url``, or None if it cannot be read as one. Pages
     that fail are dropped silently; partial results beat an error page."""
     try:
@@ -176,7 +178,7 @@ async def _fetch_draft(client: httpx.AsyncClient, url: str) -> RecipeDraft | Non
     except httpx.HTTPError:
         return None
     try:
-        draft = parse_recipe_html(resp.text, url)
+        draft = parse_recipe_html(resp.text, url, known_tags)
     except RecipeNotFound:
         return None
     draft.source_label = site_label(url)
@@ -199,7 +201,9 @@ def _interleave(per_site: Sequence[Sequence[Candidate]]) -> list[Candidate]:
     return ordered
 
 
-async def search_recipes(query: str, limit: int = MAX_RESULTS) -> list[RecipeDraft]:
+async def search_recipes(
+    query: str, known_tags: Collection[str] = (), limit: int = MAX_RESULTS
+) -> list[RecipeDraft]:
     """Drafts for ``query`` gathered across the allowlist, most relevant first.
 
     Ranking happens twice, because the two stages know different things. Before
@@ -208,7 +212,9 @@ async def search_recipes(query: str, limit: int = MAX_RESULTS) -> list[RecipeDra
     recomputed over its description and ingredients to order what is shown and
     to drop anything that turned out not to be about the query at all.
 
-    Results are unsaved: the caller previews them and picks one."""
+    Results are unsaved: the caller previews them and picks one. Their
+    suggested tags are spelled against ``known_tags``, the tags already in the
+    recipe box, exactly as an imported URL's are."""
     terms = query_terms(query)
     # Nothing to match on - punctuation, say. Every result would score zero, so
     # the sites are spared a search whose outcome is already known.
@@ -230,7 +236,7 @@ async def search_recipes(query: str, limit: int = MAX_RESULTS) -> list[RecipeDra
 
         async def guarded(candidate: Candidate) -> RecipeDraft | None:
             async with gate:
-                return await _fetch_draft(client, candidate.url)
+                return await _fetch_draft(client, candidate.url, known_tags)
 
         drafts = await asyncio.gather(*(guarded(c) for c in candidates))
 
