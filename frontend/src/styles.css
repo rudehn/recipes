@@ -3256,42 +3256,6 @@ body.has-install-hint .page {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-/* ---------- Remembered products ---------- */
-
-.picks {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.pick {
-  display: flex;
-  align-items: center;
-  gap: var(--space-12);
-  padding: var(--space-8) 0;
-  border-top: 1px solid var(--line-soft);
-}
-
-.pick:first-child { border-top: none; }
-
-.pick-name {
-  flex: 0 0 10rem;
-  font-weight: var(--weight-semibold);
-  overflow-wrap: anywhere;
-}
-
-.pick-product {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-sm);
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-
-.pick-product .pick-tag { margin-left: var(--space-6); }
-
-.pick .btn { flex: none; }
-
 /* ---------- Pantry ---------- */
 
 .settings-layout { max-width: var(--width-compact); }
@@ -4133,10 +4097,6 @@ body.has-install-hint .page {
   .grocery-section h2 { flex-wrap: wrap; }
 
   .order-toggle { margin-left: 0; flex: 0 0 100%; }
-
-  .pick { flex-wrap: wrap; }
-
-  .pick-name { flex: 1 0 100%; }
 
   .cart-lines .product { flex: 1 0 100%; text-align: left; }
 

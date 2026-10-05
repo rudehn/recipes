@@ -35,7 +35,6 @@ from ...schemas import (
     ItemPrice,
     RecipeOnSale,
     RecipeSummary,
-    RememberedPick,
     SaleItem,
 )
 from .. import settings as settings_service
@@ -370,39 +369,3 @@ async def attach_prices(session: AsyncSession, grocery_list: GroceryList) -> Gro
         total_lines=len(paying),
     )
     return grocery_list
-
-
-async def remembered_picks(session: AsyncSession, location_id: str) -> list[RememberedPick]:
-    """Every ingredient with a remembered answer at this store, by name.
-
-    Read straight from the rows rather than re-resolved: this is a view of
-    what has been decided, and looking must not decide anything.
-    """
-    rows = (
-        await session.execute(
-            select(IngredientProductMatch).where(
-                IngredientProductMatch.location_id == location_id
-            )
-        )
-    ).scalars().all()
-    if not rows:
-        return []
-    wanted = sorted({row.product_id for row in rows if row.product_id})
-    found = await products.by_ids(wanted, location_id) if wanted else {}
-    names = await _ingredient_names(session)
-    picks = [
-        RememberedPick(
-            key=row.canonical_key,
-            name=names.get(row.canonical_key) or row.canonical_key.replace("-", " "),
-            product=(
-                as_item_price(product)
-                if (product := found.get(row.product_id or "")) is not None
-                else None
-            ),
-            hand_picked=row.user_confirmed,
-            resolved_at=row.resolved_at,
-        )
-        for row in rows
-    ]
-    picks.sort(key=lambda p: p.name.casefold())
-    return picks

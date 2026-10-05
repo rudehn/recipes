@@ -279,21 +279,6 @@ class RecipeOnSale(BaseModel):
     ingredient_count: int
 
 
-class RememberedPick(BaseModel):
-    """One ingredient's remembered product at the chosen store.
-
-    `product` is absent for a line that matched nothing or was marked as not
-    to be priced; `hand_picked` says which of those, and whether a present
-    product was the shopper's choice or the matcher's.
-    """
-
-    key: str
-    name: str
-    product: ItemPrice | None = None
-    hand_picked: bool
-    resolved_at: datetime
-
-
 class CostLine(BaseModel):
     """What one ingredient costs a recipe.
 

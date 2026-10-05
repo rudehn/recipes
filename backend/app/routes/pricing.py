@@ -19,7 +19,6 @@ from ..schemas import (
     ItemPrice,
     MatchSelection,
     PricingStatus,
-    RememberedPick,
     StoreOut,
     StoreSelection,
 )
@@ -126,21 +125,6 @@ async def alternatives(
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
     priced = [p for p in matching.ranked(found, rank_by) if p.regular is not None]
     return [pricing.as_item_price(p) for p in priced[:ALTERNATIVES]]
-
-
-@router.get("/matches", response_model=list[RememberedPick])
-async def remembered_picks(session: AsyncSession = Depends(get_session)):
-    """Every ingredient this store has an answer for, and what the answer is.
-
-    The one place the remembered picks can be seen together: which were a
-    person's, which the matcher's, and which are "price nothing". Costs one
-    batched lookup for the products, never a search.
-    """
-    store = await _require_store(session)
-    try:
-        return await pricing.remembered_picks(session, store.location_id)
-    except kroger.KrogerError:
-        raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
 
 @router.put("/match", status_code=204)

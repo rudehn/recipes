@@ -729,32 +729,6 @@ async def test_recipes_mostly_in_the_pantry_are_suggested_without_kroger(client,
     assert body["cheap"] == []
 
 
-# ------------------------------------------------------ remembered picks ---
-
-
-async def test_every_remembered_pick_can_be_seen_together(client, catalog):
-    await seed(["flour", "sugar", "saffron"])
-    await fetch(client)
-    async with session_factory() as session:
-        await matching.confirm(session, "sugar", LOCATION, "0002")
-
-    resp = await client.get("/api/pricing/matches")
-
-    assert resp.status_code == 200
-    body = {p["key"]: p for p in resp.json()}
-    assert body["flour"]["hand_picked"] is False
-    assert body["flour"]["product"]["description"] == "Kroger® All Purpose Flour"
-    assert body["sugar"]["hand_picked"] is True
-    assert body["saffron"]["product"] is None
-    assert body["saffron"]["name"] == "saffron"
-
-
-async def test_remembered_picks_need_a_store(client, catalog):
-    await seed([], store=False)
-
-    assert (await client.get("/api/pricing/matches")).status_code == 409
-
-
 # ----------------------------------------------------- list then prices ---
 
 

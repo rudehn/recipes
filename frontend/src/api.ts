@@ -583,15 +583,6 @@ export interface RecipeAttention {
   no_servings: boolean;
 }
 
-/** One ingredient's remembered product at the chosen store. */
-export interface RememberedPick {
-  key: string;
-  name: string;
-  product: ItemPrice | null;
-  hand_picked: boolean;
-  resolved_at: string;
-}
-
 /**
  * What the shopper has said about a line this trip.
  *
@@ -1019,7 +1010,6 @@ export const api = {
   planCost: (start: string, end: string) =>
     request<PlanCost | null>(`/api/meal-plan/cost${queryString({ start, end })}`),
   /** Every ingredient the chosen store has a remembered answer for. */
-  rememberedPicks: () => request<RememberedPick[]>("/api/pricing/matches"),
   /** `q` searches words of the person's own instead of the ingredient's name. */
   matchAlternatives: (key: string, q?: string) =>
     request<ItemPrice[]>(`/api/pricing/alternatives${queryString({ key, q })}`),
