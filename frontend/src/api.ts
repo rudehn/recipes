@@ -725,6 +725,22 @@ export class NetworkError extends Error {
   }
 }
 
+/**
+ * The server answered, and the answer was no. Its status lets a page tell
+ * "there is nothing here" (404) from "something went wrong", which a bare
+ * message cannot. `message` is still the server's sentence, so every place
+ * that shows `errorMessage(e)` reads the same as before.
+ */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    detail: string,
+  ) {
+    super(detail);
+    this.name = "ApiError";
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let resp: Response;
   try {
@@ -747,7 +763,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       // keep statusText
     }
-    throw new Error(detail);
+    throw new ApiError(resp.status, detail);
   }
   if (resp.status === 204) return undefined as T;
   // The server is the only source of these shapes, so the caller's `T` is the

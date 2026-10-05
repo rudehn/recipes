@@ -6,6 +6,7 @@ import { InstallHint } from "./components/InstallHint";
 import { PHONE, below } from "./layout";
 import CookPage from "./pages/CookPage";
 import GroceryPage from "./pages/GroceryPage";
+import IngredientPage from "./pages/IngredientPage";
 import IngredientsPage from "./pages/IngredientsPage";
 import PlannerPage from "./pages/PlannerPage";
 import RecipeDetailPage from "./pages/RecipeDetailPage";
@@ -79,6 +80,7 @@ export default function App() {
         <Route path="/planner" element={<PlannerPage />} />
         <Route path="/groceries" element={<GroceryPage />} />
         <Route path="/ingredients" element={<IngredientsPage />} />
+        <Route path="/ingredients/:key" element={<IngredientPage />} />
         {/* Pantry's old address, kept for bookmarks and the installed app's
             shortcuts: its job is the Ingredients tab's Staples view now. */}
         <Route path="/pantry" element={<Navigate to="/ingredients" replace />} />

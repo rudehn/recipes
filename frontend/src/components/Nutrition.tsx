@@ -226,9 +226,9 @@ export function FoodPickerModal({
   onPick,
   onClose,
 }: {
-  line: NutritionLine;
-  /** The recipe the picker was opened from, which is not an "other" recipe. */
-  recipeId: number;
+  line: Pick<NutritionLine, "key" | "name" | "food">;
+  /** The recipe the picker was opened from, which is not an "other" recipe. Absent on an ingredient's own page. */
+  recipeId?: number;
   /** Null: the ingredient does not count. */
   onPick: (food: FoodChoice | null) => void;
   onClose: () => void;
@@ -262,10 +262,11 @@ export function FoodPickerModal({
       {uses && (
         <p className="modal-reach">
           {others.length === 0
-            ? `No other recipe uses “${line.name}” yet. A choice here holds for any that do later.`
-            : `Also changes ${plural(others.length, "other recipe")}: ${named.join(", ")}${
-                unnamed > 0 ? ` and ${unnamed} more` : ""
-              }.`}
+            ? `No ${recipeId === undefined ? "" : "other "}recipe uses “${line.name}” yet. A choice here holds for any that do later.`
+            : `${recipeId === undefined ? "Changes" : "Also changes"} ${plural(
+                others.length,
+                recipeId === undefined ? "recipe" : "other recipe",
+              )}: ${named.join(", ")}${unnamed > 0 ? ` and ${unnamed} more` : ""}.`}
         </p>
       )}
       <div className="modal-search">

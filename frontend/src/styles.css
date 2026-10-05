@@ -3412,6 +3412,29 @@ body.has-install-hint .page {
 
 .ingredient-row .tags { display: flex; flex-wrap: wrap; gap: var(--space-6); }
 
+.ingredient-layout { max-width: var(--width-compact); }
+
+.ingredient-layout section + section { margin-top: var(--space-16); }
+
+.also-called { color: var(--muted); margin: 0 0 var(--space-16); }
+
+.ingredient-facts { display: grid; gap: var(--space-12); }
+
+.ingredient-facts .fact { display: grid; gap: var(--space-2); margin: 0; }
+
+.ingredient-facts .fact .what { font-weight: var(--weight-semibold); }
+
+.ingredient-facts .fact .detail,
+.ingredient-facts .muted { color: var(--muted); }
+
+.fact-actions { display: flex; flex-wrap: wrap; gap: var(--space-8); }
+
+.ingredient-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-10); }
+
+.ingredient-lines li { display: grid; gap: var(--space-2); }
+
+.ingredient-lines .recipe { color: var(--muted); font-size: var(--text-sm); }
+
 .stock-toggle {
   display: inline-flex;
   align-items: center;
