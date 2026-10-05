@@ -48,3 +48,8 @@ If this ever holds more than one household's data, that stops being true and the
 **Tests exist to make this visible.**
 `tests/test_canonical.py` covers the merge behaviour, and any change that moves a key should be expected to move tests with it.
 If it does not, the change is probably not doing what its author thinks.
+
+## Note, October 2026
+
+The owner can now correct this key where it is wrong, by merging two names; see ADR 10.
+Code no longer calls `canonical_key` to compare ingredients, but `services.identity`, which applies the merges on top of it.

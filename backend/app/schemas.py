@@ -936,3 +936,21 @@ class ImageFromUrl(BaseModel):
 class CopyWeekRequest(BaseModel):
     from_start: date
     to_start: date
+
+
+# Which side of a merge keeps a thing both sides have: the name being merged
+# away ("from") or the one it is merged into ("to").
+MergeSide = Literal["from", "to"]
+MergeNeed = Literal["product", "food", "staple"]
+
+
+class MergeChoices(BaseModel):
+    """What to keep where both names have one and no rule can decide.
+
+    Only asked for when both sides hold a hand-picked product (or food) and
+    they differ, or both are staples. See services.merges.
+    """
+
+    product: MergeSide | None = None
+    food: MergeSide | None = None
+    staple: MergeSide | None = None
