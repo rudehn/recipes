@@ -1042,3 +1042,69 @@ class IngredientDetail(IngredientSummary):
 class IngredientList(BaseModel):
     ingredients: list[IngredientSummary]
     suggestions: list[MergeSuggestion] = []
+
+
+class ProductSide(BaseModel):
+    product: ItemPrice | None = None
+    hand_picked: bool
+    not_priced: bool = False
+
+
+class FoodSide(BaseModel):
+    food: FoodOut | None = None
+    hand_picked: bool
+    skipped: bool = False
+
+
+class StapleSide(BaseModel):
+    name: str
+    in_stock: bool
+
+
+# Each side as it stands, and which side the merge keeps. `keeps` is null
+# exactly when the owner has to choose, which is also when `needs` names it.
+class ProductConflict(BaseModel):
+    from_side: ProductSide | None = None
+    to_side: ProductSide | None = None
+    keeps: MergeSide | None = None
+
+
+class FoodConflict(BaseModel):
+    from_side: FoodSide | None = None
+    to_side: FoodSide | None = None
+    keeps: MergeSide | None = None
+
+
+class StapleConflict(BaseModel):
+    from_side: StapleSide | None = None
+    to_side: StapleSide | None = None
+    keeps: MergeSide | None = None
+
+
+class MergePreview(BaseModel):
+    """What merging one ingredient into another would change, before it does."""
+
+    from_key: str
+    from_name: str
+    to_key: str
+    to_name: str
+    # Recipes with lines under the name going away. They keep their wording.
+    recipes: list[RecipeRef]
+    product: ProductConflict | None = None
+    food: FoodConflict | None = None
+    staple: StapleConflict | None = None
+    needs: list[MergeNeed] = []
+
+
+class MergeRequest(BaseModel):
+    from_key: str = Field(min_length=1, max_length=300)
+    to_key: str = Field(min_length=1, max_length=300)
+
+
+class MergeIn(MergeRequest):
+    choices: MergeChoices = MergeChoices()
+
+
+class DismissRequest(BaseModel):
+    key_a: str = Field(min_length=1, max_length=300)
+    key_b: str = Field(min_length=1, max_length=300)

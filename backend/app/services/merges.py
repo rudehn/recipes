@@ -28,7 +28,20 @@ from ..models import (
     IngredientProductMatch,
     PantryItem,
 )
-from ..schemas import MergeChoices, MergeNeed, MergeSide
+from ..schemas import (
+    FoodConflict,
+    FoodSide,
+    MergeChoices,
+    MergeNeed,
+    MergePreview,
+    MergeSide,
+    ProductConflict,
+    ProductSide,
+    RecipeRef,
+    StapleConflict,
+    StapleSide,
+)
+from . import ingredients
 from .identity import Identity
 from .nutrition.defaults import STATE_WORDS
 
@@ -240,3 +253,88 @@ async def unmerge(session: AsyncSession, from_key: str) -> None:
     await session.delete(row)
     await session.commit()
     Identity.forget(session)
+
+
+def _keeps(from_side, to_side, from_wins: bool, chosen: bool) -> MergeSide | None:
+    """Which side a merge keeps, or None when the owner has to choose."""
+    if chosen:
+        return None
+    if from_side is not None and (to_side is None or from_wins):
+        return "from"
+    return "to"
+
+
+async def preview(session: AsyncSession, from_key: str, to_key: str) -> MergePreview:
+    """What merging `from_key` into `to_key` would change, at the chosen store.
+
+    Products are shown as they stand at the store prices are quoted against;
+    a choice made here applies at every store where both names hold a
+    different hand pick, which is what `needs` reports.
+    """
+    wanted = await needs(session, from_key, to_key)
+    listing = {s.key: s for s in (await ingredients.list_ingredients(session)).ingredients}
+    source, target = listing[from_key], listing[to_key]
+    going = await ingredients.ingredient(session, from_key)
+
+    def product_side(summary) -> ProductSide | None:
+        standing = summary.product
+        if standing is None or standing.status in ("unseen", "no_match"):
+            return None
+        return ProductSide(
+            product=standing.product,
+            hand_picked=standing.status in ("picked", "not_priced"),
+            not_priced=standing.status == "not_priced",
+        )
+
+    def food_side(summary) -> FoodSide | None:
+        food = summary.food
+        if food.status == "none":
+            return None
+        return FoodSide(
+            food=food.food,
+            hand_picked=food.status in ("picked", "skipped"),
+            skipped=food.status == "skipped",
+        )
+
+    def staple_side(summary) -> StapleSide | None:
+        staple = summary.staple
+        return StapleSide(name=staple.name, in_stock=staple.in_stock) if staple else None
+
+    product = None
+    p_from, p_to = product_side(source), product_side(target)
+    if p_from or p_to:
+        from_wins = bool(p_from and p_from.hand_picked and not (p_to and p_to.hand_picked))
+        product = ProductConflict(
+            from_side=p_from,
+            to_side=p_to,
+            keeps=_keeps(p_from, p_to, from_wins, "product" in wanted),
+        )
+    food = None
+    f_from, f_to = food_side(source), food_side(target)
+    if f_from or f_to:
+        from_wins = bool(f_from and f_from.hand_picked and not (f_to and f_to.hand_picked))
+        food = FoodConflict(
+            from_side=f_from, to_side=f_to, keeps=_keeps(f_from, f_to, from_wins, "food" in wanted)
+        )
+    staple = None
+    s_from, s_to = staple_side(source), staple_side(target)
+    if s_from or s_to:
+        # One staple is kept whichever side it is on; two need a choice.
+        staple = StapleConflict(
+            from_side=s_from,
+            to_side=s_to,
+            keeps=None if "staple" in wanted else ("to" if s_to else "from"),
+        )
+
+    recipes = {line.recipe_id: line.recipe_title for line in (going.lines if going else [])}
+    return MergePreview(
+        from_key=from_key,
+        from_name=source.name,
+        to_key=to_key,
+        to_name=target.name,
+        recipes=[RecipeRef(id=rid, title=title) for rid, title in recipes.items()],
+        product=product,
+        food=food,
+        staple=staple,
+        needs=wanted,
+    )

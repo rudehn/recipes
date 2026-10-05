@@ -186,3 +186,137 @@ async def test_a_name_nothing_uses_is_not_found(client):
 
     assert resp.status_code == 404
     assert resp.json()["detail"] == "No ingredient called that."
+
+
+async def test_preview_says_what_a_merge_would_change(client):
+    chili = await recipe(client, "Chili", [("ground cumin", 2, "tsp")])
+    await recipe(client, "Salsa", [("cumin", 1, "tsp")])
+    await client.post("/api/pantry", json={"name": "Cumin", "in_stock": True})
+    async with session_factory() as session:
+        session.add(IngredientFoodMatch(key="ground-cumin", fdc_id=None))
+        await session.commit()
+
+    resp = await client.post(
+        "/api/ingredients/merges/preview", json={"from_key": "ground-cumin", "to_key": "cumin"}
+    )
+    assert resp.status_code == 200, resp.text
+    preview = resp.json()
+
+    assert preview["from_name"] == "ground cumin"
+    assert preview["to_name"] == "Cumin"
+    assert preview["recipes"] == [{"id": chili, "title": "Chili"}]
+    assert preview["product"] is None
+    assert preview["food"]["from_side"]["skipped"] is True
+    assert preview["food"]["to_side"]["hand_picked"] is False
+    assert preview["food"]["keeps"] == "from"
+    assert preview["staple"] == {
+        "from_side": None,
+        "to_side": {"name": "Cumin", "in_stock": True},
+        "keeps": "to",
+    }
+    assert preview["needs"] == []
+
+
+async def test_preview_and_merge_ask_when_both_are_staples(client):
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    await client.post("/api/pantry", json={"name": "Ground Cumin", "in_stock": False})
+    await client.post("/api/pantry", json={"name": "Cumin", "in_stock": True})
+    pair = {"from_key": "ground-cumin", "to_key": "cumin"}
+
+    preview = (await client.post("/api/ingredients/merges/preview", json=pair)).json()
+    assert preview["needs"] == ["staple"]
+    assert preview["staple"]["keeps"] is None
+
+    refused = await client.post("/api/ingredients/merges", json=pair)
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "Choose which staple to keep."
+
+    done = await client.post("/api/ingredients/merges", json={**pair, "choices": {"staple": "to"}})
+    assert done.status_code == 204
+    assert [i["name"] for i in (await client.get("/api/pantry")).json()] == ["Cumin"]
+
+
+async def test_merge_then_unmerge_through_the_api(client):
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    pair = {"from_key": "ground-cumin", "to_key": "cumin"}
+
+    assert (await client.post("/api/ingredients/merges", json=pair)).status_code == 204
+    assert sorted(await listing(client)) == ["cumin"]
+
+    assert (await client.delete("/api/ingredients/merges/ground-cumin")).status_code == 204
+    assert sorted(await listing(client)) == ["cumin", "ground-cumin"]
+    assert (await client.delete("/api/ingredients/merges/ground-cumin")).status_code == 404
+
+
+async def test_a_reversed_merge_is_refused_with_a_sentence(client):
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    await client.post(
+        "/api/ingredients/merges", json={"from_key": "ground-cumin", "to_key": "cumin"}
+    )
+
+    resp = await client.post(
+        "/api/ingredients/merges", json={"from_key": "cumin", "to_key": "ground-cumin"}
+    )
+
+    assert resp.status_code == 409
+    assert "unmerge it first" in resp.json()["detail"]
+
+
+async def test_merging_an_unknown_name_is_not_found(client):
+    await recipe(client, "Chili", [("cumin", 1, "tsp")])
+
+    resp = await client.post(
+        "/api/ingredients/merges/preview", json={"from_key": "saffron", "to_key": "cumin"}
+    )
+
+    assert resp.status_code == 404
+
+
+async def test_preview_loads_with_kroger_failing(client, monkeypatch):
+    monkeypatch.setattr(config, "KROGER_CLIENT_ID", "test-id")
+    monkeypatch.setattr(config, "KROGER_CLIENT_SECRET", "test-secret")
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    async with session_factory() as session:
+        session.add(AppSettings(id=1, kroger_location_id=STORE))
+        session.add(
+            IngredientProductMatch(
+                canonical_key="ground-cumin",
+                location_id=STORE,
+                product_id="111",
+                user_confirmed=True,
+            )
+        )
+        await session.commit()
+
+    async def no_kroger(*args, **kwargs):
+        raise kroger_client.KrogerError("down")
+
+    monkeypatch.setattr(products, "by_ids", no_kroger)
+
+    preview = (
+        await client.post(
+            "/api/ingredients/merges/preview", json={"from_key": "ground-cumin", "to_key": "cumin"}
+        )
+    ).json()
+
+    assert preview["product"]["from_side"] == {
+        "product": None,
+        "hand_picked": True,
+        "not_priced": False,
+    }
+    assert preview["product"]["keeps"] == "from"
+
+
+async def test_suggestions_can_be_listed_and_turned_down(client):
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+
+    assert len((await client.get("/api/ingredients/suggestions")).json()) == 1
+    resp = await client.post(
+        "/api/ingredients/suggestions/dismiss", json={"key_a": "ground-cumin", "key_b": "cumin"}
+    )
+    assert resp.status_code == 204
+    # Saying it twice is the same as once.
+    await client.post(
+        "/api/ingredients/suggestions/dismiss", json={"key_a": "cumin", "key_b": "ground-cumin"}
+    )
+    assert (await client.get("/api/ingredients/suggestions")).json() == []
