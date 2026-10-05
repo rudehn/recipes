@@ -11,6 +11,7 @@ from app.db import session_factory
 from app.models import IngredientMerge
 from app.services.canonical import canonical_key
 from app.services.identity import Identity
+from app.services.nutrition.defaults import nutrition_key as defaults_nutrition_key
 
 
 def test_without_merges_it_is_the_canonical_key():
@@ -37,7 +38,7 @@ def test_nutrition_keeps_state_words_in_front_of_the_merged_key():
     assert identity.nutrition_key("cooked ground cumin") == "cooked-cumin"
     assert identity.nutrition_key("ground cumin") == "cumin"
     # A merge never folds "cooked rice" into "rice": they are two foods.
-    assert Identity.none().nutrition_key("2 cups cooked rice") == "cooked-rice"
+    assert Identity.none().nutrition_key("cooked rice") == "cooked-rice"
     assert Identity.none().nutrition_key("rice") == "rice"
 
 
@@ -56,3 +57,25 @@ async def test_merges_are_read_once_per_session_until_forgotten():
 
         Identity.forget(session)
         assert (await Identity.of(session)).key("yellow onion") == "onion"
+
+
+def test_without_merges_nutrition_keys_are_unchanged():
+    """Guarantee that Identity.none().nutrition_key(n) == defaults.nutrition_key(n).
+
+    Stored food choices are keyed by nutrition_key from defaults, so the
+    Identity's nutrition_key must exactly match it when there are no merges.
+    This ensures the app always finds the right nutrition facts for a food.
+    """
+    identity = Identity.none()
+    test_names = [
+        "22-ounce bag frozen waffle fries",
+        "1-ounce packet ranch seasoning mix",
+        "chicken breasts, cooked and shredded",
+        "cooked rice",
+        "rice",
+        "Large eggs, at room temperature",
+        "ground cumin",
+        "***",
+    ]
+    for name in test_names:
+        assert identity.nutrition_key(name) == defaults_nutrition_key(name)

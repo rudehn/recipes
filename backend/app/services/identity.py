@@ -45,7 +45,7 @@ class Identity:
         return cls(MappingProxyType({}))
 
     @classmethod
-    def from_merges(cls, merges: dict[str, str]) -> "Identity":
+    def from_merges(cls, merges: Mapping[str, str]) -> "Identity":
         return cls(MappingProxyType(dict(merges)))
 
     @classmethod
@@ -86,16 +86,6 @@ class Identity:
         raw = canonical_key(name)
         if not raw:
             return ""
-
-        # Filter out quantity tokens (pure numbers and unit words) that
-        # canonical_key includes but nutrition doesn't need. A quantity like
-        # "2 cups" doesn't change which food it is - "rice" and "2 cups rice"
-        # are the same food, just different amounts.
-        tokens = raw.split("-")
-        quantity_words = {"cup", "cups", "tbsp", "tsp", "oz", "lb", "ml", "g"}
-        kept_tokens = [t for t in tokens if not t.isdigit() and t not in quantity_words]
-        filtered_raw = "-".join(kept_tokens) if kept_tokens else raw
-
         said = set(words(name))
-        state = [w for w in STATE_WORDS if w in said and w not in filtered_raw.split("-")]
-        return "-".join([*state, self.resolve(filtered_raw)])
+        state = [w for w in STATE_WORDS if w in said and w not in raw.split("-")]
+        return "-".join([*state, self.resolve(raw)])
