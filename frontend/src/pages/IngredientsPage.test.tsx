@@ -95,6 +95,10 @@ describe("IngredientsPage: staples", () => {
     await user.click(within(row("rice")).getByRole("button", { name: /in stock/i }));
 
     expect(within(row("rice")).getByRole("button", { name: /out of stock/i })).toBeInTheDocument();
+    // The row moves to the staples to restock at once, not after the save.
+    expect(
+      within(screen.getByRole("region", { name: "To restock" })).getByRole("link", { name: "rice" }),
+    ).toBeInTheDocument();
     const [request] = backend.requestsTo("PUT /api/pantry/:id");
     expect(request.path).toBe(`/api/pantry/${rice.staple!.id}`);
     expect(request.body).toEqual({ in_stock: false });
@@ -125,6 +129,69 @@ describe("IngredientsPage: staples", () => {
 
     expect(await screen.findByText(/Couldn't load your ingredients/)).toBeInTheDocument();
     expect(screen.queryByText("No staples yet")).not.toBeInTheDocument();
+  });
+
+  it("explains why a staple could not be added, keeping what was typed", async () => {
+    mockBackend({
+      "GET /api/ingredients": list(),
+      "POST /api/pantry": new HttpError(409, "olive oil is already in your pantry."),
+    });
+    const { user } = renderApp("/ingredients");
+    await screen.findByText("No staples yet");
+
+    await user.type(screen.getByLabelText("Add a staple"), "olive oil");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("olive oil is already in your pantry.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add a staple")).toHaveValue("olive oil");
+  });
+
+  it("puts a staple back in stock", async () => {
+    const rice = staple("rice", false);
+    const backend = mockBackend({
+      "GET /api/ingredients": list(rice),
+      "PUT /api/pantry/:id": { ...rice.staple, in_stock: true },
+    });
+    const { user } = renderApp("/ingredients");
+    await screen.findByRole("link", { name: "rice" });
+
+    await user.click(within(row("rice")).getByRole("button", { name: /out of stock/i }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PUT /api/pantry/:id")[0].body).toEqual({ in_stock: true }),
+    );
+  });
+
+  it("retries a failed load", async () => {
+    let attempt = 0;
+    const backend = mockBackend({
+      "GET /api/ingredients": () =>
+        ++attempt === 1 ? new HttpError(503, "Server is restarting") : list(staple("rice")),
+    });
+    const { user } = renderApp("/ingredients");
+    await screen.findByText(/Couldn't load your ingredients/);
+
+    await user.click(screen.getByRole("button", { name: /try again/i }));
+
+    expect(await screen.findByRole("link", { name: "rice" })).toBeInTheDocument();
+    expect(backend.requestsTo("GET /api/ingredients")).toHaveLength(2);
+  });
+
+  it("keeps the staples on screen when a refresh fails", async () => {
+    let attempt = 0;
+    mockBackend({
+      "GET /api/ingredients": () =>
+        ++attempt === 1 ? list(staple("rice")) : new HttpError(503, "Server is restarting"),
+      "PUT /api/pantry/:id": undefined,
+    });
+    const { user } = renderApp("/ingredients");
+    await screen.findByRole("link", { name: "rice" });
+
+    await user.click(within(row("rice")).getByRole("button", { name: /in stock/i }));
+
+    expect(await screen.findByText(/Showing the last version that loaded/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "rice" })).toBeInTheDocument();
+    expect(screen.queryByText(/Couldn't load your ingredients/)).not.toBeInTheDocument();
   });
 
   it("is where the old pantry address goes", async () => {
