@@ -3491,6 +3491,9 @@ body.has-install-hint .page {
 
 .reread-list .before { color: var(--muted); }
 
+/* Quieter than the line it is about, like the line's own "before". */
+.reread-list .unchanged { color: var(--muted); font-size: var(--text-sm); }
+
 .stock-toggle {
   display: inline-flex;
   align-items: center;

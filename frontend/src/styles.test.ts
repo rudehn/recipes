@@ -366,6 +366,12 @@ describe("an ingredient's panels", () => {
     expect(css.search(/\n\.line-fixer-fields\s*\{/)).toBeLessThan(css.indexOf(`@media ${below(PHONE)} {`));
   });
 
+  it("say a line read again is unchanged more quietly than the line that changed", () => {
+    // Written as a bare "muted" class, which is only styled inside a panel's
+    // facts, it came out in full ink beside the muted line it was about.
+    expect(css).toMatch(/\.reread-list \.unchanged\s*\{[^}]*color:\s*var\(--muted\)/);
+  });
+
   it("hold the suggested merges on their own edges, with no rule under the last", () => {
     expect(css).toMatch(/\.panel \.suggestion-row\s*\{[^}]*padding-inline:\s*0/);
     expect(css).toMatch(/\.panel \.suggestion-row:last-child\s*\{[^}]*border-bottom:\s*none/);

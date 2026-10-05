@@ -287,7 +287,7 @@ export default function IngredientPage() {
             </Banner>
           )}
           {data.lines.length === 0 ? (
-            <p className="muted">No recipe uses it; it is here as a staple.</p>
+            <p className="empty-note">No recipe uses it; it is here as a staple.</p>
           ) : (
             <ul className="ingredient-lines">
               {data.lines.map((line) =>
@@ -387,7 +387,7 @@ export default function IngredientPage() {
                     {changed ? (
                       <span className="after">→ {lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.after })}</span>
                     ) : (
-                      <span className="muted">unchanged</span>
+                      <span className="unchanged">unchanged</span>
                     )}
                   </li>
                 );
