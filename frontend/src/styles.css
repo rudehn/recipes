@@ -4213,6 +4213,12 @@ body.has-install-hint .page {
   .ingredient-row > :nth-child(3) { grid-area: 1 / 1 / 2 / 3; }
   .ingredient-row > :nth-child(4) { grid-area: 1 / 3; }
 
+  /* The same for a line fixed on an ingredient's page. In three fifths of a
+     phone's width the name read "black beans, drained a" - and the name is
+     what reading a line again is there to check. */
+  .line-fixer-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .line-fixer-fields > :nth-child(3) { grid-area: 1 / 1 / 2 / 3; }
+
   /* The URL is the long thing in the row and the button is the short one, so
      the button gives up its place in the line rather than the field giving up
      its last twenty characters to a placeholder that reads "Paste a recipe

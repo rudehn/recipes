@@ -355,6 +355,17 @@ describe("an ingredient's panels", () => {
    * ruled off; in a panel that started them a step in from the heading and
    * left a stray rule just inside the panel's bottom edge.
    */
+  it("give a line's name the whole width on a phone, above its amount", () => {
+    // In three fifths of a phone's width "black beans, drained and rinsed"
+    // read "black beans, drained a", and the name is what a fix is checking.
+    const phone = mediaBlock(below(PHONE));
+    expect(phone).toMatch(/\.line-fixer-fields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/);
+    expect(phone).toMatch(/\.line-fixer-fields > :nth-child\(3\)\s*\{[^}]*grid-area:\s*1 \/ 1 \/ 2 \/ 3/);
+    // The phone's rule wins only if the one it overrides comes first; these
+    // rules once sat at the end of the file, where they beat it.
+    expect(css.search(/\n\.line-fixer-fields\s*\{/)).toBeLessThan(css.indexOf(`@media ${below(PHONE)} {`));
+  });
+
   it("hold the suggested merges on their own edges, with no rule under the last", () => {
     expect(css).toMatch(/\.panel \.suggestion-row\s*\{[^}]*padding-inline:\s*0/);
     expect(css).toMatch(/\.panel \.suggestion-row:last-child\s*\{[^}]*border-bottom:\s*none/);
