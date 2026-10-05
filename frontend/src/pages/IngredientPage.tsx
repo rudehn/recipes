@@ -269,7 +269,10 @@ export default function IngredientPage() {
           onClose={() => setMerging(null)}
           onMerged={(done) => {
             setMerging(null);
+            // From the target's own page this navigates to where we already
+            // are, which does not re-run the load, so reload explicitly.
             navigate(`/ingredients/${done.toKey}`, { state: { merged: done } });
+            reload();
           }}
         />
       )}
@@ -286,7 +289,12 @@ export default function IngredientPage() {
               onClick={() => {
                 const going = unmerging;
                 setUnmerging(null);
-                void change(() => api.unmerge(going.key));
+                // The banner offers to undo a merge; once any name is unmerged it
+                // may be stale, so drop it.
+                void change(async () => {
+                  await api.unmerge(going.key);
+                  navigate(location.pathname, { replace: true, state: null });
+                });
               }}
             >
               Unmerge

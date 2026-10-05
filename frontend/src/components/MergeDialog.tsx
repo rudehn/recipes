@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import {
   api,
@@ -66,6 +66,9 @@ export function MergeDialog({
     <Modal title={chosen ? "Merge" : "Same as another ingredient"} onClose={onClose}>
       {chosen ? (
         <MergePreviewPanel
+          // A new direction is a new question: remount so neither the old
+          // preview nor answers to it can be acted on while the new one loads.
+          key={`${chosen[0]}>${chosen[1]}`}
           pair={chosen}
           onSwap={() => setChosen([chosen[1], chosen[0]])}
           onMerged={onMerged}
@@ -112,9 +115,6 @@ function MergePreviewPanel({
   const [choices, setChoices] = useState<MergeChoices>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [merging, setMerging] = useState(false);
-
-  // A new direction is a new question; answers to the old one do not carry.
-  useEffect(() => setChoices({}), [from, to]);
 
   if (error) return <Banner tone="error">{error}</Banner>;
   if (!preview) return <p className="modal-note">Looking…</p>;
@@ -227,10 +227,13 @@ function ConflictLine<T>({
       </li>
     );
   }
-  const kept = conflict.keeps === "from" ? conflict.from_side : conflict.to_side;
-  return kept === null ? null : (
+  const [kept, other] =
+    conflict.keeps === "from" ? [conflict.from_side, conflict.to_side] : [conflict.to_side, conflict.from_side];
+  if (kept === null) return null;
+  return (
     <li>
       {label}: {describe(kept)}
+      {other !== null && `, kept over ${describe(other)}`}
     </li>
   );
 }
