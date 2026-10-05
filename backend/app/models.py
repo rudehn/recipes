@@ -308,3 +308,33 @@ class CartSentLine(Base):
     description: Mapped[str] = mapped_column(String(300))
     quantity: Mapped[int] = mapped_column(Integer)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IngredientMerge(Base):
+    """Two names the owner says are one ingredient: `from_key` now means `to_key`.
+
+    Keys are `services.canonical.canonical_key` values. A `to_key` is never
+    itself a `from_key`: merging the target onward later repoints every row
+    at it, so looking a key up is one step and never follows a chain. See
+    ADR 10, and `services.identity`, the only reader.
+    """
+
+    __tablename__ = "ingredient_merges"
+
+    from_key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    to_key: Mapped[str] = mapped_column(String(300), index=True)
+    merged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class IngredientMergeDismissal(Base):
+    """A suggested merge the owner said was wrong, so it is not offered again.
+
+    Stored as an ordered pair (`key_a` < `key_b`) so the same two names are
+    one row whichever way round the suggestion pointed.
+    """
+
+    __tablename__ = "ingredient_merge_dismissals"
+
+    key_a: Mapped[str] = mapped_column(String(300), primary_key=True)
+    key_b: Mapped[str] = mapped_column(String(300), primary_key=True)
+    dismissed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
