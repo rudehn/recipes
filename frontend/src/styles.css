@@ -4152,6 +4152,14 @@ body.has-install-hint .page {
 
   .segmented button { flex: 1; min-height: 40px; }
 
+  /* The Ingredients switcher has the row to itself, and each option is as
+     wide as its label plus a share of what is left. In equal thirds "Needs
+     a look 45" broke over two lines while "All 106" had room to spare; the
+     narrower padding keeps all three on one line down to a 360px phone. */
+  .ingredients-controls .segmented { flex-basis: 100%; }
+
+  .ingredients-controls .segmented button { flex: 1 1 auto; padding: 0 var(--space-12); }
+
   /* Beside the photo the file input gets under two thirds of the width it
      asks for, and squeezed into that the browser cuts "No file chosen" down
      to "No fil...hosen". Under the photo it has the field's whole width. */

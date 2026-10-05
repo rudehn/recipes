@@ -152,6 +152,30 @@ describe("the tag bar on a phone", () => {
   });
 });
 
+/**
+ * The Ingredients switcher on a phone. In the phone's equal thirds, "Needs a
+ * look 47" broke over two lines beside an "All 107" with room to spare, and
+ * the control stopped short of the row's end. Each option sized to its label
+ * fits all three on one line, which only a laid-out page can show.
+ */
+describe("the Ingredients switcher on a phone", () => {
+  const rule = (selector: string) => {
+    const match = new RegExp(`(?:^|[\\s}])${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`).exec(
+      mediaBlock(below(PHONE)),
+    );
+    expect(match, `the phone block has no ${selector} rule`).not.toBeNull();
+    return match![1];
+  };
+
+  it("takes the whole row", () => {
+    expect(rule(".ingredients-controls .segmented")).toMatch(/flex-basis:\s*100%/);
+  });
+
+  it("sizes each option by its label rather than in equal thirds", () => {
+    expect(rule(".ingredients-controls .segmented button")).toMatch(/flex:\s*1 1 auto/);
+  });
+});
+
 describe("the phone's edges", () => {
   it("pays the safe-area inset on everything the content reaches", () => {
     const phone = mediaBlock(below(PHONE));
