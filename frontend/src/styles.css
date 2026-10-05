@@ -2169,6 +2169,19 @@ body.has-install-hint .page {
   padding: 0 var(--space-12) var(--space-16);
 }
 
+/* What a dialog says when it is more than a list - the merge preview, the
+   lines read again, the unmerge question - on the header's edges, scrolling
+   inside the dialog when it runs long. On a phone the dialog is a sheet
+   against the bottom edge, so its answers keep clear of the home indicator. */
+.modal .modal-body {
+  overflow-y: auto;
+  padding: 0 var(--space-20) max(var(--space-20), env(safe-area-inset-bottom));
+}
+
+.modal-body > :first-child { margin-top: 0; }
+
+.modal-body .modal-note { padding-inline: 0; }
+
 .modal-recipe {
   display: flex;
   align-items: center;
@@ -4353,6 +4366,16 @@ body.has-install-hint .page {
 .ingredient-merge { margin-top: var(--space-20); }
 
 .merge-preview { display: grid; gap: var(--space-12); }
+
+/* The question and the way to turn it round, on one line while they fit. */
+.merge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-12);
+}
+
+.merge-head .btn { flex: none; }
 
 .merge-title { font-weight: var(--weight-semibold); margin: 0; }
 

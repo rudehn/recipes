@@ -145,6 +145,8 @@ describe("IngredientPage: unmerging", () => {
 
     await user.click(screen.getByRole("button", { name: "Unmerge ground cumin" }));
     expect(screen.getByText(/starts fresh/)).toBeInTheDocument();
+    // In the dialog's padded body, not against its edges.
+    expect(screen.getByText(/starts fresh/).closest(".modal-body")).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Unmerge" }));
 
     await waitFor(() =>

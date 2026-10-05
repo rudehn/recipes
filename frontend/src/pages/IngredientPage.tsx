@@ -377,61 +377,65 @@ export default function IngredientPage() {
       )}
       {rereads && (
         <Modal title="Read the lines again" onClose={() => setRereads(null)}>
-          <ul className="reread-list">
-            {rereads.map((r) => {
-              const changed = changedReads.includes(r);
-              return (
-                <li key={r.id}>
-                  <span className="before">{lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.before })}</span>
-                  {changed ? (
-                    <span className="after">→ {lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.after })}</span>
-                  ) : (
-                    <span className="muted">unchanged</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          <div className="modal-actions">
-            <Button
-              variant="primary"
-              disabled={changedReads.length === 0}
-              onClick={() => {
-                const edits = changedReads.map((r) => r.after);
-                setRereads(null);
-                void action.run(async () => saved(await api.editLines(edits)));
-              }}
-            >
-              Save changes
-            </Button>
-            <Button onClick={() => setRereads(null)}>Cancel</Button>
+          <div className="modal-body">
+            <ul className="reread-list">
+              {rereads.map((r) => {
+                const changed = changedReads.includes(r);
+                return (
+                  <li key={r.id}>
+                    <span className="before">{lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.before })}</span>
+                    {changed ? (
+                      <span className="after">→ {lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.after })}</span>
+                    ) : (
+                      <span className="muted">unchanged</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="modal-actions">
+              <Button
+                variant="primary"
+                disabled={changedReads.length === 0}
+                onClick={() => {
+                  const edits = changedReads.map((r) => r.after);
+                  setRereads(null);
+                  void action.run(async () => saved(await api.editLines(edits)));
+                }}
+              >
+                Save changes
+              </Button>
+              <Button onClick={() => setRereads(null)}>Cancel</Button>
+            </div>
           </div>
         </Modal>
       )}
       {unmerging && (
         <Modal title={`Unmerge ${unmerging.name}?`} onClose={() => setUnmerging(null)}>
-          <p>
-            “{unmerging.name}” goes back to being its own ingredient, with its own grocery line. It
-            starts fresh: an automatic product, and its default food if it has one. What moved to{" "}
-            {data.name} stays with it.
-          </p>
-          <div className="modal-actions">
-            <Button
-              variant="primary"
-              onClick={() => {
-                const going = unmerging;
-                setUnmerging(null);
-                // The banner offers to undo a merge; once any name is unmerged it
-                // may be stale, so drop it.
-                void change(async () => {
-                  await api.unmerge(going.key);
-                  navigate(location.pathname, { replace: true, state: null });
-                });
-              }}
-            >
-              Unmerge
-            </Button>
-            <Button onClick={() => setUnmerging(null)}>Cancel</Button>
+          <div className="modal-body">
+            <p>
+              “{unmerging.name}” goes back to being its own ingredient, with its own grocery line. It
+              starts fresh: an automatic product, and its default food if it has one. What moved to{" "}
+              {data.name} stays with it.
+            </p>
+            <div className="modal-actions">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const going = unmerging;
+                  setUnmerging(null);
+                  // The banner offers to undo a merge; once any name is unmerged it
+                  // may be stale, so drop it.
+                  void change(async () => {
+                    await api.unmerge(going.key);
+                    navigate(location.pathname, { replace: true, state: null });
+                  });
+                }}
+              >
+                Unmerge
+              </Button>
+              <Button onClick={() => setUnmerging(null)}>Cancel</Button>
+            </div>
           </div>
         </Modal>
       )}

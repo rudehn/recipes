@@ -316,6 +316,31 @@ describe("a tap", () => {
 });
 
 /**
+ * A dialog that says something rather than listing things - the merge
+ * preview, the lines read again, the unmerge question. The dialog itself has
+ * no padding, because its lists run to its edges, so words put straight into
+ * it touched both sides of a phone's sheet. They go in a body on the
+ * header's edges, which on a phone also keeps its answers clear of the home
+ * indicator.
+ */
+describe("a dialog's own words", () => {
+  const body = /\.modal \.modal-body\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+
+  it("sit on the header's edges", () => {
+    expect(css).toMatch(/\.modal header\s*\{[^}]*padding:[^;]*var\(--space-20\)/);
+    expect(body).toMatch(/padding:\s*0 var\(--space-20\)/);
+  });
+
+  it("keep their answers clear of the home indicator", () => {
+    expect(body).toContain("env(safe-area-inset-bottom)");
+  });
+
+  it("scroll inside the dialog when they run long", () => {
+    expect(body).toMatch(/overflow-y:\s*auto/);
+  });
+});
+
+/**
  * A description is written in paragraphs and lines, so it is shown in them,
  * and the field it is written in grows with it - but only so far, or a long
  * one would push the rest of the form off the screen.

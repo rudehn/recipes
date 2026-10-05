@@ -65,15 +65,17 @@ export function MergeDialog({
   return (
     <Modal title={chosen ? "Merge" : "Same as another ingredient"} onClose={onClose}>
       {chosen ? (
-        <MergePreviewPanel
-          // A new direction is a new question: remount so neither the old
-          // preview nor answers to it can be acted on while the new one loads.
-          key={`${chosen[0]}>${chosen[1]}`}
-          pair={chosen}
-          onSwap={() => setChosen([chosen[1], chosen[0]])}
-          onMerged={onMerged}
-          onCancel={onClose}
-        />
+        <div className="modal-body">
+          <MergePreviewPanel
+            // A new direction is a new question: remount so neither the old
+            // preview nor answers to it can be acted on while the new one loads.
+            key={`${chosen[0]}>${chosen[1]}`}
+            pair={chosen}
+            onSwap={() => setChosen([chosen[1], chosen[0]])}
+            onMerged={onMerged}
+            onCancel={onClose}
+          />
+        </div>
       ) : (
         <>
           <div className="modal-search">
@@ -135,12 +137,14 @@ function MergePreviewPanel({
 
   return (
     <div className="merge-preview">
-      <p className="merge-title">
-        Merge {preview.from_name} into {preview.to_name}
-      </p>
-      <Button size="small" onClick={onSwap}>
-        Swap
-      </Button>
+      <div className="merge-head">
+        <p className="merge-title">
+          Merge {preview.from_name} into {preview.to_name}
+        </p>
+        <Button size="small" onClick={onSwap}>
+          Swap
+        </Button>
+      </div>
 
       <ul className="merge-changes">
         {preview.recipes.length > 0 && (

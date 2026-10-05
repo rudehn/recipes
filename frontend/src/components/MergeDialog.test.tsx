@@ -49,6 +49,8 @@ describe("MergeDialog", () => {
 
     expect(await screen.findByText("Merge ground cumin into cumin")).toBeInTheDocument();
     expect(screen.getByText(/Chili keeps saying “ground cumin”, and shops as cumin/)).toBeInTheDocument();
+    // In the dialog's padded body, not against its edges.
+    expect(screen.getByText("Merge ground cumin into cumin").closest(".modal-body")).not.toBeNull();
     expect(backend.requestsTo("POST /api/ingredients/merges/preview")[0].body).toEqual({
       from_key: "ground-cumin",
       to_key: "cumin",
