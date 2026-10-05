@@ -16,6 +16,7 @@ from .routes import (
     nutrition,
     pantry,
     pricing,
+    recipe_ingredients,
     recipes,
 )
 
@@ -46,6 +47,7 @@ api.include_router(import_recipe.router)
 api.include_router(pricing.router)
 api.include_router(cart.router)
 api.include_router(nutrition.router)
+api.include_router(recipe_ingredients.router)
 
 
 @api.get("/health")

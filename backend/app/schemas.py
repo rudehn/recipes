@@ -1108,3 +1108,37 @@ class MergeIn(MergeRequest):
 class DismissRequest(BaseModel):
     key_a: str = Field(min_length=1, max_length=300)
     key_b: str = Field(min_length=1, max_length=300)
+
+
+class LineEdit(BaseModel):
+    """A recipe line as it should read, addressed by its id."""
+
+    id: int
+    name: str = Field(min_length=1, max_length=200)
+    quantity: float | None = Field(default=None, ge=0)
+    unit: str | None = Field(default=None, max_length=50)
+
+
+class LineEdits(BaseModel):
+    lines: list[LineEdit] = Field(min_length=1, max_length=200)
+
+
+class EditedLine(LineEdit):
+    recipe_id: int
+    issue: LineIssue | None = None
+    # The ingredient the line now stands for, so the page can say when it
+    # moved to another one.
+    key: str
+
+
+class RereadRequest(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=200)
+
+
+class Reread(BaseModel):
+    id: int
+    before: LineEdit
+    after: LineEdit
+    # Whether the website's own line was read, or the line rebuilt from its
+    # amount, unit and name because the original was never kept.
+    from_source: bool
