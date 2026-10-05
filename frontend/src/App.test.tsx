@@ -16,7 +16,7 @@ import { mockBackend } from "./test/backend";
 import { renderApp } from "./test/render";
 import { setViewportWidth } from "./test/viewport";
 
-const SECTIONS = ["Recipes", "Planner", "Groceries", "Pantry"];
+const SECTIONS = ["Recipes", "Planner", "Groceries", "Ingredients"];
 
 /** Pricing off, which is the common case and hides the Settings link. */
 function plainBackend() {
@@ -24,6 +24,7 @@ function plainBackend() {
     "GET /api/pricing/status": { enabled: false, store: null },
     "GET /api/recipes": { items: [], total: 0, page: 1, per_page: 24 },
     "GET /api/recipes/tags": [],
+    "GET /api/ingredients": { ingredients: [], suggestions: [] },
   });
 }
 
@@ -35,6 +36,7 @@ function priced() {
     },
     "GET /api/recipes": { items: [], total: 0, page: 1, per_page: 24 },
     "GET /api/recipes/tags": [],
+    "GET /api/ingredients": { ingredients: [], suggestions: [] },
   });
 }
 
@@ -127,9 +129,9 @@ describe("App shell", () => {
     it("marks the section being viewed", () => {
       setViewportWidth(375);
       plainBackend();
-      renderApp("/pantry");
+      renderApp("/ingredients");
 
-      expect(within(nav()).getByRole("link", { name: "Pantry" })).toHaveClass("active");
+      expect(within(nav()).getByRole("link", { name: "Ingredients" })).toHaveClass("active");
     });
 
     it("keeps the app's name in the top bar, which now has room for it", () => {

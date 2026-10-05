@@ -48,7 +48,7 @@ describe("SettingsPage", () => {
 
     renderApp("/recipes");
 
-    await screen.findByRole("link", { name: "Pantry" });
+    await screen.findByRole("link", { name: "Ingredients" });
     expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
   });
 

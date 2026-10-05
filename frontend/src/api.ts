@@ -167,6 +167,88 @@ export interface PantryItem {
 }
 
 /**
+ * How an ingredient stands at the chosen store, read from picks already made.
+ * "unseen": no list has priced it yet. "no_match": a search found nothing.
+ * "not_priced": a person said not to price it, which is a decision, not a fault.
+ */
+export type ProductStatus = "picked" | "auto" | "not_priced" | "no_match" | "unseen";
+/** Its code default, a person's pick, a person saying it does not count, or none. */
+export type FoodStatus = "default" | "picked" | "skipped" | "none";
+/** What the Needs a look view groups an ingredient under. */
+export type IngredientProblem = "merge" | "no_match" | "no_food" | "fix_line";
+export type MergeReason = "describing" | "counting" | "synonym" | "spacing";
+
+export interface IngredientStaple {
+  id: number;
+  name: string;
+  in_stock: boolean;
+}
+
+export interface IngredientProduct {
+  status: ProductStatus;
+  /** Null when Kroger could not be asked; the status still says what was picked. */
+  product: ItemPrice | null;
+}
+
+export interface IngredientFood {
+  status: FoodStatus;
+  food: FoodChoice | null;
+}
+
+/** One ingredient, as the list shows it. */
+export interface IngredientSummary {
+  key: string;
+  name: string;
+  /** Names merged into this one, as their recipes write them. */
+  also_called: string[];
+  recipe_count: number;
+  staple: IngredientStaple | null;
+  /** Null when pricing is off or no store is chosen. */
+  product: IngredientProduct | null;
+  food: IngredientFood;
+  problems: IngredientProblem[];
+}
+
+/** A recipe line that stands for the ingredient, as the recipe writes it. */
+export interface IngredientLine {
+  ingredient_id: number;
+  recipe_id: number;
+  recipe_title: string;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  source_line: string | null;
+  issue: LineIssue | null;
+}
+
+export interface MergeSuggestion {
+  from_key: string;
+  from_name: string;
+  to_key: string;
+  to_name: string;
+  reason: MergeReason;
+}
+
+export interface MergedName {
+  key: string;
+  name: string;
+}
+
+/** One ingredient's own page. */
+export interface IngredientDetail extends IngredientSummary {
+  lines: IngredientLine[];
+  merged: MergedName[];
+  suggestions: MergeSuggestion[];
+  /** Set when the page was asked for under a name merged into this one. */
+  redirected_from: string | null;
+}
+
+export interface IngredientList {
+  ingredients: IngredientSummary[];
+  suggestions: MergeSuggestion[];
+}
+
+/**
  * One recipe's call for an ingredient a grocery line stands for.
  *
  * `ingredient_id` is the row in that recipe rather than the merged line, so a
@@ -773,6 +855,12 @@ export const api = {
     }),
   deletePantryItem: (id: number) =>
     request<void>(`/api/pantry/${id}`, { method: "DELETE" }),
+
+  /** Every ingredient seen whole. Never searches Kroger. */
+  listIngredients: () => request<IngredientList>("/api/ingredients"),
+  /** One ingredient; a name merged away answers with its target. */
+  ingredient: (key: string) =>
+    request<IngredientDetail>(`/api/ingredients/${encodeURIComponent(key)}`),
 
   groceryList: (start: string, end: string) =>
     request<GroceryList>(`/api/grocery-list?start=${start}&end=${end}`),

@@ -3343,7 +3343,7 @@ body.has-install-hint .page {
   overflow-wrap: anywhere;
 }
 
-.pantry-layout { max-width: var(--width-compact); }
+.ingredients-layout { max-width: var(--width-compact); }
 
 .pantry-add {
   display: flex;
@@ -3367,6 +3367,20 @@ body.has-install-hint .page {
 .pantry-item .name { flex: 1; font-weight: var(--weight-semibold); }
 
 .pantry-item.out .name { color: var(--muted); }
+
+/* A staple's name opens its ingredient's page; quiet until it is pointed at,
+   so the list still reads as a list of things in the cupboard. */
+.pantry-item a.name:hover { text-decoration: underline; }
+
+.ingredient-group h2 {
+  font-family: var(--font-body);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: var(--space-20) 0 var(--space-8);
+}
 
 .stock-toggle {
   display: inline-flex;

@@ -15,9 +15,13 @@ import type {
   GroceryItem,
   GroceryList,
   GroceryPrices,
+  IngredientDetail,
+  IngredientLine,
+  IngredientSummary,
   ItemPrice,
   Meal,
   MealPlanEntry,
+  MergeSuggestion,
   Page,
   PantryItem,
   PastedLine,
@@ -279,4 +283,69 @@ export function pricedBackend(routes: Routes) {
     "GET /api/grocery-list": () => splitPrices(resolve()).list,
     "GET /api/grocery-list/prices": () => splitPrices(resolve()).prices,
   });
+}
+
+export function ingredientSummary(overrides: Partial<IngredientSummary> = {}): IngredientSummary {
+  return {
+    key: "olive-oil",
+    name: "olive oil",
+    also_called: [],
+    recipe_count: 1,
+    staple: null,
+    product: null,
+    food: { status: "default", food: null },
+    problems: [],
+    ...overrides,
+  };
+}
+
+/** A staple: an ingredient kept in stock, used by no recipe unless told. */
+export function staple(
+  name: string,
+  inStock = true,
+  overrides: Partial<IngredientSummary> = {},
+): IngredientSummary {
+  return ingredientSummary({
+    key: name.toLowerCase().replace(/\s+/g, "-"),
+    name,
+    recipe_count: 0,
+    staple: { id: id(), name, in_stock: inStock },
+    ...overrides,
+  });
+}
+
+export function ingredientLine(overrides: Partial<IngredientLine> = {}): IngredientLine {
+  return {
+    ingredient_id: id(),
+    recipe_id: 1,
+    recipe_title: "Chili",
+    name: "olive oil",
+    quantity: 2,
+    unit: "tbsp",
+    source_line: null,
+    issue: null,
+    ...overrides,
+  };
+}
+
+export function ingredientDetail(overrides: Partial<IngredientDetail> = {}): IngredientDetail {
+  return {
+    ...ingredientSummary(),
+    lines: [ingredientLine()],
+    merged: [],
+    suggestions: [],
+    redirected_from: null,
+    ...overrides,
+  };
+}
+
+export function mergeSuggestion(overrides: Partial<MergeSuggestion> = {}): MergeSuggestion {
+  return {
+    from_key: "ground-cumin",
+    from_name: "ground cumin",
+    to_key: "cumin",
+    to_name: "cumin",
+    reason: "describing",
+    ...overrides,
+  };
 }

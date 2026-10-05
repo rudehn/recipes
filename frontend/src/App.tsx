@@ -6,7 +6,7 @@ import { InstallHint } from "./components/InstallHint";
 import { PHONE, below } from "./layout";
 import CookPage from "./pages/CookPage";
 import GroceryPage from "./pages/GroceryPage";
-import PantryPage from "./pages/PantryPage";
+import IngredientsPage from "./pages/IngredientsPage";
 import PlannerPage from "./pages/PlannerPage";
 import RecipeDetailPage from "./pages/RecipeDetailPage";
 import RecipeFormPage from "./pages/RecipeFormPage";
@@ -38,7 +38,7 @@ const SECTIONS = [
   { to: "/recipes", label: "Recipes", glyph: "📖" },
   { to: "/planner", label: "Planner", glyph: "📅" },
   { to: "/groceries", label: "Groceries", glyph: "🛒" },
-  { to: "/pantry", label: "Pantry", glyph: "🫙" },
+  { to: "/ingredients", label: "Ingredients", glyph: "🥕" },
 ];
 
 const SETTINGS = { to: "/settings", label: "Settings", glyph: "⚙️" };
@@ -78,7 +78,10 @@ export default function App() {
         <Route path="/recipes/:id/edit" element={<RecipeFormPage />} />
         <Route path="/planner" element={<PlannerPage />} />
         <Route path="/groceries" element={<GroceryPage />} />
-        <Route path="/pantry" element={<PantryPage />} />
+        <Route path="/ingredients" element={<IngredientsPage />} />
+        {/* Pantry's old address, kept for bookmarks and the installed app's
+            shortcuts: its job is the Ingredients tab's Staples view now. */}
+        <Route path="/pantry" element={<Navigate to="/ingredients" replace />} />
         {/* Registered whether or not pricing is on, so the page can explain
             itself to anyone who follows a link to it. */}
         <Route path="/settings" element={<SettingsPage />} />
