@@ -172,6 +172,20 @@ describe("MergeDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not say a product is kept over itself", async () => {
+    // Both names matched the same product on their own, which happens to a
+    // name that was merged, unmerged and is now being merged again.
+    const same = { product: itemPrice({ description: "McCormick Ground Cumin", regular: 3.49 }), hand_picked: false, not_priced: false };
+    backendFor(preview({ product: { from_side: same, to_side: same, keeps: "to" } }));
+    const { user } = renderApp("/ingredients/ground-cumin");
+    await screen.findByRole("heading", { name: "ground cumin" });
+    await user.click(screen.getByRole("button", { name: "Same as another ingredient…" }));
+    await user.click(screen.getByRole("button", { name: "cumin" }));
+
+    expect(await screen.findByText("Product: McCormick Ground Cumin $3.49")).toBeInTheDocument();
+    expect(screen.queryByText(/kept over/)).not.toBeInTheDocument();
+  });
+
   it("refreshes the target's own page after merging into it", async () => {
     const backend = backendFor(preview());
     const { user } = renderApp("/ingredients/cumin");

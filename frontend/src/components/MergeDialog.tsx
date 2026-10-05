@@ -234,10 +234,13 @@ function ConflictLine<T>({
   const [kept, other] =
     conflict.keeps === "from" ? [conflict.from_side, conflict.to_side] : [conflict.to_side, conflict.from_side];
   if (kept === null) return null;
+  // Two names can hold the same thing - both matched the same product on
+  // their own - and then nothing is being chosen over anything.
+  const over = other === null || describe(other) === describe(kept) ? "" : `, kept over ${describe(other)}`;
   return (
     <li>
       {label}: {describe(kept)}
-      {other !== null && `, kept over ${describe(other)}`}
+      {over}
     </li>
   );
 }
