@@ -29,6 +29,7 @@ function line(overrides: Partial<NutritionLine>): NutritionLine {
     grams: null,
     nutrients: null,
     issue: null,
+    ingredient_key: overrides.key ?? "",
     ...overrides,
   };
 }
@@ -384,5 +385,17 @@ describe("RecipeDetailPage nutrition", () => {
 
     expect(screen.queryByText(/Nutrition|kcal/)).not.toBeInTheDocument();
     expect(document.querySelector("#nutrition")).toBeNull();
+  });
+
+  it("links each name in the breakdown to its ingredient's page", async () => {
+    withNutrition(INCOMPLETE);
+    renderApp("/recipes/1");
+    await screen.findByText("Nutrition unavailable");
+
+    const breakdown = document.querySelector<HTMLElement>(".nutrition-lines")!;
+    expect(within(breakdown).getByRole("link", { name: "almond flour" })).toHaveAttribute(
+      "href",
+      "/ingredients/almond-flour",
+    );
   });
 });

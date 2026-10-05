@@ -167,7 +167,13 @@ export function NutritionBreakdown({
               aria-current={isMarked ? "true" : undefined}
             >
               <span className="what">
-                <span className="name">{line.name}</span>
+                {line.ingredient_key ? (
+                  <Link className="name" to={`/ingredients/${line.ingredient_key}`}>
+                    {line.name}
+                  </Link>
+                ) : (
+                  <span className="name">{line.name}</span>
+                )}
                 <span className="food">
                   {line.skipped ? "Not counted" : line.food ? line.food.description : "No food chosen"}
                   {line.hand_picked && <span className="chosen-by"> · your choice</span>}
@@ -223,12 +229,15 @@ export function NutritionBreakdown({
 export function FoodPickerModal({
   line,
   recipeId,
+  ingredientKey,
   onPick,
   onClose,
 }: {
   line: Pick<NutritionLine, "key" | "name" | "food">;
   /** The recipe the picker was opened from, which is not an "other" recipe. Absent on an ingredient's own page. */
   recipeId?: number;
+  /** Where the ingredient's own page is; absent where there is none, as for a pasted line. */
+  ingredientKey?: string;
   /** Null: the ingredient does not count. */
   onPick: (food: FoodChoice | null) => void;
   onClose: () => void;
@@ -305,6 +314,11 @@ export function FoodPickerModal({
         <button type="button" className="modal-food skip" onClick={() => onPick(null)}>
           Don&rsquo;t count this ingredient
         </button>
+        {ingredientKey && (
+          <Link className="modal-food skip" to={`/ingredients/${ingredientKey}`}>
+            Open {line.name}&rsquo;s page
+          </Link>
+        )}
       </div>
     </Modal>
   );

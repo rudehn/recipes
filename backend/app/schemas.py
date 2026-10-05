@@ -370,6 +370,9 @@ class NutritionLine(BaseModel):
     name: str
     # The identity a food is chosen under; see nutrition.defaults.nutrition_key.
     key: str
+    # The ingredient the line stands for, after merges and without state
+    # words: what its Ingredients page is addressed by.
+    ingredient_key: str = ""
     measured: bool = True
     # A person said this ingredient does not count. Left out of the figure
     # like one left to taste, and named beside it the same way.

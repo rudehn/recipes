@@ -500,6 +500,8 @@ export interface NutritionLine {
   name: string;
   /** The identity a food is chosen under, shared by every recipe using it. */
   key: string;
+  /** The ingredient the line stands for; its Ingredients page's address. */
+  ingredient_key: string;
   measured: boolean;
   /** A person said this ingredient does not count. Not counted, not a fault. */
   skipped: boolean;

@@ -2953,6 +2953,8 @@ body.has-install-hint .page {
 
 .cart-lines .why { color: var(--accent-ink); }
 
+.attention-more { margin: var(--space-8) 0 var(--space-12); }
+
 /* A recipe's lines in "Needs a look", a list for each thing they hold up, in
    the card's right-hand column. */
 .attention-groups {

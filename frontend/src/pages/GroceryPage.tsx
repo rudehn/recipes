@@ -1105,6 +1105,9 @@ function Alternatives({
       <button type="button" className="alternative skip" onClick={() => onPick(null)}>
         Don&rsquo;t price this
       </button>
+      <Link className="alternative skip" to={`/ingredients/${item.key}`}>
+        Open {item.name}&rsquo;s page
+      </Link>
       {item.hand_picked && (
         // Offered only on a line a person has already decided about. It is
         // also the one way a remembered choice, hand-made or not, gets

@@ -22,7 +22,10 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 * Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.
-* Pantry staples: items you always keep in stock.
+* Ingredients: one page per ingredient, with the recipes that use it, whether it is a staple, the product it is priced with and the food it counts as, each changeable where it is shown.
+  Two names for one thing - "ground cumin" and "cumin" - can be merged once, and every part of the app then treats them as one, recipes keeping their wording; likely pairs are suggested, never merged without you.
+  A broken recipe line can be fixed from its ingredient's page, or read again by today's importer.
+  The Staples view is the pantry: items you always keep in stock, the ones that ran out first.
   Out-of-stock staples are added to the grocery list, and checking a pantry item off the list marks it back in stock.
   When a planned recipe calls for a staple you already have, it is set aside under "already in your pantry" rather than put on the list - listed with the amount the week's meals need, so you can buy more anyway if the jar won't cover it.
 * Cook mode: one step at a time in large type, with the screen kept awake and the ingredients as a checklist.

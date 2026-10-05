@@ -122,7 +122,9 @@ def count_recipe(
     counted = 0
     measured = 0
     for ing, key in zip(recipe.ingredients, keys, strict=True):
-        line = NutritionLine(ingredient_id=ing.id, name=ing.name, key=key)
+        line = NutritionLine(
+            ingredient_id=ing.id, name=ing.name, key=key, ingredient_key=identity.key(ing.name)
+        )
         issue = ing.issue
         if ing.quantity is None and issue is None:
             line.measured = False

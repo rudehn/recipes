@@ -400,6 +400,27 @@ describe("grocery list pricing", () => {
     expect(screen.queryByText(/est\. \$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/priced/)).not.toBeInTheDocument();
   });
+
+  it("opens the ingredient's page from its product panel", async () => {
+    pricedBackend({
+      "GET /api/pricing/status": { enabled: true, store: STORE },
+      "GET /api/grocery-list": groceryList({
+        items: [onion],
+        pricing: { store: STORE, total: 1.19, saved: 0, priced: 1, total_lines: 1 },
+      }),
+      "GET /api/pricing/alternatives": ALTERNATIVES,
+    });
+    const { user } = renderApp(WEEK);
+    await screen.findByText("onion");
+
+    await user.click(screen.getByRole("button", { name: /Choose a different product/ }));
+
+    const panel = await screen.findByRole("group", { name: "Products for onion" });
+    expect(within(panel).getByRole("link", { name: "Open onion’s page" })).toHaveAttribute(
+      "href",
+      `/ingredients/${onion.key}`,
+    );
+  });
 });
 
 describe("remembered picks", () => {

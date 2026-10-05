@@ -395,6 +395,7 @@ export default function RecipeDetailPage() {
       {pricingFor && (
         <ProductPickerModal
           line={pricingFor}
+          ingredientKey={pricingFor.key}
           onPick={pickProduct}
           onForget={forgetProduct}
           onClose={() => setPricingFor(null)}
@@ -404,6 +405,7 @@ export default function RecipeDetailPage() {
       {choosingFor && (
         <FoodPickerModal
           line={choosingFor}
+          ingredientKey={choosingFor.ingredient_key}
           recipeId={recipe.id}
           onPick={chooseFood}
           onClose={() => setChoosingFor(null)}

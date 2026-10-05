@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 
+import { Link } from "react-router-dom";
+
 import { api, type CostLine } from "../api";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
@@ -24,6 +26,7 @@ export function ProductPickerModal({
   onForget,
   onClose,
   offerNone = true,
+  ingredientKey,
 }: {
   line: Pick<CostLine, "key" | "name" | "product" | "hand_picked">;
   /** Null: the ingredient is not to be priced. */
@@ -36,6 +39,8 @@ export function ProductPickerModal({
    * "no product" would quietly unprice every recipe using it.
    */
   offerNone?: boolean;
+  /** Where the ingredient's own page is; absent where there is none, as for a pasted line. */
+  ingredientKey?: string;
 }) {
   const own = line.key.split("-").join(" ");
   const [query, setQuery] = useState(own);
@@ -100,6 +105,11 @@ export function ProductPickerModal({
           <button type="button" className="modal-food skip" onClick={onForget}>
             Back to the automatic pick
           </button>
+        )}
+        {ingredientKey && (
+          <Link className="modal-food skip" to={`/ingredients/${ingredientKey}`}>
+            Open {line.name}&rsquo;s page
+          </Link>
         )}
       </div>
     </Modal>

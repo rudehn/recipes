@@ -358,3 +358,19 @@ async def test_the_recipes_a_choice_reaches_are_named(client):
 
     assert resp.status_code == 200
     assert [r["title"] for r in resp.json()] == ["Almond cake", "Macarons"]
+
+
+async def test_each_line_says_which_ingredient_it_is(client):
+    resp = await client.post(
+        "/api/recipes",
+        json={
+            "title": "Rice",
+            "servings": 2,
+            "ingredients": [{"name": "cooked rice", "quantity": 2, "unit": "cup"}],
+        },
+    )
+    recipe_id = resp.json()["id"]
+
+    (line,) = (await client.get(f"/api/recipes/{recipe_id}/nutrition")).json()["lines"]
+
+    assert (line["key"], line["ingredient_key"]) == ("cooked-rice", "rice")

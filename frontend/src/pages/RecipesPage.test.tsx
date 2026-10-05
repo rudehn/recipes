@@ -602,6 +602,14 @@ describe("RecipesPage", () => {
       });
     }
 
+    it("links from Needs a look to the same view, ingredient by ingredient", async () => {
+      needingALook([{ recipe: curry, issues: [], no_servings: true }]);
+      renderApp("/recipes");
+
+      const link = await screen.findByRole("link", { name: "See it ingredient by ingredient" });
+      expect(link).toHaveAttribute("href", "/ingredients?view=look");
+    });
+
     /** The fold's entry for one recipe, opened. */
     async function openEntry(user: AppRender["user"], title: string): Promise<HTMLElement> {
       await user.click(await screen.findByText(/needs a look/i));
