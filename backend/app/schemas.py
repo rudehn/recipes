@@ -954,3 +954,91 @@ class MergeChoices(BaseModel):
     product: MergeSide | None = None
     food: MergeSide | None = None
     staple: MergeSide | None = None
+
+
+# How an ingredient stands at the chosen store, read from the picks already
+# made - never a search (ADR 6). "unseen" is an ingredient no list has
+# priced yet; "no_match" is one a search found nothing for; "not_priced" is
+# a person saying it is not to be priced, which is a decision, not a fault.
+ProductStatus = Literal["picked", "auto", "not_priced", "no_match", "unseen"]
+# How an ingredient is counted: its code default, a person's pick, a person
+# saying it does not count, or no food at all.
+FoodStatus = Literal["default", "picked", "skipped", "none"]
+# What the Needs a look view groups an ingredient under.
+IngredientProblem = Literal["merge", "no_match", "no_food", "fix_line"]
+MergeReason = Literal["describing", "counting", "synonym", "spacing"]
+
+
+class IngredientStaple(BaseModel):
+    id: int
+    name: str
+    in_stock: bool
+
+
+class IngredientProduct(BaseModel):
+    status: ProductStatus
+    # Absent when Kroger could not be asked; the status still says whether
+    # a product is picked.
+    product: ItemPrice | None = None
+
+
+class IngredientFood(BaseModel):
+    status: FoodStatus
+    food: FoodChoice | None = None
+
+
+class IngredientSummary(BaseModel):
+    """One ingredient, as the list shows it."""
+
+    key: str
+    name: str
+    # Names merged into this one, as their recipes write them.
+    also_called: list[str] = []
+    recipe_count: int
+    staple: IngredientStaple | None = None
+    # Null when pricing is off or no store is chosen: there is nothing to say.
+    product: IngredientProduct | None = None
+    food: IngredientFood
+    problems: list[IngredientProblem] = []
+
+
+class IngredientLine(BaseModel):
+    """A recipe line that stands for the ingredient, as the recipe writes it."""
+
+    ingredient_id: int
+    recipe_id: int
+    recipe_title: str
+    name: str
+    quantity: float | None
+    unit: str | None
+    source_line: str | None
+    issue: LineIssue | None = None
+
+
+class MergeSuggestion(BaseModel):
+    from_key: str
+    from_name: str
+    to_key: str
+    to_name: str
+    reason: MergeReason
+
+
+class MergedName(BaseModel):
+    key: str
+    name: str
+
+
+class IngredientDetail(IngredientSummary):
+    """One ingredient's own page."""
+
+    lines: list[IngredientLine]
+    merged: list[MergedName] = []
+    suggestions: list[MergeSuggestion] = []
+    # Set when the page was asked for under a name merged into this one, so
+    # the client can show the target's address instead.
+    redirected_from: str | None = None
+
+
+class IngredientList(BaseModel):
+    ingredients: list[IngredientSummary]
+    suggestions: list[MergeSuggestion] = []
