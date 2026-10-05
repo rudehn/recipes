@@ -105,10 +105,21 @@ export default function SettingsPage() {
           }
         >
           {store ? (
-            <div className="store-current">
-              <span className="name">{store.name}</span>
-              <span className="address">{store.address}</span>
-            </div>
+            <>
+              <div className="store-current">
+                <span className="name">{store.name}</span>
+                <span className="address">{store.address}</span>
+              </div>
+              {/* Each pick lives with its ingredient now, beside its food and
+                  its staple, so this page only says where to find them. */}
+              <p className="store-pointer">
+                Products you&rsquo;ve picked are on each ingredient&rsquo;s page, under{" "}
+                <Link className="inline-link" to="/ingredients?view=all">
+                  Ingredients
+                </Link>
+                .
+              </p>
+            </>
           ) : (
             <>
               <p className="page-note">
@@ -151,15 +162,6 @@ export default function SettingsPage() {
             </>
           )}
         </Panel>
-      )}
-
-      {status?.enabled && store && (
-        // Each pick lives with its ingredient now, beside its food and its
-        // staple, so this page only says where to find them.
-        <p className="page-note">
-          Products you&rsquo;ve picked are on each ingredient&rsquo;s page.{" "}
-          <Link to="/ingredients?view=all">Ingredients</Link>
-        </p>
       )}
 
       {status?.enabled && <CartPanel />}

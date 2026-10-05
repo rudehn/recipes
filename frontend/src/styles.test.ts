@@ -379,6 +379,17 @@ describe("an ingredient's panels", () => {
 });
 
 /**
+ * Settings stacks its panels, and nothing in a panel keeps it off the next:
+ * the store and the Kroger account were drawn touching whenever nothing
+ * stood between them.
+ */
+describe("the settings page", () => {
+  it("keeps its panels apart", () => {
+    expect(css).toMatch(/\.settings-layout \.panel \+ \.panel\s*\{[^}]*margin-top:\s*var\(--space-/);
+  });
+});
+
+/**
  * A description is written in paragraphs and lines, so it is shown in them,
  * and the field it is written in grows with it - but only so far, or a long
  * one would push the rest of the form off the screen.

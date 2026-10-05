@@ -3275,6 +3275,18 @@ body.has-install-hint .page {
 
 .settings-layout { max-width: var(--width-compact); }
 
+/* Nothing else separates the page's panels, and they were drawn touching. */
+.settings-layout .panel + .panel { margin-top: var(--space-16); }
+
+/* Where the products picked at the store are kept, under the store itself. */
+.store-pointer {
+  margin: var(--space-12) 0 0;
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
 .store-search {
   display: flex;
   align-items: flex-end;
