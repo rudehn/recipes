@@ -3482,7 +3482,19 @@ body.has-install-hint .page {
 
 .panel .suggestion-row:last-child { padding-bottom: 0; border-bottom: none; }
 
-.ingredient-lines .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
+/* On the text's baseline, so the smaller issue tag reads as part of the
+   line rather than floating a little above it. */
+.ingredient-lines .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-8); }
+
+/* The line opens its recipe at that line. Underlined like the grocery list's
+   "for Chili", since in plain ink it read as text with a Fix button. */
+.ingredient-lines .line a {
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+
+.ingredient-lines .line a:hover { color: var(--accent-ink); }
 
 .line-fixer { display: grid; gap: var(--space-8); }
 

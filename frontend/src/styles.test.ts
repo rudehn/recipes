@@ -372,6 +372,11 @@ describe("an ingredient's panels", () => {
     expect(css).toMatch(/\.reread-list \.unchanged\s*\{[^}]*color:\s*var\(--muted\)/);
   });
 
+  it("underline each recipe line, which opens the recipe at it", () => {
+    // In plain ink the line read as text that happened to have a Fix button.
+    expect(css).toMatch(/\.ingredient-lines \.line a\s*\{[^}]*text-decoration:\s*underline/);
+  });
+
   it("hold the suggested merges on their own edges, with no rule under the last", () => {
     expect(css).toMatch(/\.panel \.suggestion-row\s*\{[^}]*padding-inline:\s*0/);
     expect(css).toMatch(/\.panel \.suggestion-row:last-child\s*\{[^}]*border-bottom:\s*none/);

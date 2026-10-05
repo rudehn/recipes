@@ -552,7 +552,9 @@ function NeedsALook() {
         Needs a look <span className="count">{recipeCount(data.length)}</span>
       </summary>
       <p className="attention-more">
-        <Link to="/ingredients?view=look">See it ingredient by ingredient</Link>
+        <Link className="inline-link" to="/ingredients?view=look">
+          See it ingredient by ingredient
+        </Link>
       </p>
       {data.map((entry) => {
         const lines = attentionLines(entry);

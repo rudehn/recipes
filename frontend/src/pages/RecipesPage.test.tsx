@@ -607,6 +607,8 @@ describe("RecipesPage", () => {
       renderApp("/recipes");
 
       const link = await screen.findByRole("link", { name: "See it ingredient by ingredient" });
+      // Drawn as a link: the global reset leaves a bare one looking like text.
+      expect(link).toHaveClass("inline-link");
       expect(link).toHaveAttribute("href", "/ingredients?view=look");
     });
 
