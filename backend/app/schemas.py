@@ -975,6 +975,18 @@ class IngredientFood(BaseModel):
     food: FoodChoice | None = None
 
 
+class IngredientFoodEntry(IngredientFood):
+    """The food one of an ingredient's nutrition keys counts as.
+
+    An ingredient is one grocery line but can be more than one food: "cooked
+    rice" is chosen under `cooked-rice`, apart from rice (ADR 8). `state` is
+    the word that sets this key apart, or null for the ingredient's own.
+    """
+
+    key: str
+    state: str | None = None
+
+
 class IngredientSummary(BaseModel):
     """One ingredient, as the list shows it."""
 
@@ -1020,6 +1032,9 @@ class IngredientDetail(IngredientSummary):
     """One ingredient's own page."""
 
     lines: list[IngredientLine]
+    # Its own food first, then one for each state word its lines use, so
+    # the page can change the food a "no food" line is actually missing.
+    foods: list[IngredientFoodEntry] = []
     merged: list[MergedName] = []
     suggestions: list[MergeSuggestion] = []
     # Set when the page was asked for under a name merged into this one, so

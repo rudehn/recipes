@@ -329,9 +329,12 @@ export function ingredientLine(overrides: Partial<IngredientLine> = {}): Ingredi
 }
 
 export function ingredientDetail(overrides: Partial<IngredientDetail> = {}): IngredientDetail {
+  const summary = ingredientSummary(overrides);
   return {
-    ...ingredientSummary(),
+    ...summary,
     lines: [ingredientLine()],
+    // Its own food only, unless a test says its lines use a state word too.
+    foods: [{ key: summary.key, state: null, ...summary.food }],
     merged: [],
     suggestions: [],
     redirected_from: null,

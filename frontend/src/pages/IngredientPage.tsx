@@ -1,7 +1,15 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { ApiError, api, type EditedLine, type IngredientDetail, type IngredientLine, type Reread } from "../api";
+import {
+  ApiError,
+  api,
+  type EditedLine,
+  type IngredientDetail,
+  type IngredientFoodEntry,
+  type IngredientLine,
+  type Reread,
+} from "../api";
 import { LineFixer } from "../components/LineFixer";
 import { LoadFailure } from "../components/LoadError";
 import { MergeDialog, type Merged } from "../components/MergeDialog";
@@ -21,6 +29,17 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 function lineText(line: IngredientLine): string {
   const amount = formatQuantity(line.quantity, line.unit);
   return amount ? `${amount} ${line.name}` : line.name;
+}
+
+/**
+ * What a food row is for: the ingredient itself, or it in a state that makes
+ * it another food ("cooked rice" beside "rice"). A staple's capital is
+ * dropped after the state word, so "Rice" reads "cooked rice", not "cooked Rice".
+ */
+function foodLabel(name: string, entry: IngredientFoodEntry): string {
+  if (!entry.state) return name;
+  const inner = /^[A-Z][a-z]/.test(name) ? name[0].toLowerCase() + name.slice(1) : name;
+  return `${entry.state} ${inner}`;
 }
 
 /**
@@ -50,7 +69,8 @@ export default function IngredientPage() {
     }, [key]),
   );
   const action = useAction();
-  const [choosing, setChoosing] = useState<"product" | "food" | null>(null);
+  // The product, or which of the ingredient's foods.
+  const [choosing, setChoosing] = useState<"product" | IngredientFoodEntry | null>(null);
   const [fixing, setFixing] = useState<number | null>(null);
   const [moved, setMoved] = useState<{ name: string; key: string }[]>([]);
   const [rereads, setRereads] = useState<Reread[] | null>(null);
@@ -120,7 +140,6 @@ export default function IngredientPage() {
 
   const staple = data.staple;
   const standing = data.product;
-  const food = data.food;
   const changedReads = (rereads ?? []).filter(
     (r) =>
       r.after.name !== r.before.name || r.after.quantity !== r.before.quantity || r.after.unit !== r.before.unit,
@@ -233,28 +252,43 @@ export default function IngredientPage() {
 
       <section aria-label="Nutrition">
         <Panel title="Nutrition">
-          <div className="ingredient-facts">
-            <p className={`fact${food.food ? "" : " muted"}`}>
-              <span className="what">
-                {food.status === "skipped" ? "Doesn't count" : food.food ? food.food.description : "No food chosen"}
-              </span>
-              {food.status === "picked" && <span className="chosen-by">your choice</span>}
-            </p>
-            <div className="fact-actions">
-              <Button size="small" onClick={() => setChoosing("food")}>
-                {food.food ? "Change food" : "Choose food"}
-              </Button>
-              {food.status !== "skipped" && (
-                <Button size="small" onClick={() => change(() => api.chooseFood(data.key, null))}>
-                  It doesn&rsquo;t count
-                </Button>
-              )}
-              {(food.status === "picked" || food.status === "skipped") && (
-                <Button size="small" onClick={() => change(() => api.forgetFood(data.key))}>
-                  Back to default
-                </Button>
-              )}
-            </div>
+          {/* One row per food the lines are counted as: a "cooked rice" line
+              is a food of its own (ADR 8), and its "no food" is cleared on
+              that row, never on rice's. */}
+          <div className="ingredient-foods">
+            {data.foods.map((entry) => {
+              const label = foodLabel(data.name, entry);
+              return (
+                <div key={entry.key} className="ingredient-facts" role="group" aria-label={label}>
+                  <p className={`fact${entry.food ? "" : " muted"}`}>
+                    {data.foods.length > 1 && <span className="for">{label}</span>}
+                    <span className="what">
+                      {entry.status === "skipped"
+                        ? "Doesn't count"
+                        : entry.food
+                          ? entry.food.description
+                          : "No food chosen"}
+                    </span>
+                    {entry.status === "picked" && <span className="chosen-by">your choice</span>}
+                  </p>
+                  <div className="fact-actions">
+                    <Button size="small" onClick={() => setChoosing(entry)}>
+                      {entry.food ? "Change food" : "Choose food"}
+                    </Button>
+                    {entry.status !== "skipped" && (
+                      <Button size="small" onClick={() => change(() => api.chooseFood(entry.key, null))}>
+                        It doesn&rsquo;t count
+                      </Button>
+                    )}
+                    {(entry.status === "picked" || entry.status === "skipped") && (
+                      <Button size="small" onClick={() => change(() => api.forgetFood(entry.key))}>
+                        Back to default
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Panel>
       </section>
@@ -353,10 +387,10 @@ export default function IngredientPage() {
           onClose={() => setChoosing(null)}
         />
       )}
-      {choosing === "food" && (
+      {choosing !== null && choosing !== "product" && (
         <FoodPickerModal
-          line={{ key: data.key, name: data.name, food: food.food }}
-          onPick={(chosen) => change(() => api.chooseFood(data.key, chosen?.fdc_id ?? null))}
+          line={{ key: choosing.key, name: foodLabel(data.name, choosing), food: choosing.food }}
+          onPick={(chosen) => change(() => api.chooseFood(choosing.key, chosen?.fdc_id ?? null))}
           onClose={() => setChoosing(null)}
         />
       )}

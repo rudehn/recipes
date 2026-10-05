@@ -195,6 +195,16 @@ export interface IngredientFood {
   food: FoodChoice | null;
 }
 
+/**
+ * The food one of an ingredient's nutrition keys counts as. "Cooked rice" is
+ * rice to buy and a food of its own, chosen under `cooked-rice` (ADR 8);
+ * `state` is the word that sets the key apart, null for the ingredient's own.
+ */
+export interface IngredientFoodEntry extends IngredientFood {
+  key: string;
+  state: string | null;
+}
+
 /** One ingredient, as the list shows it. */
 export interface IngredientSummary {
   key: string;
@@ -237,6 +247,8 @@ export interface MergedName {
 /** One ingredient's own page. */
 export interface IngredientDetail extends IngredientSummary {
   lines: IngredientLine[];
+  /** Its own food first, then one for each state word its lines use. */
+  foods: IngredientFoodEntry[];
   merged: MergedName[];
   suggestions: MergeSuggestion[];
   /** Set when the page was asked for under a name merged into this one. */

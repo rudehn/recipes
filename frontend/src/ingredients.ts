@@ -32,8 +32,11 @@ export function summaryLine(item: IngredientSummary): string {
     }
   }
 
+  // Also when only a line lacks one: "cooked rice" is a food of its own, and
+  // "counted" beside the row's "no food chosen" tag said two things at once.
   const food = item.food.status;
-  parts.push(food === "skipped" ? "doesn't count" : food === "none" ? ISSUE_LABELS.no_food : "counted");
+  const missing = food === "none" || item.problems.includes("no_food");
+  parts.push(missing ? ISSUE_LABELS.no_food : food === "skipped" ? "doesn't count" : "counted");
   return parts.join(" · ");
 }
 

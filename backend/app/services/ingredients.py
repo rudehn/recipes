@@ -24,6 +24,7 @@ from ..models import IngredientMergeDismissal, PantryItem, Recipe
 from ..schemas import (
     IngredientDetail,
     IngredientFood,
+    IngredientFoodEntry,
     IngredientLine,
     IngredientList,
     IngredientProblem,
@@ -59,6 +60,11 @@ class _Seen:
     raw_names: dict[str, list[str]] = field(default_factory=lambda: defaultdict(list))
     staples: dict[str, PantryItem] = field(default_factory=dict)
     no_food: set[str] = field(default_factory=set)
+    # The nutrition keys each ingredient's lines are counted under: its own,
+    # and "cooked-rice" beside "rice" for a line that says it is cooked.
+    food_keys: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))
+    # The foods people chose, by nutrition key; None is "does not count".
+    picked: dict[str, int | None] = field(default_factory=dict)
 
     @property
     def keys(self) -> list[str]:
@@ -74,11 +80,21 @@ async def _see(session: AsyncSession) -> _Seen:
         .unique()
         .all()
     )
-    picked = await facts.hand_picks(
-        session, {key for recipe in recipes for key in facts.recipe_keys(recipe, identity)}
+    staples = (await session.execute(select(PantryItem))).scalars().all()
+    # Choices under every key the page shows a food for: the keys the lines
+    # are counted under, and each ingredient's own, which is not one of them
+    # when every line says "cooked", or when it is a staple with no lines.
+    names = [ing.name for recipe in recipes for ing in recipe.ingredients]
+    names += [staple.name for staple in staples]
+    seen.picked = await facts.hand_picks(
+        session,
+        {
+            *(key for recipe in recipes for key in facts.recipe_keys(recipe, identity)),
+            *(key for name in names if (key := identity.key(name))),
+        },
     )
     for recipe in recipes:
-        nutrition = facts.count_recipe(recipe, picked, identity)
+        nutrition = facts.count_recipe(recipe, seen.picked, identity)
         for ing, counted in zip(recipe.ingredients, nutrition.lines, strict=True):
             key = identity.key(ing.name)
             if not key:
@@ -97,9 +113,10 @@ async def _see(session: AsyncSession) -> _Seen:
             )
             seen.variants[key].append(ing.name.strip())
             seen.raw_names[_RAW.key(ing.name)].append(ing.name.strip())
+            seen.food_keys[key].add(counted.key)
             if counted.issue == "no_food":
                 seen.no_food.add(key)
-    for staple in (await session.execute(select(PantryItem))).scalars():
+    for staple in staples:
         key = identity.key(staple.name)
         if key:
             seen.staples.setdefault(key, staple)
@@ -137,7 +154,7 @@ async def _products(session: AsyncSession, keys: list[str]) -> dict[str, Ingredi
 
 
 def _food(key: str, picked: dict[str, int | None]) -> IngredientFood:
-    """The food the ingredient itself counts as, before any state word."""
+    """The food a nutrition key counts as: a person's choice, or its default."""
     if key in picked:
         if picked[key] is None:
             return IngredientFood(status="skipped")
@@ -150,6 +167,25 @@ def _food(key: str, picked: dict[str, int | None]) -> IngredientFood:
     if chosen is None:
         return IngredientFood(status="none")
     return IngredientFood(status="default", food=facts.food_choice(chosen))
+
+
+def _foods(key: str, seen: _Seen) -> list[IngredientFoodEntry]:
+    """The ingredient's own food, then each state-word variant its lines use.
+
+    A variant such as `cooked-rice` has no default, so a line under it says
+    "no food" whatever rice counts as; listing it is what lets the page clear
+    that, rather than offering only rice's food, which would never reach it.
+    """
+    variants = sorted(seen.food_keys.get(key, set()) - {key})
+    return [
+        IngredientFoodEntry(
+            **_food(food_key, seen.picked).model_dump(),
+            key=food_key,
+            # `Identity.nutrition_key` puts the state words in front of the key.
+            state=food_key.removesuffix(f"-{key}").replace("-", " ") if food_key != key else None,
+        )
+        for food_key in [key, *variants]
+    ]
 
 
 def _name(key: str, seen: _Seen) -> str:
@@ -177,7 +213,6 @@ def _summary(
     key: str,
     seen: _Seen,
     standing: dict[str, IngredientProduct] | None,
-    picked: dict[str, int | None],
     suggested: set[str],
 ) -> IngredientSummary:
     staple = seen.staples.get(key)
@@ -202,7 +237,7 @@ def _summary(
             else None
         ),
         product=product,
-        food=_food(key, picked),
+        food=_food(key, seen.picked),
         problems=problems,
     )
 
@@ -248,10 +283,9 @@ async def _overview(
     seen = await _see(session)
     keys = seen.keys
     standing = await _products(session, keys)
-    picked = await facts.hand_picks(session, set(keys))
     suggestions = await _suggestions(session, seen)
     suggested = {s.from_key for s in suggestions} | {s.to_key for s in suggestions}
-    summaries = [_summary(key, seen, standing, picked, suggested) for key in keys]
+    summaries = [_summary(key, seen, standing, suggested) for key in keys]
     summaries.sort(key=lambda s: s.name.casefold())
     return seen, summaries, suggestions
 
@@ -271,6 +305,7 @@ async def ingredient(session: AsyncSession, key: str) -> IngredientDetail | None
     return IngredientDetail(
         **summary.model_dump(),
         lines=seen.lines.get(target, []),
+        foods=_foods(target, seen),
         merged=_merged(target, seen),
         suggestions=[s for s in suggestions if target in (s.from_key, s.to_key)],
         redirected_from=key if key != target else None,

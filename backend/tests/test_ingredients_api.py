@@ -87,6 +87,46 @@ async def test_foods_are_default_picked_skipped_or_none(client):
     assert "no_food" in found["dragonfruit-dust"]["problems"]
 
 
+async def test_a_cooked_line_has_a_food_of_its_own_on_the_ingredients_page(client):
+    # "Cooked rice" is one grocery line with rice and a different food (ADR 8),
+    # so the line's "no food" is cleared on its own key, not on rice's.
+    await recipe(
+        client,
+        "Bowl",
+        [
+            ("cooked rice", 2, "cup"),
+            ("rice", 1, "cup"),
+            ("chicken breasts, cooked and shredded", 2, None),
+        ],
+    )
+    async with session_factory() as session:
+        session.add(IngredientFoodMatch(key="cooked-rice", fdc_id=None))
+        await session.commit()
+
+    rice = (await client.get("/api/ingredients/rice")).json()
+    chicken = (await client.get("/api/ingredients/chicken-breast")).json()
+
+    assert [(f["key"], f["state"], f["status"]) for f in rice["foods"]] == [
+        ("rice", None, "default"),
+        ("cooked-rice", "cooked", "skipped"),
+    ]
+    assert [(f["key"], f["state"], f["status"]) for f in chicken["foods"]] == [
+        ("chicken-breast", None, "default"),
+        ("cooked-chicken-breast", "cooked", "none"),
+    ]
+    assert chicken["foods"][0]["food"]["fdc_id"] == 171077
+    assert chicken["foods"][1]["food"] is None
+    assert chicken["problems"] == ["no_food"]
+
+
+async def test_a_staple_no_recipe_uses_has_its_own_food_only(client):
+    await client.post("/api/pantry", json={"name": "Rice", "in_stock": True})
+
+    rice = (await client.get("/api/ingredients/rice")).json()
+
+    assert [(f["key"], f["status"]) for f in rice["foods"]] == [("rice", "default")]
+
+
 async def test_a_broken_line_is_a_line_to_fix(client):
     await recipe(client, "Chili", [("22-ounce bag frozen waffle fries", 1, None)])
 

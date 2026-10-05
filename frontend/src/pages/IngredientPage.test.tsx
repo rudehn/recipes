@@ -94,6 +94,68 @@ describe("IngredientPage", () => {
     );
   });
 
+  it("gives each food its lines are counted as a row of its own", async () => {
+    const rawRice = { fdc_id: 168877, description: "Rice, white, long-grain, raw", category: "Grains", per_100g: { kcal: 365, protein_g: 7, fat_g: 1, carbs_g: 80, sodium_mg: 5 } };
+    const cookedRice = { fdc_id: 168878, description: "Rice, white, long-grain, cooked", category: "Grains", per_100g: { kcal: 130, protein_g: 3, fat_g: 0, carbs_g: 28, sodium_mg: 1 } };
+    const rice = ingredientDetail({
+      key: "rice",
+      name: "Rice",
+      food: { status: "default", food: rawRice },
+      foods: [
+        { key: "rice", state: null, status: "default", food: rawRice },
+        { key: "cooked-rice", state: "cooked", status: "none", food: null },
+      ],
+      problems: ["no_food"],
+    });
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": rice,
+      "GET /api/nutrition/foods": [cookedRice],
+      "GET /api/nutrition/uses": [],
+      "PUT /api/nutrition/match": undefined,
+    });
+    const { user } = renderApp("/ingredients/rice");
+    await screen.findByRole("heading", { name: "Rice" });
+
+    const own = screen.getByRole("group", { name: "Rice" });
+    const cooked = screen.getByRole("group", { name: "cooked rice" });
+    expect(within(own).getByText("Rice, white, long-grain, raw")).toBeInTheDocument();
+    expect(within(cooked).getByText("No food chosen")).toBeInTheDocument();
+
+    await user.click(within(cooked).getByRole("button", { name: "Choose food" }));
+    const dialog = await screen.findByRole("dialog", { name: "Food for “cooked rice”" });
+    await user.click(await within(dialog).findByRole("button", { name: /Rice, white, long-grain, cooked/ }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PUT /api/nutrition/match")[0].body).toEqual({ key: "cooked-rice", fdc_id: 168878 }),
+    );
+    expect(backend.requestsTo("GET /api/nutrition/foods")[0].searchParams.get("q")).toBe("cooked rice");
+  });
+
+  it("says it does not count, and goes back to the default, for the row it is pressed on", async () => {
+    const rice = ingredientDetail({
+      key: "rice",
+      name: "rice",
+      foods: [
+        { key: "rice", state: null, status: "default", food: null },
+        { key: "cooked-rice", state: "cooked", status: "skipped", food: null },
+      ],
+    });
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": rice,
+      "PUT /api/nutrition/match": undefined,
+      "DELETE /api/nutrition/match": undefined,
+    });
+    const { user } = renderApp("/ingredients/rice");
+    await screen.findByRole("heading", { name: "rice" });
+
+    await user.click(within(screen.getByRole("group", { name: "cooked rice" })).getByRole("button", { name: "Back to default" }));
+    await user.click(within(screen.getByRole("group", { name: "rice" })).getByRole("button", { name: "It doesn’t count" }));
+
+    await waitFor(() => expect(backend.requestsTo("PUT /api/nutrition/match")).toHaveLength(1));
+    expect(backend.requestsTo("DELETE /api/nutrition/match")[0].searchParams.get("key")).toBe("cooked-rice");
+    expect(backend.requestsTo("PUT /api/nutrition/match")[0].body).toEqual({ key: "rice", fdc_id: null });
+  });
+
   it("hides the store with pricing off", async () => {
     mockBackend({ "GET /api/ingredients/:key": { ...cumin, product: null } });
     renderApp("/ingredients/cumin");

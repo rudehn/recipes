@@ -29,6 +29,12 @@ describe("summaryLine", () => {
     expect(summaryLine(fries)).toBe("no recipes · no match · no food chosen");
   });
 
+  it("says a food is missing when any of its lines has none, whatever its own food", () => {
+    // Rice counts by default, and "cooked rice" is a food of its own with none.
+    const rice = ingredientSummary({ food: { status: "default", food: null }, problems: ["no_food"] });
+    expect(summaryLine(rice)).toBe("1 recipe · no food chosen");
+  });
+
   it("says nothing about the store with pricing off", () => {
     expect(summaryLine(ingredientSummary({ product: null }))).toBe("1 recipe · counted");
   });

@@ -174,6 +174,7 @@ It is the ingredient-level partner of the recipe box's "Needs a look", which sta
 - **Pantry**: a "Keep stocked" switch, and "In stock" while it is kept; "Stop keeping stocked" removes the staple.
 - **At your store** (pricing on): the product with its size and price, marked "your pick" or automatic, with Change product (the existing product picker), Don't price this, and Back to automatic.
 - **Nutrition**: the food it counts as, with Change food (the existing food picker, which already names the recipes a choice reaches), It doesn't count, and Back to default.
+  A line with a state word is counted as a food of its own (ADR 8), so each such food its lines use ("cooked rice" beside "rice") gets a row of its own with the same three actions, acting on that food alone.
 - **Used in**: each recipe and its line exactly as written ("2 tsp ground cumin" in Chili), each linking to that line on the recipe page, each with Fix (section 4).
 - **Might be the same as**: suggested merges involving this ingredient.
 - **Same as another ingredient…**: starts a merge (section 3).
@@ -281,7 +282,7 @@ Nothing is rewritten in bulk without being shown first.
 | Method and path | Purpose |
 | --- | --- |
 | `GET /api/ingredients` | Every ingredient with its names, recipe count, staple, product and food status, issues and suggestion count. The views filter this on the client. |
-| `GET /api/ingredients/{key}` | One ingredient with its lines, merged names and suggestions; a merged-away key answers with its target and says so. |
+| `GET /api/ingredients/{key}` | One ingredient with its lines, merged names, suggestions, and a food for each nutrition key its lines use; a merged-away key answers with its target and says so. |
 | `GET /api/ingredients/suggestions` | Undismissed suggested merges, with the reason for each. |
 | `POST /api/ingredients/suggestions/dismiss` | "Not the same" for a pair. |
 | `POST /api/ingredients/merges/preview` | What merging `from_key` into `to_key` would change, and which choices it needs. |
