@@ -22,7 +22,8 @@ export function LineFixer({
   onSaved: (edited: EditedLine) => void;
   onCancel: () => void;
 }) {
-  const [quantity, setQuantity] = useState(line.quantity === null ? "" : formatAmount(line.quantity));
+  const started = line.quantity === null ? "" : formatAmount(line.quantity);
+  const [quantity, setQuantity] = useState(started);
   const [unit, setUnit] = useState(line.unit ?? "");
   const [name, setName] = useState(line.name);
   const [error, setError] = useState<string | null>(null);
@@ -31,8 +32,11 @@ export function LineFixer({
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const typed = quantity.trim();
-    const amount = typed === "" ? null : parseQuantity(typed);
-    if (typed !== "" && amount === null) {
+    // An untouched quantity keeps its exact stored value: the display snaps
+    // 0.33 to a third, and reading that back would quietly change it.
+    const amount = typed === started ? line.quantity : parseQuantity(typed);
+    // parseQuantity answers NaN, not null, for text it cannot read.
+    if (amount !== null && Number.isNaN(amount)) {
       setError("Quantities are numbers or fractions like 1 1/2.");
       return;
     }

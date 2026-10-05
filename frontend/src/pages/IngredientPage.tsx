@@ -52,7 +52,7 @@ export default function IngredientPage() {
   const action = useAction();
   const [choosing, setChoosing] = useState<"product" | "food" | null>(null);
   const [fixing, setFixing] = useState<number | null>(null);
-  const [moved, setMoved] = useState<{ name: string; key: string } | null>(null);
+  const [moved, setMoved] = useState<{ name: string; key: string }[]>([]);
   const [rereads, setRereads] = useState<Reread[] | null>(null);
 
   const location = useLocation();
@@ -84,18 +84,19 @@ export default function IngredientPage() {
     if (await action.run(write)) reload();
   }
 
-  function saved(edited: EditedLine) {
+  function saved(edited: EditedLine[]) {
     setFixing(null);
-    if (edited.key === data!.key) {
+    const gone = edited.filter((e) => e.key !== data!.key);
+    if (gone.length === 0) {
       reload();
       return;
     }
-    // The line now stands for another ingredient. If it was this one's last
-    // reason to exist, go to where it went; otherwise say where it went.
-    if (data!.lines.length === 1 && !data!.staple) {
-      navigate(`/ingredients/${edited.key}`);
+    // Lines now stand for other ingredients. If that was this one's last
+    // reason to exist, go to where the first went; otherwise say where they went.
+    if (gone.length === data!.lines.length && !data!.staple) {
+      navigate(`/ingredients/${gone[0].key}`);
     } else {
-      setMoved({ name: edited.name, key: edited.key });
+      setMoved(gone.map((e) => ({ name: e.name, key: e.key })));
       reload();
     }
   }
@@ -273,9 +274,16 @@ export default function IngredientPage() {
             ) : undefined
           }
         >
-          {moved && (
+          {moved.length > 0 && (
             <Banner tone="notice" spaced>
-              Now shops as <Link to={`/ingredients/${moved.key}`}>{moved.name}</Link>.
+              Now shops as{" "}
+              {moved.map((m, n) => (
+                <span key={m.key + n}>
+                  {n > 0 && ", "}
+                  <Link to={`/ingredients/${m.key}`}>{m.name}</Link>
+                </span>
+              ))}
+              .
             </Banner>
           )}
           {data.lines.length === 0 ? (
@@ -286,7 +294,7 @@ export default function IngredientPage() {
                 fixing === line.ingredient_id ? (
                   <li key={line.ingredient_id}>
                     <span className="recipe">{line.recipe_title}</span>
-                    <LineFixer line={line} onSaved={saved} onCancel={() => setFixing(null)} />
+                    <LineFixer line={line} onSaved={(edited) => saved([edited])} onCancel={() => setFixing(null)} />
                   </li>
                 ) : (
                   <li key={line.ingredient_id}>
@@ -391,7 +399,7 @@ export default function IngredientPage() {
               onClick={() => {
                 const edits = changedReads.map((r) => r.after);
                 setRereads(null);
-                void change(() => api.editLines(edits));
+                void action.run(async () => saved(await api.editLines(edits)));
               }}
             >
               Save changes

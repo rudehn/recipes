@@ -210,9 +210,12 @@ describe("IngredientPage: fixing lines", () => {
     ],
   });
 
+  const moved = { id: 31, recipe_id: 4, name: "black beans, drained and rinsed", quantity: 15, unit: "oz", issue: null, key: "black-bean" };
+  const tacos = ingredientLine({ ingredient_id: 32, recipe_id: 6, recipe_title: "Tacos", name: "can black beans", quantity: 1, unit: null });
+
   it("edits a line in place, and says where it moved to", async () => {
     const backend = mockBackend({
-      "GET /api/ingredients/:key": beans,
+      "GET /api/ingredients/:key": { ...beans, lines: [...beans.lines, tacos] },
       "PATCH /api/recipe-ingredients": [
         { id: 31, recipe_id: 4, name: "black beans, drained and rinsed", quantity: 15, unit: "oz", issue: null, key: "black-bean" },
       ],
@@ -220,7 +223,7 @@ describe("IngredientPage: fixing lines", () => {
     const { user } = renderApp("/ingredients/can-black-bean");
     await screen.findByRole("heading", { name: /can black beans/ });
 
-    await user.click(screen.getByRole("button", { name: "Fix" }));
+    await user.click(screen.getAllByRole("button", { name: "Fix" })[0]);
     const name = screen.getByLabelText("Name");
     await user.clear(name);
     await user.type(name, "black beans, drained and rinsed");
@@ -230,6 +233,57 @@ describe("IngredientPage: fixing lines", () => {
     expect(backend.requestsTo("PATCH /api/recipe-ingredients")[0].body).toEqual({
       lines: [{ id: 31, name: "black beans, drained and rinsed", quantity: 15, unit: "oz" }],
     });
+    const link = await screen.findByRole("link", { name: "black beans, drained and rinsed" });
+    expect(link).toHaveAttribute("href", "/ingredients/black-bean");
+    expect(screen.getByText(/Now shops as/)).toBeInTheDocument();
+  });
+
+  it("goes to the new ingredient when the fixed line was the last one", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": beans,
+      "PATCH /api/recipe-ingredients": [moved],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("GET /api/ingredients/:key").some((r) => r.params.key === "black-bean")).toBe(true),
+    );
+  });
+
+  it("refuses a quantity it cannot read, and sends nothing", async () => {
+    const backend = mockBackend({ "GET /api/ingredients/:key": beans });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    const qty = screen.getByLabelText("Quantity");
+    await user.clear(qty);
+    await user.type(qty, "abc");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Quantities are numbers or fractions like 1 1/2.")).toBeInTheDocument();
+    expect(backend.requestsTo("PATCH /api/recipe-ingredients")).toHaveLength(0);
+  });
+
+  it("keeps the exact quantity when it was not touched", async () => {
+    const third = { ...beans, lines: [{ ...beans.lines[0], quantity: 0.33 }] };
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": third,
+      "PATCH /api/recipe-ingredients": [{ ...moved, key: "can-black-bean", quantity: 0.33 }],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PATCH /api/recipe-ingredients")[0].body).toMatchObject({ lines: [{ quantity: 0.33 }] }),
+    );
   });
 
   it("reads a line again without saving it", async () => {
