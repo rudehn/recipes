@@ -295,6 +295,29 @@ export interface MergePreview {
   needs: MergeNeed[];
 }
 
+/** A recipe line as it should read, addressed by its id. */
+export interface LineEdit {
+  id: number;
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+}
+
+export interface EditedLine extends LineEdit {
+  recipe_id: number;
+  issue: LineIssue | null;
+  /** The ingredient the line now stands for. */
+  key: string;
+}
+
+export interface Reread {
+  id: number;
+  before: LineEdit;
+  after: LineEdit;
+  /** True when the website's own line was read; false when rebuilt from its parts. */
+  from_source: boolean;
+}
+
 /**
  * One recipe's call for an ingredient a grocery line stands for.
  *
@@ -930,6 +953,18 @@ export const api = {
     request<void>("/api/ingredients/merges", {
       method: "POST",
       body: JSON.stringify({ from_key, to_key, choices }),
+    }),
+  /** Edit recipe lines in place, keeping their ids. All or nothing. */
+  editLines: (lines: LineEdit[]) =>
+    request<EditedLine[]>("/api/recipe-ingredients", {
+      method: "PATCH",
+      body: JSON.stringify({ lines }),
+    }),
+  /** What today's importer makes of each line. Saves nothing. */
+  rereadLines: (ids: number[]) =>
+    request<Reread[]>("/api/recipe-ingredients/reread", {
+      method: "POST",
+      body: JSON.stringify({ ids }),
     }),
   unmerge: (from_key: string) =>
     request<void>(`/api/ingredients/merges/${encodeURIComponent(from_key)}`, { method: "DELETE" }),

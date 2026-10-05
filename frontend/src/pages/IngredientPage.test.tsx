@@ -192,3 +192,107 @@ describe("IngredientPage: suggested merges", () => {
     expect(await screen.findByText("Merge ground cumin into cumin")).toBeInTheDocument();
   });
 });
+
+describe("IngredientPage: fixing lines", () => {
+  const beans = ingredientDetail({
+    key: "can-black-bean",
+    name: "can black beans, drained and rinsed",
+    lines: [
+      ingredientLine({
+        ingredient_id: 31,
+        recipe_id: 4,
+        recipe_title: "Chili",
+        name: "can black beans, drained and rinsed",
+        quantity: 15,
+        unit: "oz",
+        issue: null,
+      }),
+    ],
+  });
+
+  it("edits a line in place, and says where it moved to", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": beans,
+      "PATCH /api/recipe-ingredients": [
+        { id: 31, recipe_id: 4, name: "black beans, drained and rinsed", quantity: 15, unit: "oz", issue: null, key: "black-bean" },
+      ],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    const name = screen.getByLabelText("Name");
+    await user.clear(name);
+    await user.type(name, "black beans, drained and rinsed");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(backend.requestsTo("PATCH /api/recipe-ingredients")).toHaveLength(1));
+    expect(backend.requestsTo("PATCH /api/recipe-ingredients")[0].body).toEqual({
+      lines: [{ id: 31, name: "black beans, drained and rinsed", quantity: 15, unit: "oz" }],
+    });
+  });
+
+  it("reads a line again without saving it", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": beans,
+      "POST /api/recipe-ingredients/reread": [
+        {
+          id: 31,
+          before: { id: 31, name: "can black beans, drained and rinsed", quantity: 15, unit: "oz" },
+          after: { id: 31, name: "black beans, drained and rinsed", quantity: 15, unit: "oz" },
+          from_source: false,
+        },
+      ],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+    await user.click(screen.getByRole("button", { name: "Read it again" }));
+
+    await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue("black beans, drained and rinsed"));
+    expect(backend.requestsTo("PATCH /api/recipe-ingredients")).toHaveLength(0);
+  });
+
+  it("shows what the website wrote, when it was kept", async () => {
+    mockBackend({
+      "GET /api/ingredients/:key": {
+        ...beans,
+        lines: [{ ...beans.lines[0], source_line: "1 (15 oz) can black beans, drained and rinsed" }],
+      },
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Fix" }));
+
+    expect(screen.getByText(/The website wrote: 1 \(15 oz\) can black beans/)).toBeInTheDocument();
+  });
+
+  it("reads all the lines again, and saves the ones that changed together", async () => {
+    const two = {
+      ...beans,
+      lines: [beans.lines[0], ingredientLine({ ingredient_id: 32, recipe_id: 6, recipe_title: "Tacos", name: "black beans", quantity: 1, unit: "can" })],
+    };
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": two,
+      "POST /api/recipe-ingredients/reread": [
+        { id: 31, before: { id: 31, name: "can black beans, drained and rinsed", quantity: 15, unit: "oz" }, after: { id: 31, name: "black beans, drained and rinsed", quantity: 15, unit: "oz" }, from_source: false },
+        { id: 32, before: { id: 32, name: "black beans", quantity: 1, unit: "can" }, after: { id: 32, name: "black beans", quantity: 1, unit: "can" }, from_source: false },
+      ],
+      "PATCH /api/recipe-ingredients": [],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+
+    await user.click(screen.getByRole("button", { name: "Read all 2 lines again" }));
+    expect(await screen.findByText("unchanged")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("PATCH /api/recipe-ingredients")[0].body).toEqual({
+        lines: [{ id: 31, name: "black beans, drained and rinsed", quantity: 15, unit: "oz" }],
+      }),
+    );
+  });
+});

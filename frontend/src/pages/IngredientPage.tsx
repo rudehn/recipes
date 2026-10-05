@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
-import { ApiError, api, type IngredientDetail, type IngredientLine } from "../api";
+import { ApiError, api, type EditedLine, type IngredientDetail, type IngredientLine, type Reread } from "../api";
+import { LineFixer } from "../components/LineFixer";
 import { LoadFailure } from "../components/LoadError";
 import { MergeDialog, type Merged } from "../components/MergeDialog";
 import { FoodPickerModal } from "../components/Nutrition";
 import { ProductPickerModal } from "../components/ProductPicker";
 import { SuggestionRow } from "../components/SuggestionRow";
 import { Banner, Button, EmptyState, LinkButton, Modal, PageHead, Panel, Switch } from "../components/ui";
+import { ISSUE_LABELS } from "../issues";
 import { formatQuantity } from "../quantity";
 import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
@@ -49,6 +51,9 @@ export default function IngredientPage() {
   );
   const action = useAction();
   const [choosing, setChoosing] = useState<"product" | "food" | null>(null);
+  const [fixing, setFixing] = useState<number | null>(null);
+  const [moved, setMoved] = useState<{ name: string; key: string } | null>(null);
+  const [rereads, setRereads] = useState<Reread[] | null>(null);
 
   const location = useLocation();
   const [merging, setMerging] = useState<readonly [string, string] | "pick" | null>(null);
@@ -79,6 +84,26 @@ export default function IngredientPage() {
     if (await action.run(write)) reload();
   }
 
+  function saved(edited: EditedLine) {
+    setFixing(null);
+    if (edited.key === data!.key) {
+      reload();
+      return;
+    }
+    // The line now stands for another ingredient. If it was this one's last
+    // reason to exist, go to where it went; otherwise say where it went.
+    if (data!.lines.length === 1 && !data!.staple) {
+      navigate(`/ingredients/${edited.key}`);
+    } else {
+      setMoved({ name: edited.name, key: edited.key });
+      reload();
+    }
+  }
+
+  async function readAll() {
+    await action.run(async () => setRereads(await api.rereadLines(data!.lines.map((l) => l.ingredient_id))));
+  }
+
   if (missing) {
     return (
       <EmptyState glyph="🥕" title="No ingredient called that">
@@ -95,6 +120,10 @@ export default function IngredientPage() {
   const staple = data.staple;
   const standing = data.product;
   const food = data.food;
+  const changedReads = (rereads ?? []).filter(
+    (r) =>
+      r.after.name !== r.before.name || r.after.quantity !== r.before.quantity || r.after.unit !== r.before.unit,
+  );
 
   return (
     <div className="ingredient-layout">
@@ -234,17 +263,48 @@ export default function IngredientPage() {
       </section>
 
       <section aria-label="Used in">
-        <Panel title="Used in">
+        <Panel
+          title="Used in"
+          action={
+            data.lines.length > 1 ? (
+              <Button size="small" onClick={readAll}>
+                Read all {data.lines.length} lines again
+              </Button>
+            ) : undefined
+          }
+        >
+          {moved && (
+            <Banner tone="notice" spaced>
+              Now shops as <Link to={`/ingredients/${moved.key}`}>{moved.name}</Link>.
+            </Banner>
+          )}
           {data.lines.length === 0 ? (
             <p className="muted">No recipe uses it; it is here as a staple.</p>
           ) : (
             <ul className="ingredient-lines">
-              {data.lines.map((line) => (
-                <li key={line.ingredient_id}>
-                  <span className="recipe">{line.recipe_title}</span>
-                  <Link to={recipeIngredientPath(line.recipe_id, [line.ingredient_id])}>{lineText(line)}</Link>
-                </li>
-              ))}
+              {data.lines.map((line) =>
+                fixing === line.ingredient_id ? (
+                  <li key={line.ingredient_id}>
+                    <span className="recipe">{line.recipe_title}</span>
+                    <LineFixer line={line} onSaved={saved} onCancel={() => setFixing(null)} />
+                  </li>
+                ) : (
+                  <li key={line.ingredient_id}>
+                    <span className="recipe">{line.recipe_title}</span>
+                    <span className="line">
+                      <Link to={recipeIngredientPath(line.recipe_id, [line.ingredient_id])}>{lineText(line)}</Link>
+                      {line.issue && <span className="issue-tag">{ISSUE_LABELS[line.issue]}</span>}
+                      <Button
+                        size="small"
+                        variant={line.issue ? "primary" : undefined}
+                        onClick={() => setFixing(line.ingredient_id)}
+                      >
+                        Fix
+                      </Button>
+                    </span>
+                  </li>
+                ),
+              )}
             </ul>
           )}
         </Panel>
@@ -306,6 +366,39 @@ export default function IngredientPage() {
             reload();
           }}
         />
+      )}
+      {rereads && (
+        <Modal title="Read the lines again" onClose={() => setRereads(null)}>
+          <ul className="reread-list">
+            {rereads.map((r) => {
+              const changed = changedReads.includes(r);
+              return (
+                <li key={r.id}>
+                  <span className="before">{lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.before })}</span>
+                  {changed ? (
+                    <span className="after">→ {lineText({ ...data.lines.find((l) => l.ingredient_id === r.id)!, ...r.after })}</span>
+                  ) : (
+                    <span className="muted">unchanged</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="modal-actions">
+            <Button
+              variant="primary"
+              disabled={changedReads.length === 0}
+              onClick={() => {
+                const edits = changedReads.map((r) => r.after);
+                setRereads(null);
+                void change(() => api.editLines(edits));
+              }}
+            >
+              Save changes
+            </Button>
+            <Button onClick={() => setRereads(null)}>Cancel</Button>
+          </div>
+        </Modal>
       )}
       {unmerging && (
         <Modal title={`Unmerge ${unmerging.name}?`} onClose={() => setUnmerging(null)}>
