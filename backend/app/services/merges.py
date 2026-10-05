@@ -286,9 +286,12 @@ async def preview(session: AsyncSession, from_key: str, to_key: str) -> MergePre
             not_priced=standing.status == "not_priced",
         )
 
-    def food_side(summary) -> FoodSide | None:
+    def food_side(summary, *, stored_only: bool = False) -> FoodSide | None:
         food = summary.food
-        if food.status == "none":
+        # A default food is code, not a stored row, so a merge never moves it:
+        # the going name's default is gone afterwards, while the target's
+        # default survives because merged lines read the target.
+        if food.status == "none" or (stored_only and food.status == "default"):
             return None
         return FoodSide(
             food=food.food,
@@ -310,7 +313,7 @@ async def preview(session: AsyncSession, from_key: str, to_key: str) -> MergePre
             keeps=_keeps(p_from, p_to, from_wins, "product" in wanted),
         )
     food = None
-    f_from, f_to = food_side(source), food_side(target)
+    f_from, f_to = food_side(source, stored_only=True), food_side(target)
     if f_from or f_to:
         from_wins = bool(f_from and f_from.hand_picked and not (f_to and f_to.hand_picked))
         food = FoodConflict(

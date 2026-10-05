@@ -320,3 +320,62 @@ async def test_suggestions_can_be_listed_and_turned_down(client):
         "/api/ingredients/suggestions/dismiss", json={"key_a": "cumin", "key_b": "ground-cumin"}
     )
     assert (await client.get("/api/ingredients/suggestions")).json() == []
+
+
+async def food_preview(client, from_name: str, to_name: str) -> dict:
+    await recipe(client, "Chili", [(from_name, 1, "tsp"), (to_name, 1, "tsp")])
+    resp = await client.post(
+        "/api/ingredients/merges/preview",
+        json={"from_key": from_name.replace(" ", "-"), "to_key": to_name.replace(" ", "-")},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def test_a_default_food_going_away_is_not_shown_as_kept(client):
+    preview = await food_preview(client, "ground cumin", "dragonfruit dust")
+
+    assert preview["food"] is None
+
+
+async def test_a_default_food_loses_to_the_targets_default(client):
+    preview = await food_preview(client, "ground cumin", "cumin")
+
+    assert preview["food"]["from_side"] is None
+    assert preview["food"]["keeps"] == "to"
+
+
+async def test_a_hand_picked_product_beats_an_automatic_one(client, monkeypatch):
+    monkeypatch.setattr(config, "KROGER_CLIENT_ID", "test-id")
+    monkeypatch.setattr(config, "KROGER_CLIENT_SECRET", "test-secret")
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    async with session_factory() as session:
+        session.add(AppSettings(id=1, kroger_location_id=STORE))
+        session.add(
+            IngredientProductMatch(
+                canonical_key="ground-cumin",
+                location_id=STORE,
+                product_id="111",
+                user_confirmed=True,
+            )
+        )
+        session.add(
+            IngredientProductMatch(
+                canonical_key="cumin", location_id=STORE, product_id="222", user_confirmed=False
+            )
+        )
+        await session.commit()
+
+    async def no_kroger(*args, **kwargs):
+        raise kroger_client.KrogerError("down")
+
+    monkeypatch.setattr(products, "by_ids", no_kroger)
+
+    preview = (
+        await client.post(
+            "/api/ingredients/merges/preview", json={"from_key": "ground-cumin", "to_key": "cumin"}
+        )
+    ).json()
+
+    assert preview["product"]["keeps"] == "from"
+    assert preview["needs"] == []
