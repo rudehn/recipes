@@ -341,6 +341,17 @@ describe("a dialog's own words", () => {
 });
 
 /**
+ * An ingredient's page lays each panel out as a grid, and a grid stretches
+ * what it holds: "Keep stocked" and "Stop keeping stocked" were drawn as
+ * bars across the panel with their labels at one end.
+ */
+describe("an ingredient's panels", () => {
+  it("leave each button at its own width", () => {
+    expect(css).toMatch(/\.ingredient-facts\s*\{[^}]*justify-items:\s*start/);
+  });
+});
+
+/**
  * A description is written in paragraphs and lines, so it is shown in them,
  * and the field it is written in grows with it - but only so far, or a long
  * one would push the rest of the form off the screen.

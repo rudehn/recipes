@@ -3399,7 +3399,9 @@ body.has-install-hint .page {
 
 .also-called { color: var(--muted); margin: 0 0 var(--space-16); }
 
-.ingredient-facts { display: grid; gap: var(--space-12); }
+/* Each thing at its own width: a grid stretches its items by default, which
+   drew "Keep stocked" as a bar across the panel with its label at one end. */
+.ingredient-facts { display: grid; justify-items: start; gap: var(--space-12); }
 
 .ingredient-facts .fact { display: grid; gap: var(--space-2); margin: 0; }
 
