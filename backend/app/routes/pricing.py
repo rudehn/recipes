@@ -24,7 +24,7 @@ from ..schemas import (
     StoreSelection,
 )
 from ..services import settings as settings_service
-from ..services.canonical import canonical_key
+from ..services.identity import Identity
 from ..services.kroger import client as kroger
 from ..services.kroger import locations, matching, pricing, products
 
@@ -116,7 +116,8 @@ async def alternatives(
     """
     store = await _require_store(session)
     term = (q or "").strip()
-    rank_by = canonical_key(term) if term else key
+    identity = await Identity.of(session)
+    rank_by = identity.key(term) if term else key
     try:
         found = await products.search(
             term or key.replace("-", " "), store.location_id, ALTERNATIVES

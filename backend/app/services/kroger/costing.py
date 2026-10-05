@@ -41,8 +41,8 @@ from ...schemas import (
     Suggestions,
 )
 from .. import settings as settings_service
-from ..canonical import canonical_key
 from ..grocery import build_grocery_list, normalize_unit, scale_factor
+from ..identity import Identity
 from . import matching, pricing, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -96,7 +96,8 @@ async def _products_for(
     searches - it uses what earlier lists and pages already decided, and
     recipes nothing has priced yet are simply not ranked.
     """
-    keys = sorted({k for r in recipes for ing in r.ingredients if (k := canonical_key(ing.name))})
+    identity = await Identity.of(session)
+    keys = sorted({k for r in recipes for ing in r.ingredients if (k := identity.key(ing.name))})
     if not keys:
         return {}
     if resolve:
@@ -113,14 +114,14 @@ async def _products_for(
 
 
 def _cost_recipe(
-    recipe: Recipe, found: dict[str, Product], factor: float = 1.0
+    recipe: Recipe, found: dict[str, Product], factor: float = 1.0, *, identity: Identity
 ) -> tuple[list[CostLine], float, int]:
     """Every line of a recipe costed, with the total and how many priced."""
     lines: list[CostLine] = []
     total = 0.0
     priced = 0
     for ing in recipe.ingredients:
-        key = canonical_key(ing.name)
+        key = identity.key(ing.name)
         product = found.get(key)
         line = CostLine(ingredient_id=ing.id, name=ing.name, key=key)
         if product is not None:
@@ -147,7 +148,8 @@ async def recipe_cost(session: AsyncSession, recipe: Recipe) -> RecipeCost | Non
         log.warning("Could not cost recipe %s: %s", recipe.id, exc)
         return None
 
-    lines, total, priced = _cost_recipe(recipe, found)
+    identity = await Identity.of(session)
+    lines, total, priced = _cost_recipe(recipe, found, identity=identity)
     # Already decided by the lookup above, so this reads the rows it wrote and
     # searches for nothing.
     decided = await matching.stored_picks(
@@ -195,13 +197,16 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
         log.warning("Could not cost the meal plan: %s", exc)
         return None
 
+    identity = await Identity.of(session)
     by_day: dict[date, DayCost] = {}
     per_entry: list[EntryCost] = []
     total = 0.0
     priced = 0
     total_lines = 0
     for entry in entries:
-        _, entry_total, entry_priced = _cost_recipe(entry.recipe, found, scale_factor(entry))
+        _, entry_total, entry_priced = _cost_recipe(
+            entry.recipe, found, scale_factor(entry), identity=identity
+        )
         per_entry.append(
             EntryCost(
                 entry_id=entry.id,
@@ -243,14 +248,15 @@ async def suggestions(session: AsyncSession) -> Suggestions:
     recipes = (await session.execute(select(Recipe))).scalars().unique().all()
     recipes = [r for r in recipes if r.ingredients]
 
+    identity = await Identity.of(session)
     pantry = {
-        canonical_key(p.name)
+        identity.key(p.name)
         for p in (await session.execute(select(PantryItem))).scalars().all()
         if p.in_stock
     }
     from_pantry: list[PantryRecipe] = []
     for recipe in recipes:
-        keys = {k for ing in recipe.ingredients if (k := canonical_key(ing.name))}
+        keys = {k for ing in recipe.ingredients if (k := identity.key(ing.name))}
         have = len(keys & pantry)
         if keys and have / len(keys) >= PANTRY_SHARE:
             from_pantry.append(
@@ -277,7 +283,7 @@ async def suggestions(session: AsyncSession) -> Suggestions:
         for recipe in recipes:
             if not recipe.servings:
                 continue
-            lines, total, priced = _cost_recipe(recipe, found)
+            lines, total, priced = _cost_recipe(recipe, found, identity=identity)
             if priced / len(lines) < SUGGESTION_COVERAGE:
                 continue
             costed.append(

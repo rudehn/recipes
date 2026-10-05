@@ -9,16 +9,17 @@ again.
 
 import pytest
 
+from app.services.identity import Identity
 from app.services.kroger.units import COUNT, VOLUME, WEIGHT, Measure
 from app.services.shopping_text import MAX_LINES, read_shopping_text
 
 
 def names(text: str) -> list[str]:
-    return [line.name for line in read_shopping_text(text).lines]
+    return [line.name for line in read_shopping_text(text, Identity.none()).lines]
 
 
 def only(text: str):
-    lines = read_shopping_text(text).lines
+    lines = read_shopping_text(text, Identity.none()).lines
     assert len(lines) == 1, lines
     return lines[0]
 
@@ -57,7 +58,7 @@ def test_bullets_checkboxes_and_numbering_are_stripped(line):
 )
 def test_a_ticked_line_is_left_out_and_named(line):
     """A tick on a list someone has been shopping from means it is bought."""
-    read = read_shopping_text(f"{line}\neggs")
+    read = read_shopping_text(f"{line}\neggs", Identity.none())
     assert [item.name for item in read.lines] == ["eggs"]
     assert read.ticked == ["milk"]
 
@@ -129,13 +130,13 @@ def test_commas_inside_a_multi_line_list_belong_to_the_item():
 
 
 def test_the_same_thing_twice_is_one_line_with_the_counts_added():
-    read = read_shopping_text("eggs\n2 eggs\nmilk")
+    read = read_shopping_text("eggs\n2 eggs\nmilk", Identity.none())
     assert [(item.name, item.packages) for item in read.lines] == [("eggs", 3), ("milk", 1)]
 
 
 def test_the_same_thing_written_differently_is_still_one_line():
     """Merged on the key every other part of the app buys by."""
-    read = read_shopping_text("Eggs\nlarge eggs")
+    read = read_shopping_text("Eggs\nlarge eggs", Identity.none())
     assert [(item.key, item.packages) for item in read.lines] == [("egg", 2)]
 
 
@@ -166,4 +167,4 @@ def test_counts_stop_at_what_can_be_ordered():
 def test_a_list_longer_than_a_trip_is_cut_short():
     words = [f"food {chr(97 + i % 26)}{chr(97 + i // 26)}" for i in range(MAX_LINES + 20)]
     text = "\n".join(words)
-    assert len(read_shopping_text(text).lines) == MAX_LINES
+    assert len(read_shopping_text(text, Identity.none()).lines) == MAX_LINES

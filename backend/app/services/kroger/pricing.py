@@ -39,7 +39,8 @@ from ...schemas import (
     SaleItem,
 )
 from .. import settings as settings_service
-from ..canonical import best_display, canonical_key
+from ..canonical import best_display
+from ..identity import Identity
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -161,11 +162,12 @@ async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
         return []
 
     names = await _ingredient_names(session)
+    identity = await Identity.of(session)
     recipes = (await session.execute(select(Recipe))).scalars().unique().all()
 
     found: list[RecipeOnSale] = []
     for recipe in recipes:
-        keys = {k for ing in recipe.ingredients if (k := canonical_key(ing.name))}
+        keys = {k for ing in recipe.ingredients if (k := identity.key(ing.name))}
         hits = sorted(keys & discounted.keys(), key=lambda k: names.get(k, k))
         if not hits:
             continue
@@ -189,11 +191,12 @@ async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
 
 async def _ingredient_names(session: AsyncSession) -> dict[str, str]:
     """A readable name per canonical key, from the things that use it."""
+    identity = await Identity.of(session)
     variants: dict[str, list[str]] = {}
     ingredients = (await session.execute(select(Ingredient.name))).scalars().all()
     pantry = (await session.execute(select(PantryItem.name))).scalars().all()
     for name in [*ingredients, *pantry]:
-        key = canonical_key(name)
+        key = identity.key(name)
         if key:
             variants.setdefault(key, []).append(name)
     return {key: best_display(names) for key, names in variants.items()}

@@ -25,8 +25,9 @@ from ...schemas import (
     RecipeNutrition,
     RecipeRef,
 )
+from ..identity import Identity
 from . import foods, weights
-from .defaults import default_for, nutrition_key
+from .defaults import default_for
 
 
 def nutrients_out(amount: foods.Nutrients) -> NutrientsOut:
@@ -80,7 +81,8 @@ async def recipes_using(session: AsyncSession, key: str) -> list[RecipeRef]:
             Ingredient, Ingredient.recipe_id == Recipe.id
         )
     )
-    found = {rid: title for rid, title, name in rows.all() if nutrition_key(name) == key}
+    identity = await Identity.of(session)
+    found = {rid: title for rid, title, name in rows.all() if identity.nutrition_key(name) == key}
     return [
         RecipeRef(id=rid, title=title)
         for rid, title in sorted(found.items(), key=lambda item: (item[1].casefold(), item[0]))
@@ -93,16 +95,20 @@ async def forget(session: AsyncSession, key: str) -> None:
     await session.commit()
 
 
-def recipe_keys(recipe: Recipe) -> set[str]:
+def recipe_keys(recipe: Recipe, identity: Identity) -> set[str]:
     """The nutrition keys a recipe's ingredients are chosen under."""
-    return {key for ing in recipe.ingredients if (key := nutrition_key(ing.name))}
+    return {key for ing in recipe.ingredients if (key := identity.nutrition_key(ing.name))}
 
 
 async def recipe_nutrition(session: AsyncSession, recipe: Recipe) -> RecipeNutrition:
-    return count_recipe(recipe, await hand_picks(session, recipe_keys(recipe)))
+    identity = await Identity.of(session)
+    picked = await hand_picks(session, recipe_keys(recipe, identity))
+    return count_recipe(recipe, picked, identity)
 
 
-def count_recipe(recipe: Recipe, picked: dict[str, int | None]) -> RecipeNutrition:
+def count_recipe(
+    recipe: Recipe, picked: dict[str, int | None], identity: Identity
+) -> RecipeNutrition:
     """A recipe's nutrition, given the foods people chose.
 
     Apart from `recipe_nutrition` so a caller looking at many recipes - the
@@ -110,7 +116,7 @@ def count_recipe(recipe: Recipe, picked: dict[str, int | None]) -> RecipeNutriti
     choice in one query and count each recipe from it, rather than asking
     once per recipe. `picked` may hold keys this recipe does not use.
     """
-    keys = [nutrition_key(ing.name) for ing in recipe.ingredients]
+    keys = [identity.nutrition_key(ing.name) for ing in recipe.ingredients]
     lines: list[NutritionLine] = []
     total = foods.Nutrients()
     counted = 0

@@ -32,7 +32,7 @@ from ..schemas import (
     RecipeSummary,
 )
 from . import settings as settings_service
-from .canonical import canonical_key
+from .identity import Identity
 from .kroger.client import enabled
 from .nutrition import facts
 
@@ -64,7 +64,7 @@ def _issue(
 
 
 def _issues(
-    recipe: Recipe, nutrition: RecipeNutrition, unmatched: set[str]
+    recipe: Recipe, nutrition: RecipeNutrition, unmatched: set[str], identity: Identity
 ) -> list[IngredientIssue]:
     """Every reason in a recipe's rows, in the recipe's order.
 
@@ -74,7 +74,7 @@ def _issues(
     """
     found: list[IngredientIssue] = []
     for ing, line in zip(recipe.ingredients, nutrition.lines, strict=True):
-        price = ing.issue or ("no_match" if canonical_key(ing.name) in unmatched else None)
+        price = ing.issue or ("no_match" if identity.key(ing.name) in unmatched else None)
         food = line.issue
         if price is not None and price == food:
             # A recipe-side reason is the same reason on both sides: one edit
@@ -91,15 +91,16 @@ def _issues(
 async def recipes_needing_a_look(session: AsyncSession) -> list[RecipeAttention]:
     """Recipes with something to fix, the most to fix first."""
     recipes = (await session.execute(select(Recipe))).scalars().unique().all()
+    identity = await Identity.of(session)
     unmatched = await _unmatched(session)
     picked = await facts.hand_picks(
-        session, {key for recipe in recipes for key in facts.recipe_keys(recipe)}
+        session, {key for recipe in recipes for key in facts.recipe_keys(recipe, identity)}
     )
 
     found: list[RecipeAttention] = []
     for recipe in recipes:
-        nutrition = facts.count_recipe(recipe, picked)
-        issues = _issues(recipe, nutrition, unmatched)
+        nutrition = facts.count_recipe(recipe, picked, identity)
+        issues = _issues(recipe, nutrition, unmatched, identity)
         # Only a recipe with something to count has a figure to miss. One
         # made only of things to taste shows no nutrition at all, servings
         # or none, so there is nothing for the count to fix.

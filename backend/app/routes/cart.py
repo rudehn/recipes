@@ -34,6 +34,7 @@ from ..schemas import (
 )
 from ..services import settings as settings_service
 from ..services.grocery import build_grocery_list
+from ..services.identity import Identity
 from ..services.kroger import cart
 from ..services.kroger import client as kroger
 from ..services.kroger.locations import Store
@@ -217,7 +218,7 @@ async def paste_preview(data: PasteRequest, session: AsyncSession = Depends(get_
     """
     _require_configured()
     store = await _store_for_paste(session)
-    read = read_shopping_text(data.text)
+    read = read_shopping_text(data.text, await Identity.of(session))
     try:
         ordered = await cart.order_pasted(session, read, store.location_id)
     except kroger.KrogerError:
@@ -239,7 +240,7 @@ async def paste_add(data: PasteSend, session: AsyncSession = Depends(get_session
         raise HTTPException(status_code=409, detail="No Kroger account is connected")
     store = await _store_for_paste(session)
 
-    read = read_shopping_text(data.text)
+    read = read_shopping_text(data.text, await Identity.of(session))
     try:
         ordered = await cart.order_pasted(
             session, read, store.location_id, data.quantities, data.removed

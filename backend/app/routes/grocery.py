@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..db import get_session
 from ..models import GroceryCheck, PantryItem
 from ..schemas import GroceryList, GroceryMark, GroceryPrices, LinePricing
-from ..services.grocery import build_grocery_list, item_key
+from ..services.grocery import build_grocery_list
+from ..services.identity import Identity
 from ..services.kroger import cart, pricing
 
 router = APIRouter(prefix="/grocery-list", tags=["grocery-list"])
@@ -78,9 +79,10 @@ async def mark_item(data: GroceryMark, session: AsyncSession = Depends(get_sessi
     # puts it back in stock, and so does saying there is already enough at
     # home, which is the same fact told a different way. Taking the mark
     # off undoes that.
+    identity = await Identity.of(session)
     result = await session.execute(select(PantryItem))
     for pantry in result.scalars().all():
-        if item_key(pantry.name) == data.key:
+        if identity.key(pantry.name) == data.key:
             pantry.in_stock = data.status != "to_buy"
     await session.commit()
 

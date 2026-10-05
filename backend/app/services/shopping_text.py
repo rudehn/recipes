@@ -14,7 +14,7 @@ A line already ticked off is not, since a tick on a list someone has been
 shopping from says it is bought; those are left out and named, so nothing
 disappears without saying so.
 
-Lines are merged on `canonical_key`, the identity every other part of the app
+Lines are merged on the `Identity` key, the one every other part of the app
 buys by (ADR 2), so "Eggs" and "large eggs" are one line and one product.
 Nothing here is stored: a pasted list goes to the cart and nowhere else.
 """
@@ -25,8 +25,8 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..schemas import MAX_CART_QUANTITY
-from .canonical import canonical_key
 from .grocery import normalize_unit
+from .identity import Identity
 from .kroger.units import Measure, measure
 from .list_marks import read_list_marks
 from .quantity import format_quantity
@@ -134,8 +134,12 @@ def _items(text: str) -> list[str]:
     return rows
 
 
-def read_shopping_text(text: str) -> ShoppingText:
-    """Every item in a pasted list, merged on what would be bought, in order."""
+def read_shopping_text(text: str, identity: Identity) -> ShoppingText:
+    """Every item in a pasted list, merged on what would be bought, in order.
+
+    Names are compared through `identity`, so a merged name pastes as its
+    target.
+    """
     order: list[str] = []
     names: dict[str, str] = {}
     packages: dict[str, int] = defaultdict(int)
@@ -153,7 +157,7 @@ def read_shopping_text(text: str) -> ShoppingText:
         # "2" on its own, or a bullet with nothing after it, names nothing.
         if not re.search(r"[^\W\d_]", line.name):
             continue
-        key = canonical_key(line.name)
+        key = identity.key(line.name)
         if not key:
             continue
         if marks.ticked:

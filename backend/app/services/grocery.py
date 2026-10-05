@@ -24,7 +24,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import GroceryCheck, MealPlanEntry, PantryItem, Recipe
 from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse, GroceryStatus, LineIssue
-from .canonical import best_display, canonical_key
+from .canonical import best_display
+from .identity import Identity
 from .quantity import format_quantity
 
 UNIT_ALIASES = {
@@ -59,11 +60,6 @@ def normalize_unit(unit: str | None) -> str | None:
     if not u:
         return None
     return UNIT_ALIASES.get(u, u)
-
-
-# Merge key for grocery items and pantry matching; also the identity that
-# checked-off state is stored under. See services.canonical for the rules.
-item_key = canonical_key
 
 
 def scale_factor(entry: MealPlanEntry) -> float:
@@ -122,9 +118,10 @@ async def build_grocery_list(
             .join(Recipe.ingredients, isouter=True)
         )
     ).unique().scalars().all()
+    identity = await Identity.of(session)
 
     pantry_items = (await session.execute(select(PantryItem))).scalars().all()
-    pantry_by_key = {canonical_key(p.name): p for p in pantry_items}
+    pantry_by_key = {identity.key(p.name): p for p in pantry_items}
 
     marks = (await session.execute(select(GroceryCheck))).scalars().all()
     status_of: dict[str, GroceryStatus] = {m.key: m.status for m in marks}  # type: ignore[misc]
@@ -141,7 +138,7 @@ async def build_grocery_list(
     for entry in entries:
         factor = scale_factor(entry)
         for ing in entry.recipe.ingredients:
-            key = item_key(ing.name)
+            key = identity.key(ing.name)
             if not key:
                 continue
             name_variants[key].append(ing.name.strip())
@@ -192,7 +189,7 @@ async def build_grocery_list(
     covered_keys = {i.key for i in items} | {i.key for i in in_pantry}
     restock: list[GroceryItem] = []
     for pantry in pantry_items:
-        key = item_key(pantry.name)
+        key = identity.key(pantry.name)
         status = status_of.get(key, "to_buy")
         if key in covered_keys or not _needs_buying(pantry, status):
             continue
