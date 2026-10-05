@@ -292,4 +292,26 @@ describe("IngredientsPage: views", () => {
     await user.type(screen.getByLabelText("Search ingredients"), "saffron");
     expect(screen.getByText("No ingredients match “saffron”.")).toBeInTheDocument();
   });
+
+  it("does not claim nothing needs a look when a search finds nothing", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin, fries) });
+    const { user } = renderApp("/ingredients?view=look");
+    await screen.findByRole("region", { name: "No product at your store" });
+
+    await user.type(screen.getByLabelText("Search ingredients"), "saffron");
+
+    expect(screen.getByText("No ingredients match “saffron”.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs a look")).not.toBeInTheDocument();
+  });
+
+  it("does not say there are no staples when a search finds none", async () => {
+    mockBackend({ "GET /api/ingredients": list(staple("rice")) });
+    const { user } = renderApp("/ingredients");
+    await screen.findByRole("link", { name: "rice" });
+
+    await user.type(screen.getByLabelText("Search ingredients"), "saffron");
+
+    expect(screen.getByText("No ingredients match “saffron”.")).toBeInTheDocument();
+    expect(screen.queryByText("No staples yet")).not.toBeInTheDocument();
+  });
 });

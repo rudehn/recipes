@@ -148,7 +148,7 @@ export default function IngredientsPage() {
             <StaplesView staples={shown} query={query} onToggle={setStock} onAdd={addStaple} />
           )}
           {view === "all" && shown.map((item) => <IngredientRow key={item.key} item={item} />)}
-          {view === "look" && <LookView items={shown} />}
+          {view === "look" && <LookView items={shown} query={query} />}
         </>
       )}
     </div>
@@ -268,12 +268,14 @@ function IngredientRow({ item }: { item: IngredientSummary }) {
  * chosen at the store, a food from USDA's, a line is edited in its recipe.
  * An ingredient with two problems is in two groups, once for each fix.
  */
-function LookView({ items }: { items: IngredientSummary[] }) {
+function LookView({ items, query }: { items: IngredientSummary[]; query: string }) {
   const groups = PROBLEM_GROUPS.map(
     ([problem, heading]) => [heading, items.filter((i) => i.problems.includes(problem))] as const,
   ).filter(([, found]) => found.length > 0);
 
   if (groups.length === 0) {
+    // With a search on, the page already says nothing matched; this would be false.
+    if (query.trim()) return null;
     return (
       <EmptyState glyph="✅" title="Nothing needs a look">
         <p>Every ingredient has a product, a food and a recipe line that reads right.</p>
