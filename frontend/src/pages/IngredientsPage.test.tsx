@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IngredientSummary } from "../api";
 import { HttpError, mockBackend } from "../test/backend";
-import { staple } from "../test/fixtures";
+import { ingredientSummary, itemPrice, staple } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 /** The list as the server sends it: already in name order. */
@@ -199,5 +199,97 @@ describe("IngredientsPage: staples", () => {
     renderApp("/pantry");
 
     expect(await screen.findByRole("heading", { name: "Ingredients" })).toBeInTheDocument();
+  });
+});
+
+describe("IngredientsPage: views", () => {
+  const cumin = ingredientSummary({
+    key: "cumin",
+    name: "cumin",
+    also_called: ["ground cumin"],
+    recipe_count: 2,
+    product: { status: "picked", product: itemPrice({ description: "McCormick Ground Cumin", regular: 3.49 }) },
+  });
+  const fries = ingredientSummary({
+    key: "22-ounce-bag-frozen-waffle-fry",
+    name: "22-ounce bag frozen waffle fries",
+    product: { status: "no_match", product: null },
+    food: { status: "none", food: null },
+    problems: ["no_match", "no_food", "fix_line"],
+  });
+
+  it("opens on Staples and switches to All, remembering the choice", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin, staple("rice")) });
+    const { user } = renderApp("/ingredients");
+    await screen.findByRole("link", { name: "rice" });
+    expect(screen.getByRole("button", { name: /Staples/ })).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(screen.getByRole("button", { name: /All/ }));
+
+    expect(screen.getByRole("link", { name: /cumin/ })).toHaveTextContent(
+      "2 recipes · McCormick Ground Cumin $3.49 · counted",
+    );
+    expect(localStorage.getItem("ingredients-view")).toBe("all");
+  });
+
+  it("opens on the view remembered on this device", async () => {
+    localStorage.setItem("ingredients-view", "all");
+    mockBackend({ "GET /api/ingredients": list(cumin) });
+    renderApp("/ingredients");
+
+    expect(await screen.findByRole("button", { name: /All/ })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens on the view a link asks for", async () => {
+    localStorage.setItem("ingredients-view", "staples");
+    mockBackend({ "GET /api/ingredients": list(cumin, fries) });
+    renderApp("/ingredients?view=look");
+
+    expect(await screen.findByRole("button", { name: /Needs a look/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("counts each view", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin, fries, staple("rice")) });
+    renderApp("/ingredients");
+
+    expect(await screen.findByRole("button", { name: "Staples 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All 3" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Needs a look 1" })).toBeInTheDocument();
+  });
+
+  it("groups what needs a look by the job it needs", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin, fries) });
+    renderApp("/ingredients?view=look");
+
+    for (const heading of ["No product at your store", "No food for nutrition", "Recipe lines to fix"]) {
+      const group = await screen.findByRole("region", { name: heading });
+      expect(within(group).getByRole("link", { name: /waffle fries/ })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole("link", { name: /cumin/ })).not.toBeInTheDocument();
+  });
+
+  it("says so when nothing needs a look", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin) });
+    renderApp("/ingredients?view=look");
+
+    expect(await screen.findByText("Nothing needs a look")).toBeInTheDocument();
+  });
+
+  it("searches the view on screen, by any name merged in", async () => {
+    mockBackend({ "GET /api/ingredients": list(cumin, fries) });
+    const { user } = renderApp("/ingredients?view=all");
+    await screen.findByRole("link", { name: /cumin/ });
+
+    await user.type(screen.getByLabelText("Search ingredients"), "ground");
+
+    expect(screen.getByRole("link", { name: /cumin/ })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /waffle fries/ })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("Search ingredients"));
+    await user.type(screen.getByLabelText("Search ingredients"), "saffron");
+    expect(screen.getByText("No ingredients match “saffron”.")).toBeInTheDocument();
   });
 });

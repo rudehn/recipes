@@ -3382,6 +3382,36 @@ body.has-install-hint .page {
   margin: var(--space-20) 0 var(--space-8);
 }
 
+.ingredients-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-12);
+  margin-bottom: var(--space-16);
+}
+
+.ingredients-controls .searchbar { flex: 1; min-width: 0; }
+
+/* A row in All and Needs a look: the name, one muted line, then its tags. */
+.ingredient-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-12) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.ingredient-row:hover { background: var(--surface-2); }
+
+.ingredient-row .name { font-weight: var(--weight-semibold); }
+
+.ingredient-row .meta {
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.ingredient-row .tags { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+
 .stock-toggle {
   display: inline-flex;
   align-items: center;
