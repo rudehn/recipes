@@ -131,8 +131,10 @@ ALLOWED = {
     "services/identity.py",
     "services/lint.py",
 }
-# A method of the identity is the sanctioned way, so only a bare call is flagged.
-CALL = re.compile(r"(?<![.\w])(canonical_key|nutrition_key)\(")
+# The identity's own methods are the sanctioned way. Any other call is flagged,
+# including through a module (`defaults.nutrition_key(x)`), since that is the
+# style a future caller would reach for.
+CALL = re.compile(r"(?<!identity\.)\b(canonical_key|nutrition_key)\(")
 
 
 def test_ingredients_are_only_compared_through_the_identity():
@@ -147,3 +149,10 @@ def test_ingredients_are_only_compared_through_the_identity():
             if CALL.search(code) and not code.lstrip().startswith("def "):
                 offenders.append(f"{rel}:{number}: {line.strip()}")
     assert offenders == []
+
+
+def test_the_guard_flags_every_way_of_calling_a_key_function():
+    flagged = ["nutrition_key(x)", "defaults.nutrition_key(x)", "canonical.canonical_key(x)"]
+    allowed = ["identity.nutrition_key(x)", "identity.key(x)"]
+    assert all(CALL.search(code) for code in flagged)
+    assert not any(CALL.search(code) for code in allowed)
