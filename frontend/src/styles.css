@@ -4401,6 +4401,16 @@ body.has-install-hint .page {
 
 .suggestion-row .answers { display: flex; gap: var(--space-8); }
 
+/* On an ingredient's page the questions sit in a panel, on its edges like
+   its other lines, and the panel's own edge closes the last one: inset and
+   ruled as on the list, they started a step in from the heading above and
+   left a stray rule just inside the panel's bottom. */
+.panel .suggestion-row { padding-inline: 0; }
+
+.panel h2 + .suggestion-row { padding-top: 0; }
+
+.panel .suggestion-row:last-child { padding-bottom: 0; border-bottom: none; }
+
 .ingredient-lines .line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-8); }
 
 .line-fixer { display: grid; gap: var(--space-8); }
