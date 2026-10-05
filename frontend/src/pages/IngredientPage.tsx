@@ -149,15 +149,9 @@ export default function IngredientPage() {
           <span>
             Merged {merged.fromName} into {merged.toName}.
           </span>
-          <Button
-            size="small"
-            onClick={() =>
-              change(async () => {
-                await api.unmerge(merged.fromKey);
-                navigate(location.pathname, { replace: true, state: null });
-              })
-            }
-          >
+          {/* The same question as Unmerge beside the name: the old name starts
+              fresh rather than getting its picks back, and is told so first. */}
+          <Button size="small" onClick={() => setUnmerging({ key: merged.fromKey, name: merged.fromName })}>
             Unmerge
           </Button>
         </Banner>

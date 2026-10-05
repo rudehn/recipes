@@ -186,6 +186,39 @@ describe("MergeDialog", () => {
     expect(backend.requestsTo("GET /api/ingredients/:key").length).toBeGreaterThan(before);
   });
 
+  it("asks before the banner's Unmerge takes the merge back", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": ({ params }: MockRequest) =>
+        params.key === "cumin"
+          ? ingredientDetail({ ...cumin, lines: [] })
+          : ingredientDetail({ ...ground, lines: [] }),
+      "GET /api/ingredients": { ingredients: [cumin, ground], suggestions: [] },
+      "POST /api/ingredients/merges/preview": preview(),
+      "POST /api/ingredients/merges": undefined,
+      "DELETE /api/ingredients/merges/:key": undefined,
+    });
+    const { user } = renderApp("/ingredients/ground-cumin");
+    await screen.findByRole("heading", { name: "ground cumin" });
+    await user.click(screen.getByRole("button", { name: "Same as another ingredient…" }));
+    await user.click(screen.getByRole("button", { name: "cumin" }));
+    await user.click(await screen.findByRole("button", { name: "Merge" }));
+    await screen.findByText(/Merged ground cumin into cumin/);
+
+    // The old name starts fresh rather than getting its picks back, which
+    // the owner is told before it happens, from either Unmerge.
+    await user.click(screen.getByRole("button", { name: "Unmerge" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText(/starts fresh/)).toBeInTheDocument();
+    expect(backend.requestsTo("DELETE /api/ingredients/merges/:key")).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole("button", { name: "Unmerge" }));
+    await waitFor(() => expect(backend.requestsTo("DELETE /api/ingredients/merges/:key")).toHaveLength(1));
+    expect(backend.requestsTo("DELETE /api/ingredients/merges/:key")[0].path).toBe(
+      "/api/ingredients/merges/ground-cumin",
+    );
+    await waitFor(() => expect(screen.queryByText(/Merged ground cumin into cumin/)).not.toBeInTheDocument());
+  });
+
   it("drops the banner when a name is unmerged from the list", async () => {
     mockBackend({
       "GET /api/ingredients/:key": ({ params }: MockRequest) =>
