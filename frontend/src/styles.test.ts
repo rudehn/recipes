@@ -229,6 +229,28 @@ describe("the ingredient list", () => {
 });
 
 /**
+ * A row on the Ingredients page, in All and Needs a look. It once shared
+ * .ingredient-row with the recipe form, whose row is a grid of amount, unit,
+ * name and delete button - so a name sat in the 90px amount column on a
+ * laptop and under its own tags on a phone. jsdom lays out neither, so what
+ * is assertable is that the two rows no longer share a class.
+ */
+describe("a row on the Ingredients page", () => {
+  const page = readFileSync(resolve(process.cwd(), "src/pages/IngredientsPage.tsx"), "utf8");
+
+  it("has a class of its own rather than the recipe form's row", () => {
+    expect(page).not.toMatch(/className="ingredient-row"/);
+    expect(page).toMatch(/className="ingredient-entry"/);
+  });
+
+  it("is a stack, with no columns of its own", () => {
+    const rules = [...css.matchAll(/(?:^|\n)\s*\.ingredient-entry\s*\{([^}]*)\}/g)];
+    expect(rules.length).toBeGreaterThan(0);
+    for (const [, body] of rules) expect(body).not.toMatch(/grid-template/);
+  });
+});
+
+/**
  * The planner's week grid at its narrowest. A column there is about 85px of
  * text beside the remove button, and a flex item will not shrink below its
  * longest word, so "Hashbrown" pushed the button 23px out of its card at

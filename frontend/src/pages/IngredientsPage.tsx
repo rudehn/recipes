@@ -260,7 +260,7 @@ function StapleGroup({
 
 function IngredientRow({ item }: { item: IngredientSummary }) {
   return (
-    <Link to={`/ingredients/${item.key}`} className="ingredient-row">
+    <Link to={`/ingredients/${item.key}`} className="ingredient-entry">
       <span className="name">{item.name}</span>
       <span className="meta">{summaryLine(item)}</span>
       {item.problems.length > 0 && (

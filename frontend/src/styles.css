@@ -3358,25 +3358,27 @@ body.has-install-hint .page {
 
 .ingredients-controls .searchbar { flex: 1; min-width: 0; }
 
-/* A row in All and Needs a look: the name, one muted line, then its tags. */
-.ingredient-row {
+/* A row in All and Needs a look: the name, one muted line, then its tags.
+   Not .ingredient-row, which is the recipe form's row of amount, unit, name
+   and delete button, and would lay these out in that form's columns. */
+.ingredient-entry {
   display: grid;
   gap: var(--space-2);
   padding: var(--space-12) var(--space-4);
   border-bottom: 1px solid var(--line);
 }
 
-.ingredient-row:hover { background: var(--surface-2); }
+.ingredient-entry:hover { background: var(--surface-2); }
 
-.ingredient-row .name { font-weight: var(--weight-semibold); }
+.ingredient-entry .name { font-weight: var(--weight-semibold); }
 
-.ingredient-row .meta {
+.ingredient-entry .meta {
   color: var(--muted);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 
-.ingredient-row .tags { display: flex; flex-wrap: wrap; gap: var(--space-6); }
+.ingredient-entry .tags { display: flex; flex-wrap: wrap; gap: var(--space-6); }
 
 .ingredient-layout { max-width: var(--width-compact); }
 
