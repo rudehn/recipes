@@ -248,6 +248,53 @@ export interface IngredientList {
   suggestions: MergeSuggestion[];
 }
 
+/** Which side of a merge keeps a thing both sides have. */
+export type MergeSide = "from" | "to";
+export type MergeNeed = "product" | "food" | "staple";
+
+export interface MergeChoices {
+  product?: MergeSide;
+  food?: MergeSide;
+  staple?: MergeSide;
+}
+
+export interface ProductSide {
+  product: ItemPrice | null;
+  hand_picked: boolean;
+  not_priced: boolean;
+}
+
+export interface FoodSide {
+  food: Food | null;
+  hand_picked: boolean;
+  skipped: boolean;
+}
+
+export interface StapleSide {
+  name: string;
+  in_stock: boolean;
+}
+
+/** Each side as it stands, and which the merge keeps; null keeps means "you choose". */
+export interface Conflict<T> {
+  from_side: T | null;
+  to_side: T | null;
+  keeps: MergeSide | null;
+}
+
+export interface MergePreview {
+  from_key: string;
+  from_name: string;
+  to_key: string;
+  to_name: string;
+  /** Recipes with lines under the name going away. They keep their wording. */
+  recipes: RecipeRef[];
+  product: Conflict<ProductSide> | null;
+  food: Conflict<FoodSide> | null;
+  staple: Conflict<StapleSide> | null;
+  needs: MergeNeed[];
+}
+
 /**
  * One recipe's call for an ingredient a grocery line stands for.
  *
@@ -874,6 +921,18 @@ export const api = {
 
   /** Every ingredient seen whole. Never searches Kroger. */
   listIngredients: () => request<IngredientList>("/api/ingredients"),
+  previewMerge: (from_key: string, to_key: string) =>
+    request<MergePreview>("/api/ingredients/merges/preview", {
+      method: "POST",
+      body: JSON.stringify({ from_key, to_key }),
+    }),
+  merge: (from_key: string, to_key: string, choices: MergeChoices) =>
+    request<void>("/api/ingredients/merges", {
+      method: "POST",
+      body: JSON.stringify({ from_key, to_key, choices }),
+    }),
+  unmerge: (from_key: string) =>
+    request<void>(`/api/ingredients/merges/${encodeURIComponent(from_key)}`, { method: "DELETE" }),
   /** One ingredient; a name merged away answers with its target. */
   ingredient: (key: string) =>
     request<IngredientDetail>(`/api/ingredients/${encodeURIComponent(key)}`),

@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError, api, type IngredientDetail, type IngredientLine } from "../api";
 import { LoadFailure } from "../components/LoadError";
+import { MergeDialog, type Merged } from "../components/MergeDialog";
 import { FoodPickerModal } from "../components/Nutrition";
 import { ProductPickerModal } from "../components/ProductPicker";
-import { Banner, Button, EmptyState, LinkButton, PageHead, Panel, Switch } from "../components/ui";
+import { Banner, Button, EmptyState, LinkButton, Modal, PageHead, Panel, Switch } from "../components/ui";
 import { formatQuantity } from "../quantity";
 import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
@@ -48,6 +49,13 @@ export default function IngredientPage() {
   const action = useAction();
   const [choosing, setChoosing] = useState<"product" | "food" | null>(null);
 
+  const location = useLocation();
+  const [merging, setMerging] = useState<readonly [string, string] | "pick" | null>(null);
+  const [unmerging, setUnmerging] = useState<{ key: string; name: string } | null>(null);
+  // Set by the merge that brought the owner here, so the banner can offer
+  // to take it back.
+  const merged = (location.state as { merged?: Merged } | null)?.merged ?? null;
+
   // Opened under a merged-away name: show the target's address, so a link
   // copied from here is the one that keeps working.
   useEffect(() => {
@@ -80,8 +88,35 @@ export default function IngredientPage() {
     <div className="ingredient-layout">
       <PageHead title={data.name} sub={`${data.recipe_count} recipe${data.recipe_count === 1 ? "" : "s"}`} />
 
-      {data.also_called.length > 0 && (
-        <p className="also-called">Also called {data.also_called.join(", ")}</p>
+      {data.merged.length > 0 && (
+        <div className="also-called">
+          Also called{" "}
+          {data.merged.map((m) => (
+            <span key={m.key} className="merged-name">
+              {m.name}
+              <Button size="small" aria-label={`Unmerge ${m.name}`} onClick={() => setUnmerging(m)}>
+                Unmerge
+              </Button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {merged && merged.toKey === data.key && (
+        <Banner tone="notice" spaced>
+          Merged {merged.fromName} into {merged.toName}.{" "}
+          <Button
+            size="small"
+            onClick={() =>
+              change(async () => {
+                await api.unmerge(merged.fromKey);
+                navigate(location.pathname, { replace: true, state: null });
+              })
+            }
+          >
+            Unmerge
+          </Button>
+        </Banner>
       )}
 
       {action.error && (
@@ -203,6 +238,10 @@ export default function IngredientPage() {
         </Panel>
       </section>
 
+      <div className="ingredient-merge">
+        <Button onClick={() => setMerging("pick")}>Same as another ingredient…</Button>
+      </div>
+
       {choosing === "product" && standing && (
         <ProductPickerModal
           line={{
@@ -222,6 +261,39 @@ export default function IngredientPage() {
           onPick={(chosen) => change(() => api.chooseFood(data.key, chosen?.fdc_id ?? null))}
           onClose={() => setChoosing(null)}
         />
+      )}
+      {merging && (
+        <MergeDialog
+          ingredient={data}
+          pair={merging === "pick" ? undefined : merging}
+          onClose={() => setMerging(null)}
+          onMerged={(done) => {
+            setMerging(null);
+            navigate(`/ingredients/${done.toKey}`, { state: { merged: done } });
+          }}
+        />
+      )}
+      {unmerging && (
+        <Modal title={`Unmerge ${unmerging.name}?`} onClose={() => setUnmerging(null)}>
+          <p>
+            “{unmerging.name}” goes back to being its own ingredient, with its own grocery line. It
+            starts fresh: an automatic product, and its default food if it has one. What moved to{" "}
+            {data.name} stays with it.
+          </p>
+          <div className="modal-actions">
+            <Button
+              variant="primary"
+              onClick={() => {
+                const going = unmerging;
+                setUnmerging(null);
+                void change(() => api.unmerge(going.key));
+              }}
+            >
+              Unmerge
+            </Button>
+            <Button onClick={() => setUnmerging(null)}>Cancel</Button>
+          </div>
+        </Modal>
       )}
     </div>
   );

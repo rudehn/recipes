@@ -61,3 +61,30 @@ export function matchesSearch(item: IngredientSummary, query: string): boolean {
   if (!wanted) return true;
   return [item.name, ...item.also_called].some((name) => name.toLocaleLowerCase().includes(wanted));
 }
+
+/**
+ * Which way to propose a merge: [the name going away, the one that survives].
+ *
+ * A staple survives first, because its name is the one on the shopping list
+ * and in the cupboard; then a hand-picked product, because that choice is
+ * the owner's work; then the name with fewer words, the more general one
+ * ("cumin" over "ground cumin"); then the one more recipes use. The dialog
+ * offers Swap whatever this proposes.
+ */
+export function proposeDirection(
+  a: IngredientSummary,
+  b: IngredientSummary,
+): [IngredientSummary, IngredientSummary] {
+  const weight = (i: IngredientSummary) =>
+    [
+      i.staple ? 1 : 0,
+      i.product?.status === "picked" ? 1 : 0,
+      -i.key.split("-").length,
+      i.recipe_count,
+    ] as const;
+  const [wa, wb] = [weight(a), weight(b)];
+  for (let n = 0; n < wa.length; n++) {
+    if (wa[n] !== wb[n]) return wa[n] > wb[n] ? [b, a] : [a, b];
+  }
+  return a.key < b.key ? [b, a] : [a, b];
+}

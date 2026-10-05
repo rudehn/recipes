@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { matchesSearch, summaryLine } from "./ingredients";
-import { ingredientSummary, itemPrice } from "./test/fixtures";
+import { matchesSearch, proposeDirection, summaryLine } from "./ingredients";
+import { ingredientSummary, itemPrice, staple } from "./test/fixtures";
 
 describe("summaryLine", () => {
   it("says how many recipes, which product at what price, and whether it is counted", () => {
@@ -47,5 +47,25 @@ describe("matchesSearch", () => {
     expect(matchesSearch(cumin, "ground")).toBe(true);
     expect(matchesSearch(cumin, "paprika")).toBe(false);
     expect(matchesSearch(cumin, "  ")).toBe(true);
+  });
+});
+
+describe("proposeDirection", () => {
+  const cumin = ingredientSummary({ key: "cumin", name: "cumin", recipe_count: 1 });
+  const ground = ingredientSummary({ key: "ground-cumin", name: "ground cumin", recipe_count: 3 });
+
+  it("merges the more specific name into the more general one", () => {
+    expect(proposeDirection(cumin, ground).map((i) => i.key)).toEqual(["ground-cumin", "cumin"]);
+    expect(proposeDirection(ground, cumin).map((i) => i.key)).toEqual(["ground-cumin", "cumin"]);
+  });
+
+  it("prefers a staple as the one that survives", () => {
+    const kept = staple("Ground Cumin", true, { key: "ground-cumin" });
+    expect(proposeDirection(cumin, kept).map((i) => i.key)).toEqual(["cumin", "ground-cumin"]);
+  });
+
+  it("prefers the name with a hand-picked product next", () => {
+    const picked = { ...ground, product: { status: "picked" as const, product: null } };
+    expect(proposeDirection(cumin, picked).map((i) => i.key)).toEqual(["cumin", "ground-cumin"]);
   });
 });

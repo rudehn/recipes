@@ -133,3 +133,25 @@ describe("IngredientPage", () => {
     expect(await screen.findByText("Database is down")).toBeInTheDocument();
   });
 });
+
+describe("IngredientPage: unmerging", () => {
+  it("confirms, says what the old name loses, and unmerges", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": cumin,
+      "DELETE /api/ingredients/merges/:key": undefined,
+    });
+    const { user } = renderApp("/ingredients/cumin");
+    await screen.findByRole("heading", { name: "cumin" });
+
+    await user.click(screen.getByRole("button", { name: "Unmerge ground cumin" }));
+    expect(screen.getByText(/starts fresh/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Unmerge" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("DELETE /api/ingredients/merges/:key")[0].path).toBe(
+        "/api/ingredients/merges/ground-cumin",
+      ),
+    );
+    expect(backend.requestsTo("GET /api/ingredients/:key").length).toBeGreaterThan(1);
+  });
+});
