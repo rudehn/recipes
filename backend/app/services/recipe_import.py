@@ -27,7 +27,7 @@ KNOWN_UNITS = (
        "stalk", "stalks", "jar", "jars", "bottle", "bottles", "quart", "quarts",
        "pint", "pints", "gallon", "gallons", "packet", "packets", "bag", "bags",
        "box", "boxes", "container", "containers", "carton", "cartons", "tub", "tubs",
-       "strip", "strips"}
+       "strip", "strips", "tin", "tins"}
 )
 
 # A package size written straight after the amount without brackets, as in
@@ -57,16 +57,19 @@ _SIZE = re.compile(
 CONTAINERS = {
     "can", "cans", "jar", "jars", "bag", "bags", "box", "boxes", "packet", "packets",
     "package", "packages", "pkg", "container", "containers", "carton", "cartons",
-    "tub", "tubs", "bottle", "bottles",
+    "tub", "tubs", "tin", "tins", "bottle", "bottles",
 }
 
 # Words a bracket may hold and still be only a measure: "(42 g)", "(about 1.5
-# cup/200 g)", "(or 3 tablespoons)".
-_MEASURE_WORDS = (
-    {u.lower() for u in KNOWN_UNITS}
-    | _SIZE_UNITS
-    | {"about", "approximately", "approx", "or", "fl"}
-)
+# cup/200 g)", "(or 3 tablespoons)". It must hold a weight or volume unit, so
+# a count like "(4 pieces)" or "(2 cans)" and a bare number like the lean/fat
+# ratio in "(85/15)" are not taken for a repeated amount and stay in the name.
+_WEIGHT_VOLUME_WORDS = _SIZE_UNITS | {
+    "liter", "liters", "litre", "litres", "cup", "cups", "tbsp", "tablespoon",
+    "tablespoons", "tbs", "tsp", "teaspoon", "teaspoons", "pint", "pints", "quart",
+    "quarts", "gallon", "gallons",
+}
+_MEASURE_CONNECTORS = {"about", "approximately", "approx", "or", "fl"}
 
 # A label a site puts before the line: "Optional: 1 avocado", "For the sauce:
 # 1 cup ketchup". Read past, so the number after it is found. "Optional" is
@@ -331,8 +334,14 @@ def _is_amount(word: str) -> bool:
 
 def _measure_only(text: str) -> bool:
     words = [w for w in re.split(r"[\s/,]+", text.strip().lower()) if w]
-    return any(_is_amount(w) for w in words) and all(
-        _is_amount(w) or w.rstrip(".") in _MEASURE_WORDS for w in words
+    bare = [w.rstrip(".") for w in words]
+    # A glued measure like "200g" is both an amount and a weight.
+    has_unit = any(
+        w in _WEIGHT_VOLUME_WORDS or (re.fullmatch(r"\d+(?:\.\d+)?[a-z]+", w) and _is_amount(w))
+        for w in bare
+    )
+    return has_unit and all(
+        _is_amount(w) or w in _WEIGHT_VOLUME_WORDS or w in _MEASURE_CONNECTORS for w in bare
     )
 
 

@@ -481,6 +481,10 @@ async def test_import_sends_browser_navigation_headers(client, monkeypatch):
             "strips",
         ),
         ("2 slices (thick) bread", "bread (thick)", 2, "slices"),
+        # A bracket that is a ratio or a count is not a repeated measure.
+        ("1 lb ground beef (85/15)", "ground beef (85/15)", 1, "lb"),
+        ("2 lb chicken (4 pieces)", "chicken (4 pieces)", 2, "lb"),
+        ("2 (400 g) tins tomatoes", "tomatoes", 800, "g"),
     ],
 )
 def test_the_broken_lines_from_a_real_box_read_right(line, name, quantity, unit):
