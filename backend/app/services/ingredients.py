@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import PantryItem, Recipe
+from ..models import IngredientMergeDismissal, PantryItem, Recipe
 from ..schemas import (
     IngredientDetail,
     IngredientFood,
@@ -33,6 +33,7 @@ from ..schemas import (
     MergedName,
     MergeSuggestion,
 )
+from . import merge_suggestions
 from . import settings as settings_service
 from .canonical import best_display
 from .identity import Identity
@@ -207,8 +208,38 @@ def _summary(
 
 
 async def _suggestions(session: AsyncSession, seen: _Seen) -> list[MergeSuggestion]:
-    """Likely pairs among the ingredients in use: none until the rules exist (Task 6)."""
-    return []
+    """Likely pairs among the ingredients in use, less those turned down.
+
+    A pair the rules leave undirected points at the name more recipes use,
+    then at a staple, then at the alphabetically first, so the suggestion
+    reads the way most of the box already does.
+    """
+    dismissed = {
+        frozenset({row.key_a, row.key_b})
+        for row in (await session.execute(select(IngredientMergeDismissal))).scalars()
+    }
+
+    def weight(key: str) -> tuple[int, bool, str]:
+        inverted_key = "".join(chr(0x10FFFF - ord(c)) for c in key)
+        return (len(seen.lines.get(key, [])), key in seen.staples, inverted_key)
+
+    found: list[MergeSuggestion] = []
+    for pair in merge_suggestions.find(seen.keys):
+        if frozenset({pair.specific, pair.general}) in dismissed:
+            continue
+        source, target = pair.specific, pair.general
+        if not pair.directed and weight(source) > weight(target):
+            source, target = target, source
+        found.append(
+            MergeSuggestion(
+                from_key=source,
+                from_name=_name(source, seen),
+                to_key=target,
+                to_name=_name(target, seen),
+                reason=pair.reason,
+            )
+        )
+    return found
 
 
 async def _overview(
