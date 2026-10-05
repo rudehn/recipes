@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type EditedLine, type IngredientDetail, type IngredientLine, type Reread } from "../api";
@@ -146,7 +146,9 @@ export default function IngredientPage() {
 
       {merged && merged.toKey === data.key && (
         <Banner tone="notice" spaced>
-          Merged {merged.fromName} into {merged.toName}.{" "}
+          <span>
+            Merged {merged.fromName} into {merged.toName}.
+          </span>
           <Button
             size="small"
             onClick={() =>
@@ -276,14 +278,17 @@ export default function IngredientPage() {
         >
           {moved.length > 0 && (
             <Banner tone="notice" spaced>
-              Now shops as{" "}
-              {moved.map((m, n) => (
-                <span key={m.key + n}>
-                  {n > 0 && ", "}
-                  <Link to={`/ingredients/${m.key}`}>{m.name}</Link>
-                </span>
-              ))}
-              .
+              {/* One span: the banner lays out each child as its own item. */}
+              <span>
+                Now shops as{" "}
+                {moved.map((m, n) => (
+                  <Fragment key={m.key + n}>
+                    {n > 0 && ", "}
+                    <Link to={`/ingredients/${m.key}`}>{m.name}</Link>
+                  </Fragment>
+                ))}
+                .
+              </span>
             </Banner>
           )}
           {data.lines.length === 0 ? (

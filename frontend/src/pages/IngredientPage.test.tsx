@@ -237,7 +237,13 @@ describe("IngredientPage: fixing lines", () => {
     });
     const link = await screen.findByRole("link", { name: "black beans, drained and rinsed" });
     expect(link).toHaveAttribute("href", "/ingredients/black-bean");
-    expect(screen.getByText(/Now shops as/)).toBeInTheDocument();
+    // One sentence in one piece: the banner lays out each of its children as
+    // a separate item, so loose words and links were spread across its width.
+    expect(
+      screen.getByText(
+        (_, el) => el?.tagName === "SPAN" && el.textContent === "Now shops as black beans, drained and rinsed.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("goes to the new ingredient when the fixed line was the last one", async () => {
