@@ -29,6 +29,7 @@ from .identity import Identity
 from .quantity import format_quantity
 
 UNIT_ALIASES = {
+    "strips": "strip",
     "tablespoon": "tbsp", "tablespoons": "tbsp", "tbsps": "tbsp", "tbs": "tbsp",
     "teaspoon": "tsp", "teaspoons": "tsp", "tsps": "tsp",
     "cups": "cup", "c": "cup",
@@ -73,7 +74,7 @@ def scale_factor(entry: MealPlanEntry) -> float:
 # Units whose display form pluralizes with a plain "s" ("2 cans", "3 cups").
 # Abbreviations (tbsp, g, lb, oz) stay as-is.
 PLURALIZABLE_UNITS = {
-    "cup", "can", "clove", "package", "packet", "bunch", "piece", "slice", "pinch",
+    "cup", "can", "clove", "package", "packet", "bunch", "piece", "slice", "pinch", "strip",
 }
 
 

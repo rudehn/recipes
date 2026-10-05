@@ -99,11 +99,11 @@ def test_parse_recipe_html_without_recipe_raises():
         # Container size before the unit is dropped; trailing notes are kept.
         (
             "3 (3-ounce) packets ramen noodles (seasoning discarded)",
-            IngredientIn(name="ramen noodles (seasoning discarded)", quantity=3, unit="packets"),
+            IngredientIn(name="ramen noodles (seasoning discarded)", quantity=9, unit="ounce"),
         ),
         (
             "2 (15 oz) cans black beans",
-            IngredientIn(name="black beans", quantity=2, unit="cans"),
+            IngredientIn(name="black beans", quantity=30, unit="oz"),
         ),
         # An unclosed parenthesis leaves the text alone rather than eating it.
         (
@@ -135,9 +135,9 @@ def test_parse_ingredient_line(line, expected):
         # A package size without its brackets, straight after the amount.
         (
             "1 22-ounce bag frozen waffle fries",
-            IngredientIn(name="frozen waffle fries", quantity=1, unit="bag"),
+            IngredientIn(name="frozen waffle fries", quantity=22, unit="ounce"),
         ),
-        ("2 15 oz cans black beans", IngredientIn(name="black beans", quantity=2, unit="cans")),
+        ("2 15 oz cans black beans", IngredientIn(name="black beans", quantity=30, unit="oz")),
         # A number that is the amount, not a size, is left alone.
         ("2 8-inch tortillas", IngredientIn(name="tortillas", quantity=2, unit=None)),
     ],
@@ -442,3 +442,58 @@ async def test_import_sends_browser_navigation_headers(client, monkeypatch):
     assert seen["upgrade-insecure-requests"] == "1"
     assert seen["sec-fetch-mode"] == "navigate"
     assert seen["sec-fetch-dest"] == "document"
+
+
+@pytest.mark.parametrize(
+    "line, name, quantity, unit",
+    [
+        # Footnote marks point at a note the line lost.
+        ("¼ teaspoon ancho chili powder**", "ancho chili powder", 0.25, "teaspoon"),
+        ("1 double pie crust*", "double pie crust", 1, None),
+        ("1 egg (optional)**", "egg (optional)", 1, None),
+        # A bracket holding only a measure repeats the amount.
+        ("⅓ cup all-purpose flour ((42 g))", "all-purpose flour", 1 / 3, "cup"),
+        (
+            "1 medium yellow onion (chopped (about 1.5 cup/200 g))",
+            "medium yellow onion (chopped)",
+            1,
+            None,
+        ),
+        (
+            "1 1-ounce packet ranch seasoning mix (or 3 tablespoons)",
+            "ranch seasoning mix",
+            1,
+            "ounce",
+        ),
+        # How it is measured is not what it is.
+        ("¼ cup firmly packed brown sugar", "brown sugar", 0.25, "cup"),
+        ("1 cup packed spinach", "spinach", 1, "cup"),
+        # A package size is the amount wanted; its container is noise.
+        ("15 oz can black beans, drained and rinsed", "black beans, drained and rinsed", 15, "oz"),
+        ("1 (15 oz) can black beans", "black beans", 15, "oz"),
+        ("2 (15 oz) cans black beans", "black beans", 30, "oz"),
+        ("1 22-ounce bag frozen waffle fries", "frozen waffle fries", 22, "ounce"),
+        # Counted pieces, with a note before the name moved after it.
+        (
+            "6 strips (uncooked) bacon (cut into small pieces)",
+            "bacon (uncooked, cut into small pieces)",
+            6,
+            "strips",
+        ),
+        ("2 slices (thick) bread", "bread (thick)", 2, "slices"),
+    ],
+)
+def test_the_broken_lines_from_a_real_box_read_right(line, name, quantity, unit):
+    parsed = parse_ingredient_line(line)
+    assert (parsed.name, parsed.unit) == (name, unit)
+    assert parsed.quantity == pytest.approx(quantity)
+
+
+def test_a_size_that_is_not_a_weight_stays_out_of_the_amount():
+    parsed = parse_ingredient_line("2 (8 inch) flour tortillas")
+    assert (parsed.name, parsed.quantity, parsed.unit) == ("flour tortillas", 2, None)
+
+
+def test_a_bracket_that_is_not_a_measure_stays():
+    parsed = parse_ingredient_line("1 cup rice (rinsed, see note)")
+    assert parsed.name == "rice (rinsed, see note)"

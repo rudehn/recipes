@@ -26,7 +26,8 @@ KNOWN_UNITS = (
     | {"pinch", "dash", "stick", "sticks", "head", "heads", "sprig", "sprigs",
        "stalk", "stalks", "jar", "jars", "bottle", "bottles", "quart", "quarts",
        "pint", "pints", "gallon", "gallons", "packet", "packets", "bag", "bags",
-       "box", "boxes", "container", "containers", "carton", "cartons", "tub", "tubs"}
+       "box", "boxes", "container", "containers", "carton", "cartons", "tub", "tubs",
+       "strip", "strips"}
 )
 
 # A package size written straight after the amount without brackets, as in
@@ -38,6 +39,34 @@ _BARE_SIZE = re.compile(
     re.IGNORECASE,
 )
 _SIZE_UNIT = re.compile(r"^(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|ml)\.?$", re.I)
+
+# The units a package size is weighed or measured in. A size in inches - a
+# tortilla, a pan - says nothing about how much to buy, and is left out of
+# the amount.
+_SIZE_UNITS = {
+    "oz", "ounce", "ounces", "lb", "lbs", "pound", "pounds", "g", "gram", "grams", "kg", "ml", "l",
+}
+_SIZE = re.compile(
+    r"^\(?\s*(\d+(?:\.\d+)?)\s*-?\s*(oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l)\.?\s*\)?$",
+    re.IGNORECASE,
+)
+
+# What a package size comes in. A weight right before one of these is the
+# amount wanted - "1 (15 oz) can" is 15 oz - and the container word is then
+# noise in the name.
+CONTAINERS = {
+    "can", "cans", "jar", "jars", "bag", "bags", "box", "boxes", "packet", "packets",
+    "package", "packages", "pkg", "container", "containers", "carton", "cartons",
+    "tub", "tubs", "bottle", "bottles",
+}
+
+# Words a bracket may hold and still be only a measure: "(42 g)", "(about 1.5
+# cup/200 g)", "(or 3 tablespoons)".
+_MEASURE_WORDS = (
+    {u.lower() for u in KNOWN_UNITS}
+    | _SIZE_UNITS
+    | {"about", "approximately", "approx", "or", "fl"}
+)
 
 # A label a site puts before the line: "Optional: 1 avocado", "For the sauce:
 # 1 cup ketchup". Read past, so the number after it is found. "Optional" is
@@ -258,25 +287,31 @@ def _is_fraction(token: str) -> bool:
     return token in UNICODE_FRACTIONS or re.fullmatch(r"\d+/\d+", token) is not None
 
 
-def _skip_package_size(tokens: list[str], index: int) -> int:
-    """Index past a package size in parentheses right after the amount.
+def _read_size(text: str) -> tuple[float, str] | None:
+    """A weight or volume like "15 oz", "(15 oz)" or "22-ounce", or None."""
+    match = _SIZE.match(text.strip())
+    return (float(match.group(1)), match.group(2).lower()) if match else None
+
+
+def _package_size(tokens: list[str], index: int) -> tuple[int, tuple[float, str] | None]:
+    """Index past a package size right after the amount, and the size itself.
 
     "3 (3-ounce) packets ramen noodles" and "2 (15 oz) cans black beans" state
-    the container size before the unit. It is noise on a shopping list - what
-    you buy is three packets - and left in place it hides the real unit, so we
-    drop it. Only a parenthetical that opens immediately after the number
-    counts; trailing notes like "(optional)" are part of the name.
+    the container size before the unit. Only a parenthetical that opens
+    immediately after the number counts; trailing notes like "(optional)" are
+    part of the name. The size comes back when it is a weight or volume, so
+    the caller can make it the amount.
     """
     if index >= len(tokens):
-        return index
+        return index, None
     if tokens[index].startswith("("):
         for end in range(index, len(tokens)):
             if tokens[end].endswith(")"):
-                return end + 1
-        return index  # Unclosed: leave the text alone.
+                return end + 1, _read_size(" ".join(tokens[index : end + 1]))
+        return index, None  # Unclosed: leave the text alone.
     # The same size without its brackets: "22-ounce" or "15 oz".
     if _BARE_SIZE.match(tokens[index]):
-        return index + 1
+        return index + 1, _read_size(tokens[index])
     if (
         index + 1 < len(tokens)
         and re.fullmatch(r"\d+(?:\.\d+)?", tokens[index])
@@ -284,8 +319,55 @@ def _skip_package_size(tokens: list[str], index: int) -> int:
         and index + 2 < len(tokens)
         and tokens[index + 2].lower().rstrip(".,") in KNOWN_UNITS
     ):
-        return index + 2
-    return index
+        return index + 2, _read_size(f"{tokens[index]} {tokens[index + 1]}")
+    return index, None
+
+
+def _is_amount(word: str) -> bool:
+    return _token_to_number(word) is not None or re.fullmatch(
+        r"\d+(?:\.\d+)?(?:g|kg|ml|l|oz|lb)", word
+    ) is not None
+
+
+def _measure_only(text: str) -> bool:
+    words = [w for w in re.split(r"[\s/,]+", text.strip().lower()) if w]
+    return any(_is_amount(w) for w in words) and all(
+        _is_amount(w) or w.rstrip(".") in _MEASURE_WORDS for w in words
+    )
+
+
+def _drop_repeated_measures(name: str) -> str:
+    """Drop brackets that only repeat the amount, innermost first."""
+    while True:
+        cleaned = re.sub(
+            r"\s*\(([^()]*)\)", lambda m: "" if _measure_only(m.group(1)) else m.group(0), name
+        )
+        cleaned = re.sub(r"\s*\(\s*\)", "", cleaned)
+        if cleaned == name:
+            return name
+        name = cleaned
+
+
+def _note_after_name(name: str) -> str:
+    """A note before the name goes after it: "(uncooked) bacon" is bacon."""
+    match = re.match(r"^\(([^()]*)\)\s*(.+)$", name)
+    if not match:
+        return name
+    note, rest = match.group(1).strip(), match.group(2).strip()
+    if rest.endswith(")") and "(" in rest:
+        at = rest.rfind("(")
+        return f"{rest[: at + 1]}{note}, {rest[at + 1 :]}"
+    return f"{rest} ({note})"
+
+
+def _clean_name(name: str) -> str:
+    """The name with what is not the ingredient taken out of it."""
+    # Footnote marks point at a note the line lost: "ancho chili powder**".
+    name = name.replace("*", "")
+    name = _drop_repeated_measures(name)
+    # How it is measured, not what it is: "firmly packed brown sugar".
+    name = re.sub(r"^(?:(?:firmly|loosely|lightly|tightly)\s+)?packed\s+", "", name, flags=re.I)
+    return _note_after_name(name.strip())
 
 
 def parse_ingredient_line(line: str) -> IngredientIn:
@@ -329,7 +411,7 @@ def parse_ingredient_line(line: str) -> IngredientIn:
 
     unit: str | None = None
     if quantity is not None:
-        index = _skip_package_size(tokens, index)
+        index, size = _package_size(tokens, index)
         # Step over any modifiers, but only commit to that if a unit follows.
         after_modifiers = index
         while (
@@ -342,12 +424,25 @@ def parse_ingredient_line(line: str) -> IngredientIn:
             if candidate in KNOWN_UNITS:
                 unit = candidate
                 index = after_modifiers + 1
+        # A package size before its container is the amount wanted: "2 (15 oz)
+        # cans" is 30 oz, which a package can be matched against and nutrition
+        # can weigh, where "2 cans" can be neither.
+        if size is not None and unit in CONTAINERS:
+            quantity, unit = quantity * size[0], size[1]
+        # "15 oz can black beans": a container after a weight is noise.
+        elif (
+            unit in _SIZE_UNITS
+            and index < len(tokens)
+            and tokens[index].lower().rstrip(".,") in CONTAINERS
+        ):
+            index += 1
 
     name = " ".join(tokens[index:]).strip()
     if name.lower().startswith("of "):
         name = name[3:]
     # Sites like Budget Bytes annotate prices: "lo mein noodles ($1.30)".
     name = re.sub(r"\(\s*\$[^)]*\)", "", name)
+    name = _clean_name(name)
     name = re.sub(r"\s+", " ", name).strip(" ,")
     if not name:
         # Line was only a quantity/unit ("1 pinch"): treat the unit as the name.

@@ -67,3 +67,9 @@ It adds no food chosen, an amount that cannot be weighed, and a recipe that does
 A recipe's lines are listed under what they hold up - the price, the nutrition, or both - and the three recipe-side reasons hold up both.
 A row that matched nothing and has no food either is listed under each, since each has its own fix, and a nutrition line opens the recipe's breakdown at that row.
 The words for every reason now come from one frontend module, `issues.ts`, after the copies on each page had drifted apart.
+
+## Note, October 2026
+
+A package size after the amount is now the amount, where it is a weight or volume: "2 (15 oz) cans black beans" reads as 30 oz rather than 2 cans.
+The importer also drops footnote marks, brackets that only repeat the amount, and "packed" from a name, and moves a note before the name to after it.
+See the ingredients page spec, section 4.

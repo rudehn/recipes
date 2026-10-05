@@ -66,3 +66,8 @@ About a megabyte in the image buys that.
 - A default added to `defaults.py` reaches every recipe at once; `test_every_default_is_a_food_the_tables_hold` fails if one points at nothing.
 - Changing `canonical_key` now also orphans hand-picked foods, the fourth kind of state ADR 2 warns about.
 - Nutrition per serving does not scale with the servings stepper, and is not totalled for the planner. Both are left for later.
+
+## Note, October 2026
+
+The importer no longer drops "(15 oz)" from "1 (15 oz) can": the size becomes the amount, 15 oz, which can be weighed.
+A line saved before this, or typed as "1 can", is still not weighed, and can be read again from its ingredient's page.
