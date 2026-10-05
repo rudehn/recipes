@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { HttpError, mockBackend, type MockRequest } from "../test/backend";
-import { ingredientDetail, ingredientLine, itemPrice } from "../test/fixtures";
+import { ingredientDetail, ingredientLine, itemPrice, mergeSuggestion } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 const cumin = ingredientDetail({
@@ -153,5 +153,42 @@ describe("IngredientPage: unmerging", () => {
       ),
     );
     expect(backend.requestsTo("GET /api/ingredients/:key").length).toBeGreaterThan(1);
+  });
+});
+
+describe("IngredientPage: suggested merges", () => {
+  it("lists what it might be the same as, and opens the preview for one", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": { ...cumin, merged: [], also_called: [], suggestions: [mergeSuggestion({ from_key: "cumin-seed", from_name: "cumin seed" })] },
+      "GET /api/ingredients": { ingredients: [], suggestions: [] },
+      "POST /api/ingredients/merges/preview": {
+        from_key: "cumin-seed", from_name: "cumin seed", to_key: "cumin", to_name: "cumin",
+        recipes: [], product: null, food: null, staple: null, needs: [],
+      },
+    });
+    const { user } = renderApp("/ingredients/cumin");
+
+    const group = await screen.findByRole("region", { name: "Might be the same as" });
+    await user.click(within(group).getByRole("button", { name: "Merge" }));
+
+    expect(await screen.findByText("Merge cumin seed into cumin")).toBeInTheDocument();
+    expect(backend.requestsTo("POST /api/ingredients/merges/preview")[0].body).toEqual({
+      from_key: "cumin-seed",
+      to_key: "cumin",
+    });
+  });
+
+  it("opens the preview straight away when a link asks for a merge", async () => {
+    mockBackend({
+      "GET /api/ingredients/:key": { ...ingredientDetail({ key: "ground-cumin", name: "ground cumin" }) },
+      "GET /api/ingredients": { ingredients: [], suggestions: [] },
+      "POST /api/ingredients/merges/preview": {
+        from_key: "ground-cumin", from_name: "ground cumin", to_key: "cumin", to_name: "cumin",
+        recipes: [], product: null, food: null, staple: null, needs: [],
+      },
+    });
+    renderApp("/ingredients/ground-cumin?merge=cumin");
+
+    expect(await screen.findByText("Merge ground cumin into cumin")).toBeInTheDocument();
   });
 });

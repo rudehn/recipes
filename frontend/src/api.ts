@@ -933,6 +933,12 @@ export const api = {
     }),
   unmerge: (from_key: string) =>
     request<void>(`/api/ingredients/merges/${encodeURIComponent(from_key)}`, { method: "DELETE" }),
+  /** "Not the same": the pair is never suggested again. */
+  dismissSuggestion: (key_a: string, key_b: string) =>
+    request<void>("/api/ingredients/suggestions/dismiss", {
+      method: "POST",
+      body: JSON.stringify({ key_a, key_b }),
+    }),
   /** One ingredient; a name merged away answers with its target. */
   ingredient: (key: string) =>
     request<IngredientDetail>(`/api/ingredients/${encodeURIComponent(key)}`),

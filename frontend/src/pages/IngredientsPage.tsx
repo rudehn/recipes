@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type IngredientSummary } from "../api";
+import { api, type IngredientSummary, type MergeSuggestion } from "../api";
 import { LoadFailure } from "../components/LoadError";
-import { Banner, Button, EmptyState, PageHead, Segmented, Switch } from "../components/ui";
+import { SuggestionRow } from "../components/SuggestionRow";
+import { Banner, Button, EmptyState, LinkButton, PageHead, Segmented, Switch } from "../components/ui";
 import { PROBLEM_GROUPS, PROBLEM_LABELS, matchesSearch, summaryLine } from "../ingredients";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
@@ -61,6 +62,7 @@ export default function IngredientsPage() {
 
   const all = data?.ingredients ?? [];
   const look = all.filter(needsLook);
+  const lookCount = look.length + (data?.suggestions.length ?? 0);
   const shown = (view === "staples" ? staples : view === "all" ? all : look).filter((i) =>
     matchesSearch(i, query),
   );
@@ -100,6 +102,10 @@ export default function IngredientsPage() {
     return added;
   }
 
+  async function dismiss(from: string, to: string) {
+    if (await action.run(() => api.dismissSuggestion(from, to))) reload();
+  }
+
   return (
     <div className="ingredients-layout">
       <PageHead
@@ -127,7 +133,7 @@ export default function IngredientsPage() {
               options={[
                 { value: "staples", label: <>Staples <span className="count">{staples.length}</span></> },
                 { value: "all", label: <>All <span className="count">{all.length}</span></> },
-                { value: "look", label: <>Needs a look <span className="count">{look.length}</span></> },
+                { value: "look", label: <>Needs a look <span className="count">{lookCount}</span></> },
               ]}
             />
             <input
@@ -148,7 +154,14 @@ export default function IngredientsPage() {
             <StaplesView staples={shown} query={query} onToggle={setStock} onAdd={addStaple} />
           )}
           {view === "all" && shown.map((item) => <IngredientRow key={item.key} item={item} />)}
-          {view === "look" && <LookView items={shown} query={query} />}
+          {view === "look" && (
+            <LookView
+              items={shown}
+              suggestions={query.trim() ? [] : data.suggestions}
+              query={query}
+              onDismiss={dismiss}
+            />
+          )}
         </>
       )}
     </div>
@@ -268,12 +281,22 @@ function IngredientRow({ item }: { item: IngredientSummary }) {
  * chosen at the store, a food from USDA's, a line is edited in its recipe.
  * An ingredient with two problems is in two groups, once for each fix.
  */
-function LookView({ items, query }: { items: IngredientSummary[]; query: string }) {
+function LookView({
+  items,
+  suggestions,
+  query,
+  onDismiss,
+}: {
+  items: IngredientSummary[];
+  suggestions: MergeSuggestion[];
+  query: string;
+  onDismiss: (from: string, to: string) => void;
+}) {
   const groups = PROBLEM_GROUPS.map(
     ([problem, heading]) => [heading, items.filter((i) => i.problems.includes(problem))] as const,
   ).filter(([, found]) => found.length > 0);
 
-  if (groups.length === 0) {
+  if (groups.length === 0 && suggestions.length === 0) {
     // With a search on, the page already says nothing matched; this would be false.
     if (query.trim()) return null;
     return (
@@ -284,6 +307,23 @@ function LookView({ items, query }: { items: IngredientSummary[]; query: string 
   }
   return (
     <>
+      {suggestions.length > 0 && (
+        <section className="ingredient-group" aria-label="Might be the same">
+          <h2>Might be the same</h2>
+          {suggestions.map((s) => (
+            <SuggestionRow
+              key={`${s.from_key}|${s.to_key}`}
+              suggestion={s}
+              merge={
+                <LinkButton size="small" to={`/ingredients/${s.from_key}?merge=${encodeURIComponent(s.to_key)}`}>
+                  Merge
+                </LinkButton>
+              }
+              onDismiss={() => onDismiss(s.from_key, s.to_key)}
+            />
+          ))}
+        </section>
+      )}
       {groups.map(([heading, found]) => (
         <section key={heading} className="ingredient-group" aria-label={heading}>
           <h2>{heading}</h2>

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IngredientSummary } from "../api";
 import { HttpError, mockBackend } from "../test/backend";
-import { ingredientSummary, itemPrice, staple } from "../test/fixtures";
+import { ingredientSummary, itemPrice, mergeSuggestion, staple } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 /** The list as the server sends it: already in name order. */
@@ -313,5 +313,50 @@ describe("IngredientsPage: views", () => {
 
     expect(screen.getByText("No ingredients match “saffron”.")).toBeInTheDocument();
     expect(screen.queryByText("No staples yet")).not.toBeInTheDocument();
+  });
+});
+
+describe("IngredientsPage: suggested merges", () => {
+  const cumin = ingredientSummary({ key: "cumin", name: "cumin", problems: ["merge"] });
+  const ground = ingredientSummary({ key: "ground-cumin", name: "ground cumin", problems: ["merge"] });
+  const suggestion = mergeSuggestion();
+
+  it("lists them first in Needs a look, and counts them", async () => {
+    mockBackend({ "GET /api/ingredients": { ingredients: [cumin, ground], suggestions: [suggestion] } });
+    renderApp("/ingredients?view=look");
+
+    const group = await screen.findByRole("region", { name: "Might be the same" });
+    expect(within(group).getByText("Ground cumin and cumin look like the same thing to buy.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Needs a look 1" })).toBeInTheDocument();
+  });
+
+  it("turns one down, and asks the server never to offer it again", async () => {
+    const backend = mockBackend({
+      "GET /api/ingredients": { ingredients: [cumin, ground], suggestions: [suggestion] },
+      "POST /api/ingredients/suggestions/dismiss": undefined,
+    });
+    const { user } = renderApp("/ingredients?view=look");
+    await screen.findByRole("region", { name: "Might be the same" });
+
+    await user.click(screen.getByRole("button", { name: "Not the same" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("POST /api/ingredients/suggestions/dismiss")[0].body).toEqual({
+        key_a: "ground-cumin",
+        key_b: "cumin",
+      }),
+    );
+    expect(backend.requestsTo("GET /api/ingredients")).toHaveLength(2);
+  });
+
+  it("merges one through the ingredient's page", async () => {
+    mockBackend({ "GET /api/ingredients": { ingredients: [cumin, ground], suggestions: [suggestion] } });
+    renderApp("/ingredients?view=look");
+    await screen.findByRole("region", { name: "Might be the same" });
+
+    expect(screen.getByRole("link", { name: "Merge" })).toHaveAttribute(
+      "href",
+      "/ingredients/ground-cumin?merge=cumin",
+    );
   });
 });

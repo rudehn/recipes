@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import { ApiError, api, type IngredientDetail, type IngredientLine } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { MergeDialog, type Merged } from "../components/MergeDialog";
 import { FoodPickerModal } from "../components/Nutrition";
 import { ProductPickerModal } from "../components/ProductPicker";
+import { SuggestionRow } from "../components/SuggestionRow";
 import { Banner, Button, EmptyState, LinkButton, Modal, PageHead, Panel, Switch } from "../components/ui";
 import { formatQuantity } from "../quantity";
 import { recipeIngredientPath } from "../recipeLink";
@@ -61,6 +62,17 @@ export default function IngredientPage() {
   useEffect(() => {
     if (data?.redirected_from) navigate(`/ingredients/${data.key}`, { replace: true });
   }, [data, navigate]);
+
+  // A link may ask for a merge (from Needs a look): open its preview once
+  // the page has loaded, then drop the parameter so a reload does not reopen it.
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    const target = params.get("merge");
+    if (data && target && !data.redirected_from) {
+      setMerging([data.key, target]);
+      setParams({}, { replace: true });
+    }
+  }, [data, params, setParams]);
 
   async function change(write: () => Promise<unknown>) {
     setChoosing(null);
@@ -237,6 +249,25 @@ export default function IngredientPage() {
           )}
         </Panel>
       </section>
+
+      {data.suggestions.length > 0 && (
+        <section aria-label="Might be the same as">
+          <Panel title="Might be the same as">
+            {data.suggestions.map((s) => (
+              <SuggestionRow
+                key={`${s.from_key}|${s.to_key}`}
+                suggestion={s}
+                merge={
+                  <Button size="small" onClick={() => setMerging([s.from_key, s.to_key])}>
+                    Merge
+                  </Button>
+                }
+                onDismiss={() => change(() => api.dismissSuggestion(s.from_key, s.to_key))}
+              />
+            ))}
+          </Panel>
+        </section>
+      )}
 
       <div className="ingredient-merge">
         <Button onClick={() => setMerging("pick")}>Same as another ingredient…</Button>

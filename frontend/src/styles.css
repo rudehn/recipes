@@ -4391,3 +4391,15 @@ body.has-install-hint .page {
 .merge-choice legend { font-weight: var(--weight-semibold); padding: 0; margin-bottom: var(--space-4); }
 
 .merge-choice label { display: flex; gap: var(--space-8); align-items: center; }
+
+.suggestion-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-8) var(--space-12);
+  padding: var(--space-12) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.suggestion-row .answers { display: flex; gap: var(--space-8); }
