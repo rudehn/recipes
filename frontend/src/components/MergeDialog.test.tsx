@@ -184,6 +184,9 @@ describe("MergeDialog", () => {
     expect(screen.queryByRole("button", { name: "Merge" })).not.toBeInTheDocument();
     expect(screen.queryByText("Merge ground cumin into cumin")).not.toBeInTheDocument();
 
+    // `release` is the swapped preview's own only once its request has
+    // reached the handler; called sooner, it answers nothing.
+    await waitFor(() => expect(backend.requestsTo("POST /api/ingredients/merges/preview")).toHaveLength(2));
     release(preview({ from_key: "cumin", from_name: "cumin", to_key: "ground-cumin", to_name: "ground cumin" }));
     await user.click(await screen.findByRole("button", { name: "Merge" }));
     await waitFor(() => expect(backend.requestsTo("POST /api/ingredients/merges")).toHaveLength(1));
