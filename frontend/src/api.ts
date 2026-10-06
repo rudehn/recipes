@@ -1023,7 +1023,6 @@ export const api = {
   /** What the meals in a range cost to cook, day by day. Null when pricing is off. */
   planCost: (start: string, end: string) =>
     request<PlanCost | null>(`/api/meal-plan/cost${queryString({ start, end })}`),
-  /** Every ingredient the chosen store has a remembered answer for. */
   /** `q` searches words of the person's own instead of the ingredient's name. */
   matchAlternatives: (key: string, q?: string) =>
     request<ItemPrice[]>(`/api/pricing/alternatives${queryString({ key, q })}`),
