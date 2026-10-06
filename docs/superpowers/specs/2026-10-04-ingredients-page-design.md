@@ -254,7 +254,8 @@ On the real data about ten suggestions are expected, some of them wrong to buy a
    On a line without one, the bracket is the only amount there is: one such bracket holding one measure becomes the amount ("Kosher salt (1 teaspoon)" becomes 1 teaspoon "Kosher salt"; "Parmesan (1/2 cup), grated" becomes ½ cup "Parmesan, grated"), and two brackets, or two measures in one, stay in the name.
 3. **How it is measured**: "firmly", "loosely" or "lightly" packed after the unit is read as how to measure, not as part of the name ("firmly packed brown sugar" becomes "brown sugar").
 4. **Package sizes**: a container word right after a weight or volume is dropped from the name ("15 oz can black beans" becomes 15 oz "black beans"), and a bracketed package size becomes the amount ("1 (15 oz) can black beans" becomes 15 oz "black beans"; "2 (15 oz) cans" becomes 30 oz).
-   A size in the name gets the same treatment ("1 22-ounce bag frozen waffle fries" becomes 22 oz "frozen waffle fries").
+   A size in the name gets the same treatment ("1 22-ounce bag frozen waffle fries" becomes 22 oz "frozen waffle fries"), and so does a size bracketed after its container ("1 can (15 ounces) black beans, drained" becomes 15 ounces "black beans, drained"; "2 cans (15 oz each) beans" becomes 30 oz).
+   A line that names only its package ("1 (15 oz) can") keeps the container as its name, 15 oz "can", rather than making an ingredient of the size's unit.
    A weight can be priced against a package and weighed for nutrition, where "1 can" can be neither; ADR 8 gets a dated note, since it describes the importer dropping that size.
 5. **Counted pieces**: "strip" and "slice" are read as units, and a bracket between the unit and the name moves after the name, joining a bracket already there ("6 strips (uncooked) bacon (cut into small pieces)" becomes 6 strips "bacon (uncooked, cut into small pieces)").
 

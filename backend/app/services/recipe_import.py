@@ -46,8 +46,11 @@ _SIZE_UNIT = re.compile(r"^(?:oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|m
 _SIZE_UNITS = {
     "oz", "ounce", "ounces", "lb", "lbs", "pound", "pounds", "g", "gram", "grams", "kg", "ml", "l",
 }
+# "each" says the size is per container, which is how a size is read anyway:
+# "2 cans (15 oz each)" is 30 oz.
 _SIZE = re.compile(
-    r"^\(?\s*(\d+(?:\.\d+)?)\s*-?\s*(oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l)\.?\s*\)?$",
+    r"^\(?\s*(\d+(?:\.\d+)?)\s*-?\s*(oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|l)\.?"
+    r"(?:\s+each)?\s*\)?$",
     re.IGNORECASE,
 )
 
@@ -458,6 +461,9 @@ def parse_ingredient_line(line: str) -> IngredientIn:
             break
 
     unit: str | None = None
+    # The container a package size came in, which is what a line that names
+    # nothing else is about: "1 (15 oz) can" is a can, not an ingredient "oz".
+    container: str | None = None
     if quantity is not None:
         index, size = _package_size(tokens, index)
         # Step over any modifiers, but only commit to that if a unit follows.
@@ -472,10 +478,22 @@ def parse_ingredient_line(line: str) -> IngredientIn:
             if candidate in KNOWN_UNITS:
                 unit = candidate
                 index = after_modifiers + 1
+        # The same size in brackets after its container: "1 can (15 ounces)".
+        # One that is not a weight, "(8 inch)", stays in the name as before.
+        if (
+            size is None
+            and unit in CONTAINERS
+            and index < len(tokens)
+            and tokens[index].startswith("(")
+        ):
+            after, size = _package_size(tokens, index)
+            if size is not None:
+                index = after
         # A package size before its container is the amount wanted: "2 (15 oz)
         # cans" is 30 oz, which a package can be matched against and nutrition
         # can weigh, where "2 cans" can be neither.
         if size is not None and unit in CONTAINERS:
+            container = unit
             quantity, unit = quantity * size[0], size[1]
         # "15 oz can black beans": a container after a weight is noise.
         elif (
@@ -483,6 +501,7 @@ def parse_ingredient_line(line: str) -> IngredientIn:
             and index < len(tokens)
             and tokens[index].lower().rstrip(".,") in CONTAINERS
         ):
+            container = tokens[index].lower().rstrip(".,")
             index += 1
 
     name = " ".join(tokens[index:]).strip()
@@ -494,7 +513,9 @@ def parse_ingredient_line(line: str) -> IngredientIn:
         quantity, unit, name = lifted
     name = _clean_name(name, measured=quantity is not None)
     name = re.sub(r"\s+", " ", name).strip(" ,")
-    if not name:
+    if not name and container:
+        name = container
+    elif not name:
         # Line was only a quantity/unit ("1 pinch"): treat the unit as the name.
         name, unit = (unit or text), None
     name = (name + suffix)[:200]

@@ -70,4 +70,5 @@ About a megabyte in the image buys that.
 ## Note, October 2026
 
 The importer no longer drops "(15 oz)" from "1 (15 oz) can": the size becomes the amount, 15 oz, which can be weighed.
+The same holds for a size written after its container, as in "1 can (15 ounces) black beans".
 A line saved before this, or typed as "1 can", is still not weighed, and can be read again from its ingredient's page.

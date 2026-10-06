@@ -519,3 +519,26 @@ def test_a_bracket_that_is_not_a_measure_stays():
 def test_a_bracket_that_holds_the_only_amount_is_the_amount(line, name, quantity, unit):
     parsed = parse_ingredient_line(line)
     assert (parsed.name, parsed.quantity, parsed.unit) == (name, quantity, unit)
+
+
+@pytest.mark.parametrize(
+    "line, name, quantity, unit",
+    [
+        # A package size after its container is the amount too.
+        ("1 can (15 ounces) black beans, drained", "black beans, drained", 15, "ounces"),
+        ("1 package (8 oz) cream cheese", "cream cheese", 8, "oz"),
+        ("1 jar (24 oz) marinara", "marinara", 24, "oz"),
+        ("2 cans (15 oz each) beans", "beans", 30, "oz"),
+        ("2 (15 oz each) cans beans", "beans", 30, "oz"),
+        # A size that is not a weight stays out of it, as before the container.
+        ("1 can (8 inch) tortillas", "tortillas (8 inch)", 1, "can"),
+        # With no name after it, the container is what the line names, not the
+        # unit of its size.
+        ("1 (15 oz) can", "can", 15, "oz"),
+        ("15 oz can", "can", 15, "oz"),
+    ],
+)
+def test_a_package_size_after_its_container_is_the_amount(line, name, quantity, unit):
+    parsed = parse_ingredient_line(line)
+    assert (parsed.name, parsed.unit) == (name, unit)
+    assert parsed.quantity == pytest.approx(quantity)
