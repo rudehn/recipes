@@ -37,6 +37,28 @@ describe("IngredientPage", () => {
     expect(within(used).getByText("Chili")).toBeInTheDocument();
   });
 
+  it("says when the product was matched automatically rather than picked", async () => {
+    mockBackend({
+      "GET /api/ingredients/:key": { ...cumin, product: { ...cumin.product!, status: "auto" } },
+    });
+    renderApp("/ingredients/cumin");
+    await screen.findByRole("heading", { name: "cumin" });
+
+    const store = screen.getByRole("region", { name: "At your store" });
+    expect(within(store).getByText(/automatic/)).toBeInTheDocument();
+    expect(within(store).queryByText(/your pick/)).not.toBeInTheDocument();
+  });
+
+  it("says a product was matched automatically even when its price could not be fetched", async () => {
+    mockBackend({
+      "GET /api/ingredients/:key": { ...cumin, product: { status: "auto", product: null } },
+    });
+    renderApp("/ingredients/cumin");
+    await screen.findByRole("heading", { name: "cumin" });
+
+    expect(screen.getByText("Matched automatically; its price could not be fetched")).toBeInTheDocument();
+  });
+
   it("keeps an ingredient stocked, and stops", async () => {
     const backend = mockBackend({
       "GET /api/ingredients/:key": () => cumin,

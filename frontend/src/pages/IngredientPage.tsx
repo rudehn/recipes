@@ -217,6 +217,7 @@ export default function IngredientPage() {
                   <span className="detail">
                     {standing.product.size} · {money(standing.product.promo ?? standing.product.regular)}
                     {standing.status === "picked" && <span className="chosen-by"> · your pick</span>}
+                    {standing.status === "auto" && <span> · automatic</span>}
                   </span>
                 </p>
               ) : (
@@ -227,7 +228,9 @@ export default function IngredientPage() {
                       ? "Nothing at your store matched"
                       : standing.status === "unseen"
                         ? "Not priced yet: it is matched the first time a list needs it"
-                        : "Product picked; its price could not be fetched"}
+                        : standing.status === "auto"
+                          ? "Matched automatically; its price could not be fetched"
+                          : "Your pick; its price could not be fetched"}
                 </p>
               )}
               <div className="fact-actions">
