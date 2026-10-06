@@ -87,6 +87,35 @@ describe("IngredientPage", () => {
     await waitFor(() => expect(backend.requestsTo("DELETE /api/pantry/:id")[0].path).toBe("/api/pantry/7"));
   });
 
+  it("goes back to the staples when the staple was all there was of it", async () => {
+    // No recipe uses it, so once it is not a staple there is no page for it.
+    const saffron = ingredientDetail({
+      key: "saffron",
+      name: "Saffron",
+      recipe_count: 0,
+      lines: [],
+      staple: { id: 9, name: "Saffron", in_stock: true },
+    });
+    let deleted = false;
+    const backend = mockBackend({
+      "GET /api/ingredients/:key": () =>
+        deleted ? new HttpError(404, "No ingredient called that.") : saffron,
+      "DELETE /api/pantry/:id": () => {
+        deleted = true;
+      },
+      "GET /api/ingredients": { ingredients: [], suggestions: [] },
+    });
+    const { user } = renderApp("/ingredients/saffron");
+    await screen.findByRole("heading", { name: "Saffron" });
+
+    await user.click(screen.getByRole("button", { name: "Stop keeping stocked" }));
+
+    expect(await screen.findByRole("heading", { name: "Ingredients" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Staples/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByText("No ingredient called that")).not.toBeInTheDocument();
+    expect(backend.requestsTo("DELETE /api/pantry/:id")[0].path).toBe("/api/pantry/9");
+  });
+
   it("goes back to the automatic product", async () => {
     const backend = mockBackend({
       "GET /api/ingredients/:key": cumin,

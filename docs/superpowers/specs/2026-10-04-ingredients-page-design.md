@@ -175,6 +175,7 @@ It is the ingredient-level partner of the recipe box's "Needs a look", which sta
 
 - **Name** and **Also called**: the names merged into it, each with Unmerge.
 - **Pantry**: a "Keep stocked" switch, and "In stock" while it is kept; "Stop keeping stocked" removes the staple.
+  On an ingredient no recipe uses, the staple was all there was of it, so it then goes back to Staples rather than to a page for nothing.
 - **At your store** (pricing on): the product with its size and price, marked "your pick" or automatic, with Change product (the existing product picker), Don't price this, and Back to automatic.
 - **Nutrition**: the food it counts as, with Change food (the existing food picker, which already names the recipes a choice reaches), It doesn't count, and Back to default.
   A line with a state word is counted as a food of its own (ADR 8), so each such food its lines use ("cooked rice" beside "rice") gets a row of its own with the same three actions, acting on that food alone.

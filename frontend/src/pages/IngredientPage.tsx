@@ -104,6 +104,13 @@ export default function IngredientPage() {
     if (await action.run(write)) reload();
   }
 
+  async function stopStocking(id: number) {
+    if (data!.lines.length > 0) return change(() => api.deletePantryItem(id));
+    // No recipe uses it, so the staple was all there was of it, and this
+    // page would only say there is no such ingredient: go back to the staples.
+    if (await action.run(() => api.deletePantryItem(id))) navigate("/ingredients?view=staples");
+  }
+
   function saved(edited: EditedLine[]) {
     setFixing(null);
     const gone = edited.filter((e) => e.key !== data!.key);
@@ -199,7 +206,7 @@ export default function IngredientPage() {
               </Switch>
             )}
             {staple && (
-              <Button size="small" variant="danger" onClick={() => change(() => api.deletePantryItem(staple.id))}>
+              <Button size="small" variant="danger" onClick={() => stopStocking(staple.id)}>
                 Stop keeping stocked
               </Button>
             )}
