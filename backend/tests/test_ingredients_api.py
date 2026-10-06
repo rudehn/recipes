@@ -419,3 +419,77 @@ async def test_a_hand_picked_product_beats_an_automatic_one(client, monkeypatch)
 
     assert preview["product"]["keeps"] == "from"
     assert preview["needs"] == []
+
+
+async def preview_of(client, from_key: str, to_key: str) -> dict:
+    resp = await client.post(
+        "/api/ingredients/merges/preview", json={"from_key": from_key, "to_key": to_key}
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def hand_pick(key: str, product_id: str | None, store: str = STORE) -> IngredientProductMatch:
+    return IngredientProductMatch(
+        canonical_key=key, location_id=store, product_id=product_id, user_confirmed=True
+    )
+
+
+async def test_preview_shows_both_hand_picks_with_pricing_off(client):
+    # The merge asks which pick to keep at every store, so the preview must
+    # have something to ask with even when it can price nothing.
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    async with session_factory() as session:
+        session.add_all([hand_pick("ground-cumin", "111"), hand_pick("cumin", None)])
+        await session.commit()
+
+    preview = await preview_of(client, "ground-cumin", "cumin")
+
+    assert preview["needs"] == ["product"]
+    assert preview["product"] == {
+        "from_side": {"product": None, "hand_picked": True, "not_priced": False},
+        "to_side": {"product": None, "hand_picked": True, "not_priced": True},
+        "keeps": None,
+    }
+
+
+async def test_preview_shows_hand_picks_at_a_store_other_than_the_chosen_one(
+    client, monkeypatch
+):
+    monkeypatch.setattr(config, "KROGER_CLIENT_ID", "test-id")
+    monkeypatch.setattr(config, "KROGER_CLIENT_SECRET", "test-secret")
+    await recipe(client, "Chili", [("ground cumin", 2, "tsp"), ("cumin", 1, "tsp")])
+    async with session_factory() as session:
+        session.add(AppSettings(id=1, kroger_location_id=STORE))
+        session.add_all(
+            [hand_pick("ground-cumin", "111", "01400999"), hand_pick("cumin", "222", "01400999")]
+        )
+        await session.commit()
+
+    async def no_products(*args, **kwargs):
+        return {}
+
+    monkeypatch.setattr(products, "by_ids", no_products)
+
+    preview = await preview_of(client, "ground-cumin", "cumin")
+
+    assert preview["needs"] == ["product"]
+    assert preview["product"]["from_side"]["hand_picked"] is True
+    assert preview["product"]["to_side"]["hand_picked"] is True
+    assert preview["product"]["keeps"] is None
+
+
+async def test_preview_shows_the_cooked_foods_that_need_a_choice(client):
+    await recipe(client, "Bowl", [("cooked brown rice", 2, "cup"), ("cooked rice", 1, "cup")])
+    async with session_factory() as session:
+        session.add(IngredientFoodMatch(key="cooked-brown-rice", fdc_id=168878))
+        session.add(IngredientFoodMatch(key="cooked-rice", fdc_id=None))
+        await session.commit()
+
+    preview = await preview_of(client, "brown-rice", "rice")
+
+    assert preview["needs"] == ["food"]
+    assert preview["food"]["from_side"]["food"]["fdc_id"] == 168878
+    assert preview["food"]["from_side"]["hand_picked"] is True
+    assert preview["food"]["to_side"] == {"food": None, "hand_picked": True, "skipped": True}
+    assert preview["food"]["keeps"] is None

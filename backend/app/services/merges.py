@@ -42,7 +42,9 @@ from ..schemas import (
     StapleSide,
 )
 from . import ingredients
+from . import settings as settings_service
 from .identity import Identity
+from .nutrition import facts, foods
 from .nutrition.defaults import STATE_WORDS
 
 
@@ -112,14 +114,10 @@ async def _products(
     return {(row.canonical_key, row.location_id): row for row in found.scalars()}
 
 
-async def _needs(
-    session: AsyncSession,
-    from_key: str,
-    to_key: str,
-    from_staples: list[PantryItem],
-    to_staples: list[PantryItem],
-) -> list[MergeNeed]:
-    found: list[MergeNeed] = []
+async def _product_clash(
+    session: AsyncSession, from_key: str, to_key: str
+) -> tuple[IngredientProductMatch, IngredientProductMatch] | None:
+    """The first store where both names hold a different hand pick."""
     products = await _products(session, [from_key, to_key])
     for (key, location), old in products.items():
         new = products.get((to_key, location))
@@ -130,14 +128,34 @@ async def _needs(
             and new.user_confirmed
             and old.product_id != new.product_id
         ):
-            found.append("product")
-            break
+            return old, new
+    return None
+
+
+async def _food_clash(
+    session: AsyncSession, from_key: str, to_key: str
+) -> tuple[IngredientFoodMatch, IngredientFoodMatch] | None:
+    """The first food, plain or under a state word, both names chose differently."""
     for old_key, new_key in zip(_food_keys(from_key), _food_keys(to_key), strict=True):
         old = await session.get(IngredientFoodMatch, old_key)
         new = await session.get(IngredientFoodMatch, new_key)
         if old is not None and new is not None and old.fdc_id != new.fdc_id:
-            found.append("food")
-            break
+            return old, new
+    return None
+
+
+async def _needs(
+    session: AsyncSession,
+    from_key: str,
+    to_key: str,
+    from_staples: list[PantryItem],
+    to_staples: list[PantryItem],
+) -> list[MergeNeed]:
+    found: list[MergeNeed] = []
+    if await _product_clash(session, from_key, to_key) is not None:
+        found.append("product")
+    if await _food_clash(session, from_key, to_key) is not None:
+        found.append("food")
     if from_staples and to_staples:
         found.append("staple")
     return found
@@ -255,10 +273,26 @@ async def unmerge(session: AsyncSession, from_key: str) -> None:
     Identity.forget(session)
 
 
-def _keeps(from_side, to_side, from_wins: bool, chosen: bool) -> MergeSide | None:
-    """Which side a merge keeps, or None when the owner has to choose."""
-    if chosen:
-        return None
+def _stored_product(row: IngredientProductMatch) -> ProductSide:
+    """A hand pick as its row holds it: whether it is priced, not which product.
+
+    Enough to choose between when the pick is at a store other than the one
+    prices are quoted against, or pricing is off, and nothing can say more.
+    """
+    return ProductSide(hand_picked=True, not_priced=row.product_id is None)
+
+
+def _stored_food(row: IngredientFoodMatch) -> FoodSide:
+    chosen = foods.food(row.fdc_id) if row.fdc_id is not None else None
+    return FoodSide(
+        food=facts.food_out(chosen) if chosen is not None else None,
+        hand_picked=True,
+        skipped=row.fdc_id is None,
+    )
+
+
+def _keeps(from_side, to_side, from_wins: bool) -> MergeSide:
+    """Which side a merge keeps, where the owner does not have to choose."""
     if from_side is not None and (to_side is None or from_wins):
         return "from"
     return "to"
@@ -267,9 +301,12 @@ def _keeps(from_side, to_side, from_wins: bool, chosen: bool) -> MergeSide | Non
 async def preview(session: AsyncSession, from_key: str, to_key: str) -> MergePreview:
     """What merging `from_key` into `to_key` would change, at the chosen store.
 
-    Products are shown as they stand at the store prices are quoted against;
-    a choice made here applies at every store where both names hold a
-    different hand pick, which is what `needs` reports.
+    Products are shown as they stand at the store prices are quoted against,
+    and foods as the names themselves count. A choice the merge needs is
+    shown from the rows that need it instead, wherever they are - another
+    store, pricing off, a "cooked" food - since a question the page has
+    nothing to show for leaves the owner unable to merge at all. The choice
+    applies at every store and to every food where both names differ.
     """
     wanted = await needs(session, from_key, to_key)
     listing = {s.key: s for s in (await ingredients.list_ingredients(session)).ingredients}
@@ -305,19 +342,30 @@ async def preview(session: AsyncSession, from_key: str, to_key: str) -> MergePre
 
     product = None
     p_from, p_to = product_side(source), product_side(target)
-    if p_from or p_to:
+    clash = await _product_clash(session, from_key, to_key)
+    if clash is not None:
+        store = await settings_service.selected_store(session)
+        at_store = store is not None and store.location_id == clash[0].location_id
+        # At the chosen store the listing has the products, with prices.
+        if not (at_store and p_from and p_to):
+            p_from, p_to = _stored_product(clash[0]), _stored_product(clash[1])
+        product = ProductConflict(from_side=p_from, to_side=p_to, keeps=None)
+    elif p_from or p_to:
         from_wins = bool(p_from and p_from.hand_picked and not (p_to and p_to.hand_picked))
         product = ProductConflict(
-            from_side=p_from,
-            to_side=p_to,
-            keeps=_keeps(p_from, p_to, from_wins, "product" in wanted),
+            from_side=p_from, to_side=p_to, keeps=_keeps(p_from, p_to, from_wins)
         )
     food = None
     f_from, f_to = food_side(source, stored_only=True), food_side(target)
-    if f_from or f_to:
+    food_clash = await _food_clash(session, from_key, to_key)
+    if food_clash is not None:
+        food = FoodConflict(
+            from_side=_stored_food(food_clash[0]), to_side=_stored_food(food_clash[1]), keeps=None
+        )
+    elif f_from or f_to:
         from_wins = bool(f_from and f_from.hand_picked and not (f_to and f_to.hand_picked))
         food = FoodConflict(
-            from_side=f_from, to_side=f_to, keeps=_keeps(f_from, f_to, from_wins, "food" in wanted)
+            from_side=f_from, to_side=f_to, keeps=_keeps(f_from, f_to, from_wins)
         )
     staple = None
     s_from, s_to = staple_side(source), staple_side(target)

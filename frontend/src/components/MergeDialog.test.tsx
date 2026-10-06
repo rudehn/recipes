@@ -114,6 +114,53 @@ describe("MergeDialog", () => {
     );
   });
 
+  it("asks whose product to keep when it cannot say which products they are", async () => {
+    // Both names hold a hand pick at a store the app is not pricing: the
+    // merge needs the choice, and the preview cannot name either product.
+    const unknown = { product: null, hand_picked: true, not_priced: false };
+    const backend = backendFor(
+      preview({ product: { from_side: unknown, to_side: unknown, keeps: null }, needs: ["product"] }),
+    );
+    const { user } = renderApp("/ingredients/ground-cumin");
+    await screen.findByRole("heading", { name: "ground cumin" });
+    await user.click(screen.getByRole("button", { name: "Same as another ingredient…" }));
+    await user.click(screen.getByRole("button", { name: "cumin" }));
+    const question = await screen.findByText("Which product to keep?");
+    // The question opens its item in the list of changes, so the item's
+    // bullet sits beside it; as a fieldset's legend it sat outside the
+    // item's first line, and the bullet landed beside the first answer.
+    expect(question.closest("li")?.firstElementChild).toBe(question);
+    expect(screen.getByRole("radiogroup", { name: "Which product to keep?" })).toBeInTheDocument();
+
+    expect(screen.getByRole("button", { name: "Merge" })).toBeDisabled();
+    await user.click(screen.getByRole("radio", { name: "ground cumin’s" }));
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("POST /api/ingredients/merges")[0].body).toEqual({
+        from_key: "ground-cumin",
+        to_key: "cumin",
+        choices: { product: "from" },
+      }),
+    );
+  });
+
+  it("never leaves a needed choice with nothing to choose from", async () => {
+    const backend = backendFor(preview({ food: null, needs: ["food"] }));
+    const { user } = renderApp("/ingredients/ground-cumin");
+    await screen.findByRole("heading", { name: "ground cumin" });
+    await user.click(screen.getByRole("button", { name: "Same as another ingredient…" }));
+    await user.click(screen.getByRole("button", { name: "cumin" }));
+    await screen.findByText("Which food to keep?");
+
+    await user.click(screen.getByRole("radio", { name: "cumin’s" }));
+    await user.click(screen.getByRole("button", { name: "Merge" }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("POST /api/ingredients/merges")[0].body).toMatchObject({ choices: { food: "to" } }),
+    );
+  });
+
   it("cannot merge against the old direction's preview while a swap is loading", async () => {
     let release: (p: MergePreview) => void = () => {};
     let calls = 0;

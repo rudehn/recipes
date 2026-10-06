@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 
 import {
   api,
@@ -203,34 +203,48 @@ function ConflictLine<T>({
   setChoices: (next: MergeChoices) => void;
 }) {
   const conflict = preview[need] as Conflict<T> | null;
-  if (!conflict) return null;
-  const sides: [MergeSide, T | null][] = [
-    ["from", conflict.from_side],
-    ["to", conflict.to_side],
-  ];
+  const question = useId();
 
-  if (conflict.keeps === null) {
+  if (preview.needs.includes(need)) {
+    const drawn: [MergeSide, string][] = [];
+    if (conflict?.from_side) drawn.push(["from", describe(conflict.from_side)]);
+    if (conflict?.to_side) drawn.push(["to", describe(conflict.to_side)]);
+    // Told apart by what each holds where the preview can say, and otherwise
+    // by whose it is: two hand picks at a store the app is not pricing are
+    // both just "a product", and a question with no answers to pick from
+    // would leave Merge disabled with nothing to say why.
+    const options: [MergeSide, string][] =
+      drawn.length === 2 && drawn[0][1] !== drawn[1][1]
+        ? drawn
+        : [
+            ["from", `${preview.from_name}’s`],
+            ["to", `${preview.to_name}’s`],
+          ];
+    // The question opens the item, so the item's bullet sits beside it: a
+    // fieldset's legend is drawn outside the item's first line, which put
+    // the bullet beside the first answer instead.
     return (
       <li>
-        <fieldset className="merge-choice">
-          <legend>Which {need} to keep?</legend>
-          {sides.map(([side, value]) =>
-            value === null ? null : (
-              <label key={side}>
-                <input
-                  type="radio"
-                  name={need}
-                  checked={choices[need] === side}
-                  onChange={() => setChoices({ ...choices, [need]: side })}
-                />
-                {describe(value)}
-              </label>
-            ),
-          )}
-        </fieldset>
+        <p className="merge-question" id={question}>
+          Which {need} to keep?
+        </p>
+        <div className="merge-choice" role="radiogroup" aria-labelledby={question}>
+          {options.map(([side, text]) => (
+            <label key={side}>
+              <input
+                type="radio"
+                name={need}
+                checked={choices[need] === side}
+                onChange={() => setChoices({ ...choices, [need]: side })}
+              />
+              {text}
+            </label>
+          ))}
+        </div>
       </li>
     );
   }
+  if (!conflict || conflict.keeps === null) return null;
   const [kept, other] =
     conflict.keeps === "from" ? [conflict.from_side, conflict.to_side] : [conflict.to_side, conflict.from_side];
   if (kept === null) return null;

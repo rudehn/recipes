@@ -3460,11 +3460,15 @@ body.has-install-hint .page {
 
 .merge-changes { margin: 0; padding-left: var(--space-20); display: grid; gap: var(--space-8); }
 
-.merge-choice { border: 0; margin: 0; padding: 0; display: grid; gap: var(--space-6); }
+.merge-question { font-weight: var(--weight-semibold); margin: 0 0 var(--space-10); }
 
-.merge-choice legend { font-weight: var(--weight-semibold); padding: 0; margin-bottom: var(--space-4); }
+.merge-choice { display: grid; gap: var(--space-6); }
 
 .merge-choice label { display: flex; gap: var(--space-8); align-items: center; }
+
+/* Without the browser's own margin, which set each answer a few pixels in
+   from the question above it. */
+.merge-choice input { margin: 0; }
 
 .suggestion-row {
   display: flex;

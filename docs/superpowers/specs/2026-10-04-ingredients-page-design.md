@@ -205,6 +205,8 @@ Before anything changes, the preview says:
 - **Recipes**: "Chili and Fresh Corn Salsa keep saying 'ground cumin', and shop as cumin."
 - **Grocery list**: "One line, cumin, instead of two."
 - **Product, food and staple**: what each side has and which survives under the rules in section 1, with a choice between the two only where section 1 requires one.
+  A choice is drawn from the stored picks that need it, wherever they are: hand picks at a store other than the chosen one, or with pricing off, and foods chosen under a state word ("cooked").
+  Where the preview cannot tell the two apart by what they hold, it asks whose to keep ("ground cumin's" or "cumin's"), so Merge is never left waiting on a question with no answers.
 - **Merge** and Cancel.
 
 After merging, the target's page opens with a banner, "Merged ground cumin into cumin", and an **Unmerge** button.
