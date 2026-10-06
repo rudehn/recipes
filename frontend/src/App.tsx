@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback } from "react";
-import { NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { NavLink, Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 
 import { api } from "./api";
 import { InstallHint } from "./components/InstallHint";
@@ -80,7 +80,7 @@ export default function App() {
         <Route path="/planner" element={<PlannerPage />} />
         <Route path="/groceries" element={<GroceryPage />} />
         <Route path="/ingredients" element={<IngredientsPage />} />
-        <Route path="/ingredients/:key" element={<IngredientPage />} />
+        <Route path="/ingredients/:key" element={<IngredientRoute />} />
         {/* Pantry's old address, kept for bookmarks and the installed app's
             shortcuts: its job is the Ingredients tab's Staples view now. */}
         <Route path="/pantry" element={<Navigate to="/ingredients" replace />} />
@@ -98,6 +98,17 @@ export default function App() {
       </Route>
     </Routes>
   );
+}
+
+/**
+ * An ingredient's page, started afresh for each ingredient. React keeps a
+ * route's component when only its parameter changes, so following "Now
+ * shops as black beans" from one ingredient to another carried over the
+ * banner, an open fixer or picker, and the last ingredient's data.
+ */
+function IngredientRoute() {
+  const { key } = useParams();
+  return <IngredientPage key={key} />;
 }
 
 function Shell() {

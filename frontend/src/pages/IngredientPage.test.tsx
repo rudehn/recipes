@@ -171,13 +171,13 @@ describe("IngredientPage", () => {
     });
     renderApp("/ingredients/ground-cumin");
 
-    expect(await screen.findByRole("heading", { name: "cumin" })).toBeInTheDocument();
     // Navigating to the target's address loads it under its own key.
     await waitFor(() =>
       expect(backend.requestsTo("GET /api/ingredients/:key").map((r) => r.path)).toContain(
         "/api/ingredients/cumin",
       ),
     );
+    expect(await screen.findByRole("heading", { name: "cumin" })).toBeInTheDocument();
   });
 
   it("says so when there is no such ingredient, with a way back", async () => {
@@ -306,6 +306,28 @@ describe("IngredientPage: fixing lines", () => {
         (_, el) => el?.tagName === "SPAN" && el.textContent === "Now shops as black beans, drained and rinsed.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("leaves what was happening on one ingredient behind when following a link to another", async () => {
+    const blackBeans = ingredientDetail({
+      key: "black-bean",
+      name: "black beans",
+      lines: [ingredientLine({ ingredient_id: 31, recipe_id: 4, recipe_title: "Chili", name: "black beans, drained and rinsed", quantity: 15, unit: "oz" })],
+    });
+    mockBackend({
+      "GET /api/ingredients/:key": ({ params }: MockRequest) =>
+        params.key === "black-bean" ? blackBeans : { ...beans, lines: [...beans.lines, tacos] },
+      "PATCH /api/recipe-ingredients": [moved],
+    });
+    const { user } = renderApp("/ingredients/can-black-bean");
+    await screen.findByRole("heading", { name: /can black beans/ });
+    await user.click(screen.getAllByRole("button", { name: "Fix" })[0]);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await user.click(await screen.findByRole("link", { name: "black beans, drained and rinsed" }));
+
+    expect(await screen.findByRole("heading", { name: "black beans" })).toBeInTheDocument();
+    expect(screen.queryByText(/Now shops as/)).not.toBeInTheDocument();
   });
 
   it("goes to the new ingredient when the fixed line was the last one", async () => {

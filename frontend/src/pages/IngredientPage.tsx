@@ -401,10 +401,10 @@ export default function IngredientPage() {
           onClose={() => setMerging(null)}
           onMerged={(done) => {
             setMerging(null);
-            // From the target's own page this navigates to where we already
-            // are, which does not re-run the load, so reload explicitly.
             navigate(`/ingredients/${done.toKey}`, { state: { merged: done } });
-            reload();
+            // Another ingredient's page starts afresh and loads itself; this
+            // one, the target's own, stays where it is and must load again.
+            if (done.toKey === data.key) reload();
           }}
         />
       )}
