@@ -250,6 +250,8 @@ On the real data about ten suggestions are expected, some of them wrong to buy a
 
 1. **Footnote marks**: trailing asterisks are dropped from the name ("ancho chili powder**").
 2. **Repeated measures**: a bracket that holds only an amount and a unit, optionally with "about", is dropped, and so is the bracket left empty by it ("all-purpose flour ((42 g))" becomes "all-purpose flour"; "medium yellow onion (chopped (about 1.5 cup/200 g))" becomes "medium yellow onion (chopped)").
+   That is only on a line with an amount of its own, which the bracket repeats.
+   On a line without one, the bracket is the only amount there is: one such bracket holding one measure becomes the amount ("Kosher salt (1 teaspoon)" becomes 1 teaspoon "Kosher salt"; "Parmesan (1/2 cup), grated" becomes ½ cup "Parmesan, grated"), and two brackets, or two measures in one, stay in the name.
 3. **How it is measured**: "firmly", "loosely" or "lightly" packed after the unit is read as how to measure, not as part of the name ("firmly packed brown sugar" becomes "brown sugar").
 4. **Package sizes**: a container word right after a weight or volume is dropped from the name ("15 oz can black beans" becomes 15 oz "black beans"), and a bracketed package size becomes the amount ("1 (15 oz) can black beans" becomes 15 oz "black beans"; "2 (15 oz) cans" becomes 30 oz).
    A size in the name gets the same treatment ("1 22-ounce bag frozen waffle fries" becomes 22 oz "frozen waffle fries").

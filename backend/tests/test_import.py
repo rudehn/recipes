@@ -501,3 +501,21 @@ def test_a_size_that_is_not_a_weight_stays_out_of_the_amount():
 def test_a_bracket_that_is_not_a_measure_stays():
     parsed = parse_ingredient_line("1 cup rice (rinsed, see note)")
     assert parsed.name == "rice (rinsed, see note)"
+
+
+@pytest.mark.parametrize(
+    "line, name, quantity, unit",
+    [
+        # A line whose only amount is in a bracket keeps it as the amount.
+        ("Kosher salt (1 teaspoon)", "Kosher salt", 1, "teaspoon"),
+        ("Parmesan (1/2 cup), grated", "Parmesan, grated", 0.5, "cup"),
+        ("Rice (about 1 1/2 cups)", "Rice", 1.5, "cups"),
+        # Two brackets, or two measures in one, leave no one amount to take,
+        # so they stay where the cook can still read them.
+        ("Flour (1 cup) (120 g)", "Flour (1 cup) (120 g)", None, None),
+        ("Onion (about 1.5 cup/200 g)", "Onion (about 1.5 cup/200 g)", None, None),
+    ],
+)
+def test_a_bracket_that_holds_the_only_amount_is_the_amount(line, name, quantity, unit):
+    parsed = parse_ingredient_line(line)
+    assert (parsed.name, parsed.quantity, parsed.unit) == (name, quantity, unit)

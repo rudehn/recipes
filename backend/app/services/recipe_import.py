@@ -70,6 +70,8 @@ _WEIGHT_VOLUME_WORDS = _SIZE_UNITS | {
     "quarts", "gallon", "gallons",
 }
 _MEASURE_CONNECTORS = {"about", "approximately", "approx", "or", "fl"}
+# A bracket with no bracket inside it, and the space before it.
+_BRACKET = re.compile(r"\s*\(([^()]*)\)")
 
 # A label a site puts before the line: "Optional: 1 avocado", "For the sauce:
 # 1 cup ketchup". Read past, so the number after it is found. "Optional" is
@@ -345,12 +347,43 @@ def _measure_only(text: str) -> bool:
     )
 
 
+def _read_measure(text: str) -> tuple[float, str] | None:
+    """One amount and its unit, as in "1 teaspoon" or "about 1 1/2 cups".
+
+    None for anything else, two measures included ("about 1.5 cup/200 g"):
+    which of them is the amount is a guess.
+    """
+    words = text.split()
+    while words and words[0].lower().rstrip(".") in {"about", "approximately", "approx"}:
+        words = words[1:]
+    if len(words) not in (2, 3) or words[-1].lower().rstrip(".") not in _WEIGHT_VOLUME_WORDS:
+        return None
+    numbers = [_token_to_number(word) for word in words[:-1]]
+    if None in numbers or (len(numbers) == 2 and not _is_fraction(words[1])):
+        return None
+    return sum(numbers), words[-1].lower().rstrip(".")
+
+
+def _lift_measure(name: str) -> tuple[float, str, str] | None:
+    """The amount of a line that gives it only in a bracket, and the name left.
+
+    "Kosher salt (1 teaspoon)" is a teaspoon of kosher salt. Only for one
+    bracket holding one measure: with two, the cook is left to read them.
+    """
+    brackets = [m for m in _BRACKET.finditer(name) if _measure_only(m.group(1))]
+    if len(brackets) != 1:
+        return None
+    measure = _read_measure(brackets[0].group(1))
+    if measure is None:
+        return None
+    bracket = brackets[0]
+    return *measure, name[: bracket.start()] + name[bracket.end() :]
+
+
 def _drop_repeated_measures(name: str) -> str:
     """Drop brackets that only repeat the amount, innermost first."""
     while True:
-        cleaned = re.sub(
-            r"\s*\(([^()]*)\)", lambda m: "" if _measure_only(m.group(1)) else m.group(0), name
-        )
+        cleaned = _BRACKET.sub(lambda m: "" if _measure_only(m.group(1)) else m.group(0), name)
         cleaned = re.sub(r"\s*\(\s*\)", "", cleaned)
         if cleaned == name:
             return name
@@ -369,11 +402,17 @@ def _note_after_name(name: str) -> str:
     return f"{rest} ({note})"
 
 
-def _clean_name(name: str) -> str:
-    """The name with what is not the ingredient taken out of it."""
+def _clean_name(name: str, measured: bool) -> str:
+    """The name with what is not the ingredient taken out of it.
+
+    A bracket holding only a measure repeats the line's amount, and goes,
+    but only on a line that has one: on a line without, it is the only
+    amount the cook has, and stays when it could not be read as the amount.
+    """
     # Footnote marks point at a note the line lost: "ancho chili powder**".
     name = name.replace("*", "")
-    name = _drop_repeated_measures(name)
+    if measured:
+        name = _drop_repeated_measures(name)
     # How it is measured, not what it is: "firmly packed brown sugar".
     name = re.sub(r"^(?:(?:firmly|loosely|lightly|tightly)\s+)?packed\s+", "", name, flags=re.I)
     return _note_after_name(name.strip())
@@ -451,7 +490,9 @@ def parse_ingredient_line(line: str) -> IngredientIn:
         name = name[3:]
     # Sites like Budget Bytes annotate prices: "lo mein noodles ($1.30)".
     name = re.sub(r"\(\s*\$[^)]*\)", "", name)
-    name = _clean_name(name)
+    if quantity is None and (lifted := _lift_measure(name)) is not None:
+        quantity, unit, name = lifted
+    name = _clean_name(name, measured=quantity is not None)
     name = re.sub(r"\s+", " ", name).strip(" ,")
     if not name:
         # Line was only a quantity/unit ("1 pinch"): treat the unit as the name.
