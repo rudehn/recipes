@@ -378,8 +378,11 @@ export default function GroceryPage() {
       {!error && empty && (
         <EmptyState glyph="🧺" title="Nothing to buy">
           <p>
-            Plan some meals for this date range, or mark pantry items out of stock,
-            and they will show up here.
+            Plan some meals for this date range, or mark a staple out of stock under{" "}
+            <Link className="inline-link" to="/ingredients?view=staples">
+              Ingredients
+            </Link>
+            , and what you need will show up here.
           </p>
         </EmptyState>
       )}

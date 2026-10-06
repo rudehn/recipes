@@ -459,6 +459,12 @@ describe("GroceryPage", () => {
     renderApp(WEEK);
 
     expect(await screen.findByText("Nothing to buy")).toBeInTheDocument();
+    // Staples are marked out of stock under Ingredients now, not in a pantry.
+    const note = screen.getByText(/mark a staple out of stock under/);
+    expect(within(note).getByRole("link", { name: "Ingredients" })).toHaveAttribute(
+      "href",
+      "/ingredients?view=staples",
+    );
   });
 
   it("reports a failed load instead of claiming there is nothing to buy", async () => {
