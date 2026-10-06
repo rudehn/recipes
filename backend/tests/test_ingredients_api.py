@@ -362,6 +362,29 @@ async def test_suggestions_can_be_listed_and_turned_down(client):
     assert (await client.get("/api/ingredients/suggestions")).json() == []
 
 
+async def test_an_undirected_suggestion_ties_to_the_alphabetically_first_name(client):
+    # "mayo" is a prefix of "mayonnaise", which the tie-break once read the
+    # other way round from every other pair.
+    await recipe(client, "Slaw", [("mayo", 1, "cup"), ("mayonnaise", 1, "cup")])
+    await recipe(client, "Salad", [("scallion", 1, None), ("green onion", 1, None)])
+
+    found = (await client.get("/api/ingredients/suggestions")).json()
+
+    assert sorted((s["from_key"], s["to_key"]) for s in found) == [
+        ("mayonnaise", "mayo"),
+        ("scallion", "green-onion"),
+    ]
+
+
+async def test_an_undirected_suggestion_points_at_the_name_more_recipes_use(client):
+    await recipe(client, "Slaw", [("mayonnaise", 1, "cup")])
+    await recipe(client, "Dip", [("mayonnaise", 1, "cup"), ("mayo", 1, "cup")])
+
+    found = (await client.get("/api/ingredients/suggestions")).json()
+
+    assert [(s["from_key"], s["to_key"]) for s in found] == [("mayo", "mayonnaise")]
+
+
 async def food_preview(client, from_name: str, to_name: str) -> dict:
     await recipe(client, "Chili", [(from_name, 1, "tsp"), (to_name, 1, "tsp")])
     resp = await client.post(

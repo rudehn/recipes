@@ -350,11 +350,6 @@ describe("an ingredient's panels", () => {
     expect(css).toMatch(/\.ingredient-facts\s*\{[^}]*justify-items:\s*start/);
   });
 
-  /**
-   * The suggested merges are the list page's rows, which are inset and
-   * ruled off; in a panel that started them a step in from the heading and
-   * left a stray rule just inside the panel's bottom edge.
-   */
   it("give a line's name the whole width on a phone, above its amount", () => {
     // In three fifths of a phone's width "black beans, drained and rinsed"
     // read "black beans, drained a", and the name is what a fix is checking.
@@ -377,6 +372,11 @@ describe("an ingredient's panels", () => {
     expect(css).toMatch(/\.ingredient-lines \.line a\s*\{[^}]*text-decoration:\s*underline/);
   });
 
+  /**
+   * The suggested merges are the list page's rows, which are inset and
+   * ruled off; in a panel that started them a step in from the heading and
+   * left a stray rule just inside the panel's bottom edge.
+   */
   it("hold the suggested merges on their own edges, with no rule under the last", () => {
     expect(css).toMatch(/\.panel \.suggestion-row\s*\{[^}]*padding-inline:\s*0/);
     expect(css).toMatch(/\.panel \.suggestion-row:last-child\s*\{[^}]*border-bottom:\s*none/);

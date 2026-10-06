@@ -245,26 +245,30 @@ def _summary(
 async def _suggestions(session: AsyncSession, seen: _Seen) -> list[MergeSuggestion]:
     """Likely pairs among the ingredients in use, less those turned down.
 
-    A pair the rules leave undirected points at the name more recipes use,
-    then at a staple, then at the alphabetically first, so the suggestion
-    reads the way most of the box already does.
+    A pair the rules leave undirected points at the name more recipe lines
+    use, then at a staple, then at the alphabetically first, so the
+    suggestion reads the way most of the box already does.
     """
     dismissed = {
         frozenset({row.key_a, row.key_b})
         for row in (await session.execute(select(IngredientMergeDismissal))).scalars()
     }
 
-    def weight(key: str) -> tuple[int, bool, str]:
-        inverted_key = "".join(chr(0x10FFFF - ord(c)) for c in key)
-        return (len(seen.lines.get(key, [])), key in seen.staples, inverted_key)
+    def weight(key: str) -> tuple[int, bool]:
+        return (len(seen.lines.get(key, [])), key in seen.staples)
 
     found: list[MergeSuggestion] = []
     for pair in merge_suggestions.find(seen.keys):
         if frozenset({pair.specific, pair.general}) in dismissed:
             continue
         source, target = pair.specific, pair.general
-        if not pair.directed and weight(source) > weight(target):
-            source, target = target, source
+        if not pair.directed:
+            # The tie is broken on its own rather than folded into the weight,
+            # where, as the key with each letter inverted, a prefix ("mayo")
+            # still sorted first and so lost to "mayonnaise".
+            a, b = source, target
+            target = min(a, b) if weight(a) == weight(b) else max(a, b, key=weight)
+            source = b if target == a else a
         found.append(
             MergeSuggestion(
                 from_key=source,
