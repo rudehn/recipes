@@ -70,6 +70,18 @@ class Identity:
     def resolve(self, key: str) -> str:
         return self.merges.get(key, key)
 
+    def resolve_nutrition(self, key: str) -> str:
+        """`resolve` for a nutrition key, with the merge applied after its
+        state words as `nutrition_key` applies it: "cooked-ground-cumin" is
+        "cooked-cumin" once "ground cumin" is merged into "cumin"."""
+        if key in self.merges:
+            return self.merges[key]
+        words = key.split("-")
+        state = []
+        while len(words) > 1 and words[0] in STATE_WORDS:
+            state.append(words.pop(0))
+        return "-".join([*state, self.resolve("-".join(words))])
+
     def key(self, name: str) -> str:
         """The ingredient a name means, or "" for a name that is not one."""
         key = canonical_key(name)

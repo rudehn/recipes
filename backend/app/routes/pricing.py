@@ -137,7 +137,10 @@ async def set_match(
     which is the whole point of being able to correct one.
     """
     store = await _require_store(session)
-    await matching.confirm(session, data.canonical_key, store.location_id, data.product_id)
+    # A page opened before a merge still names the merged-away key; the
+    # pick belongs to the ingredient it now means, where it will be read.
+    key = (await Identity.of(session)).resolve(data.canonical_key)
+    await matching.confirm(session, key, store.location_id, data.product_id)
 
 
 @router.delete("/match", status_code=204)
@@ -152,4 +155,5 @@ async def forget_match(
     searches afresh.
     """
     store = await _require_store(session)
+    key = (await Identity.of(session)).resolve(key)
     await matching.forget(session, key, store.location_id)

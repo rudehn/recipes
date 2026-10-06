@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app import config
 from app.db import session_factory
-from app.models import AppSettings, IngredientProductMatch
+from app.models import AppSettings, IngredientMerge, IngredientProductMatch
 from app.services.kroger import client as kroger
 from app.services.kroger import products
 
@@ -161,6 +161,24 @@ async def test_a_line_can_be_marked_as_not_worth_pricing(client, catalog, store)
     rows = await stored()
     assert rows[0].product_id is None
     assert rows[0].user_confirmed is True
+
+
+async def test_a_pick_under_a_merged_away_name_is_kept_under_its_target(
+    client, catalog, store
+):
+    """A tab opened before the merge still says "yellow-onion". Kept under
+    that key, the pick would be under a name nothing looks up any more."""
+    async with session_factory() as session:
+        session.add(IngredientMerge(from_key="yellow-onion", to_key="onion"))
+        await session.commit()
+
+    await client.put(
+        "/api/pricing/match", json={"canonical_key": "yellow-onion", "product_id": "0002"}
+    )
+    assert [(r.canonical_key, r.product_id) for r in await stored()] == [("onion", "0002")]
+
+    await client.delete("/api/pricing/match", params={"key": "yellow-onion"})
+    assert await stored() == []
 
 
 async def test_corrections_need_a_store_to_be_about(client, catalog):

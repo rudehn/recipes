@@ -10,7 +10,10 @@ Expected figures are USDA's SR Legacy values per 100 g, worked by hand.
 """
 
 import pytest
+from sqlalchemy import select
 
+from app.db import session_factory
+from app.models import IngredientFoodMatch, IngredientMerge
 from app.services.kroger.density import grams_per_cup
 from app.services.kroger.units import measure, parse_size, share_of_package
 from app.services.nutrition import foods
@@ -289,6 +292,25 @@ async def test_choosing_a_food_counts_the_ingredient_and_forgetting_it_undoes_th
     body = await nutrition(client, recipe_id)
     assert body["lines"][-1]["issue"] == "no_food"
     assert body["per_serving"] is None
+
+
+async def test_a_food_chosen_under_a_merged_away_name_is_kept_under_its_target(client):
+    """A tab opened before the merge still says "cooked-ground-cumin". The
+    merge applies after the state word, as it does to names."""
+    async with session_factory() as session:
+        session.add(IngredientMerge(from_key="ground-cumin", to_key="cumin"))
+        await session.commit()
+
+    await client.put("/api/nutrition/match", json={"key": "cooked-ground-cumin", "fdc_id": None})
+    await client.put("/api/nutrition/match", json={"key": "ground-cumin", "fdc_id": ALMONDS})
+    async with session_factory() as session:
+        rows = (await session.execute(select(IngredientFoodMatch))).scalars().all()
+    assert sorted((r.key, r.fdc_id) for r in rows) == [("cooked-cumin", None), ("cumin", ALMONDS)]
+
+    await client.delete("/api/nutrition/match", params={"key": "cooked-ground-cumin"})
+    async with session_factory() as session:
+        rows = (await session.execute(select(IngredientFoodMatch))).scalars().all()
+    assert [r.key for r in rows] == ["cumin"]
 
 
 async def test_a_choice_holds_for_every_recipe_using_the_ingredient(client):

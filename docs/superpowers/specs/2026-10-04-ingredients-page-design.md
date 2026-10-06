@@ -75,6 +75,8 @@ A new module, `backend/app/services/identity.py`, is the only way the app compar
 - `identity.key(name)` is `canonical_key(name)`, then the merge lookup.
 - `identity.nutrition_key(name)` is `nutrition_key`'s state words ("cooked") in front of `identity.key(name)`, so ADR 8's one exception survives a merge: merging `ground cumin` into `cumin` covers `cooked ground cumin` too, while `cooked rice` and `rice` stay two foods.
 - `identity.resolve(key)` maps an already-computed key.
+- `identity.resolve_nutrition(key)` maps an already-computed nutrition key, after its state words.
+  The endpoints that store a product or a food resolve the key they are sent, so a page opened before a merge cannot save a choice under a name nothing reads any more.
 - `Identity.none()` applies no merges, for pure functions and tests that need none.
 
 The object is loaded once per request and passed down, never re-read inside a loop.

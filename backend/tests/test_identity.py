@@ -42,6 +42,13 @@ def test_nutrition_keeps_state_words_in_front_of_the_merged_key():
     assert Identity.none().nutrition_key("rice") == "rice"
 
 
+def test_a_nutrition_key_resolves_after_its_state_words():
+    identity = Identity.from_merges({"ground-cumin": "cumin"})
+    assert identity.resolve_nutrition("cooked-ground-cumin") == "cooked-cumin"
+    assert identity.resolve_nutrition("ground-cumin") == "cumin"
+    assert identity.resolve_nutrition("cooked-rice") == "cooked-rice"
+
+
 async def test_merges_are_read_once_per_session_until_forgotten():
     async with session_factory() as session:
         session.add(IngredientMerge(from_key="ground-cumin", to_key="cumin"))

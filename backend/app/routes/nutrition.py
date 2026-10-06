@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..schemas import FoodChoice, FoodMatchSelection, RecipeRef
+from ..services.identity import Identity
 from ..services.nutrition import facts, foods
 
 # Enough to choose from without scrolling a catalogue. The search is local,
@@ -45,7 +46,10 @@ async def choose_food(data: FoodMatchSelection, session: AsyncSession = Depends(
     until it is forgotten."""
     if data.fdc_id is not None and foods.food(data.fdc_id) is None:
         raise HTTPException(status_code=404, detail="No such food")
-    await facts.choose(session, data.key, data.fdc_id)
+    # A page opened before a merge still names the merged-away key; the
+    # choice belongs to the ingredient it now means, where it will be read.
+    key = (await Identity.of(session)).resolve_nutrition(data.key)
+    await facts.choose(session, key, data.fdc_id)
 
 
 @router.delete("/match", status_code=204)
@@ -54,4 +58,4 @@ async def forget_food(
     session: AsyncSession = Depends(get_session),
 ):
     """Go back to the ingredient's default food, or to none if it has none."""
-    await facts.forget(session, key)
+    await facts.forget(session, (await Identity.of(session)).resolve_nutrition(key))
