@@ -445,3 +445,43 @@ async def test_pantry_duplicate_name_rejected(client):
     assert (
         await client.post("/api/pantry", json={"name": "  rice "})
     ).status_code == 409
+
+
+async def test_a_staple_is_refused_under_another_name_for_the_same_ingredient(client):
+    # "Eggs" is the ingredient "Egg" already is: a second row would be hidden
+    # behind the first on the Ingredients page, and adding it would seem to
+    # do nothing.
+    assert (await client.post("/api/pantry", json={"name": "Egg"})).status_code == 201
+
+    resp = await client.post("/api/pantry", json={"name": "Eggs"})
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Egg is already a staple."
+    assert [i["name"] for i in (await client.get("/api/pantry")).json()] == ["Egg"]
+
+
+async def test_a_staple_is_refused_under_a_name_merged_into_one(client):
+    await make_recipe(client, "Chili", [{"name": "ground cumin"}, {"name": "cumin"}])
+    await client.post("/api/pantry", json={"name": "Cumin"})
+    merged = await client.post(
+        "/api/ingredients/merges", json={"from_key": "ground-cumin", "to_key": "cumin"}
+    )
+    assert merged.status_code == 204
+
+    resp = await client.post("/api/pantry", json={"name": "Ground cumin"})
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Cumin is already a staple."
+
+
+async def test_a_staple_cannot_be_renamed_into_another_but_can_be_respelled(client):
+    egg = (await client.post("/api/pantry", json={"name": "Egg"})).json()
+    rice = (await client.post("/api/pantry", json={"name": "Rice"})).json()
+
+    refused = await client.put(f"/api/pantry/{rice['id']}", json={"name": "eggs"})
+    respelled = await client.put(f"/api/pantry/{egg['id']}", json={"name": "Eggs"})
+
+    assert refused.status_code == 409
+    assert refused.json()["detail"] == "Egg is already a staple."
+    assert respelled.status_code == 200
+    assert respelled.json()["name"] == "Eggs"

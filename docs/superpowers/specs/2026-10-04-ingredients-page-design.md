@@ -148,6 +148,7 @@ What Pantry is today, with two changes:
 - The remove control moves from the row to the ingredient's own page, since a one-tap delete with no undo sits too close to the stock switch.
 
 The add-a-staple field and the in-stock switch stay on the list.
+A name that is already a staple's ingredient is refused, by add and by rename alike, with a sentence naming that staple ("Egg is already a staple." for "Eggs", or for "Ground cumin" once it is merged into a "Cumin" staple), and the typed text stays in the field.
 
 ### All
 

@@ -132,18 +132,20 @@ describe("IngredientsPage: staples", () => {
   });
 
   it("explains why a staple could not be added, keeping what was typed", async () => {
+    // "Eggs" is the ingredient the "Egg" staple already is, so the server
+    // refuses it by name rather than adding a row the list would hide.
     mockBackend({
-      "GET /api/ingredients": list(),
-      "POST /api/pantry": new HttpError(409, "olive oil is already in your pantry."),
+      "GET /api/ingredients": list(staple("Egg")),
+      "POST /api/pantry": new HttpError(409, "Egg is already a staple."),
     });
     const { user } = renderApp("/ingredients");
-    await screen.findByText("No staples yet");
+    await screen.findByRole("link", { name: "Egg" });
 
-    await user.type(screen.getByLabelText("Add a staple"), "olive oil");
+    await user.type(screen.getByLabelText("Add a staple"), "Eggs");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
-    expect(await screen.findByText("olive oil is already in your pantry.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Add a staple")).toHaveValue("olive oil");
+    expect(await screen.findByText("Egg is already a staple.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Add a staple")).toHaveValue("Eggs");
   });
 
   it("puts a staple back in stock", async () => {

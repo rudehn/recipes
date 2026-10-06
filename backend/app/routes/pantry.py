@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
 from ..models import PantryItem
 from ..schemas import PantryItemIn, PantryItemOut, PantryItemUpdate
+from ..services.identity import Identity
 
 router = APIRouter(prefix="/pantry", tags=["pantry"])
 
@@ -16,15 +17,25 @@ async def _get_item(session: AsyncSession, item_id: int) -> PantryItem:
     return item
 
 
-async def _name_taken(
+async def _refuse_a_second(
     session: AsyncSession, name: str, exclude_id: int | None = None
-) -> bool:
-    query = select(PantryItem).where(
-        func.lower(PantryItem.name) == name.strip().lower()
-    )
-    if exclude_id is not None:
-        query = query.where(PantryItem.id != exclude_id)
-    return (await session.execute(query)).scalar_one_or_none() is not None
+) -> None:
+    """Refuse a name for a staple that another staple already is.
+
+    Compared as ingredients, not spellings: "Eggs" beside "Egg", or "Ground
+    cumin" once it is merged into a "Cumin" staple, is the same ingredient,
+    and the Ingredients page shows one staple per ingredient, so a second
+    would be hidden and adding it would seem to do nothing. Respelling a
+    staple as itself ("Egg" to "Eggs") is not a second one.
+    """
+    identity = await Identity.of(session)
+    key = identity.key(name)
+    spelled = name.strip().casefold()
+    for staple in (await session.execute(select(PantryItem))).scalars():
+        if staple.id == exclude_id:
+            continue
+        if (key and identity.key(staple.name) == key) or staple.name.casefold() == spelled:
+            raise HTTPException(status_code=409, detail=f"{staple.name} is already a staple.")
 
 
 @router.get("", response_model=list[PantryItemOut])
@@ -35,8 +46,7 @@ async def list_items(session: AsyncSession = Depends(get_session)):
 
 @router.post("", response_model=PantryItemOut, status_code=201)
 async def create_item(data: PantryItemIn, session: AsyncSession = Depends(get_session)):
-    if await _name_taken(session, data.name):
-        raise HTTPException(status_code=409, detail="Pantry item already exists")
+    await _refuse_a_second(session, data.name)
     item = PantryItem(name=data.name.strip(), in_stock=data.in_stock)
     session.add(item)
     await session.commit()
@@ -50,8 +60,7 @@ async def update_item(
 ):
     item = await _get_item(session, item_id)
     if data.name is not None:
-        if await _name_taken(session, data.name, exclude_id=item_id):
-            raise HTTPException(status_code=409, detail="Pantry item already exists")
+        await _refuse_a_second(session, data.name, exclude_id=item_id)
         item.name = data.name.strip()
     if data.in_stock is not None:
         item.in_stock = data.in_stock

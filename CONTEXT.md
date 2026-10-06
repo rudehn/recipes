@@ -9,6 +9,7 @@ The words this codebase uses for its domain, and what they mean here.
 Avoid: item, product (a product is what a store sells).
 
 **Staple**: an ingredient the household keeps in stock, recorded as a pantry item with an in-stock flag.
+An ingredient is one staple at most, so a name that already means a staple's ingredient is refused.
 Avoid: pantry item, in user-facing text.
 
 **Merge**: the owner saying two names are one ingredient, stored apart from recipe text and reversible (ADR 10).
