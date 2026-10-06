@@ -96,7 +96,8 @@ These call sites move onto it:
 
 `services/lint.py`'s `_key_tokens` keeps calling `canonical_key` directly, because it inspects the words of a name rather than comparing two ingredients.
 
-A test scans `backend/app` and fails if `canonical_key(` or `nutrition_key(` is called anywhere outside `canonical.py`, `nutrition/defaults.py`, `identity.py` and `lint.py`, so nothing can quietly skip a merge.
+A test scans `backend/app` and fails if `canonical_key(` or `nutrition_key(` is called, or either is imported, anywhere outside `canonical.py`, `nutrition/defaults.py`, `identity.py` and `lint.py`, so nothing can quietly skip a merge.
+The import check catches a function brought in under another name (`item_key = canonical_key`), which the call check alone cannot see.
 
 ### What a merge moves
 

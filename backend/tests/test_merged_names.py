@@ -8,6 +8,7 @@ a pasted shopping list - and then that no code compares ingredients any
 other way.
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -122,7 +123,7 @@ def test_a_pasted_list_reads_merged_names_as_one():
     assert [item.key for item in read.lines] == ["cumin"]
 
 
-# Files allowed to call the key functions directly: where they are defined,
+# Files allowed to import and call the key functions: where they are defined,
 # the identity itself, and lint, which inspects the words of one name rather
 # than comparing two ingredients.
 ALLOWED = {
@@ -135,6 +136,18 @@ ALLOWED = {
 # including through a module (`defaults.nutrition_key(x)`), since that is the
 # style a future caller would reach for.
 CALL = re.compile(r"(?<!identity\.)\b(canonical_key|nutrition_key)\(")
+KEY_FUNCTIONS = {"canonical_key", "nutrition_key"}
+
+
+def imports_a_key_function(source: str) -> list[int]:
+    """The lines that import a key function, which can then be called under
+    another name (`item_key = canonical_key`) that the call check never sees."""
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.ImportFrom)
+        and any(alias.name in KEY_FUNCTIONS for alias in node.names)
+    ]
 
 
 def test_ingredients_are_only_compared_through_the_identity():
@@ -144,10 +157,14 @@ def test_ingredients_are_only_compared_through_the_identity():
         rel = path.relative_to(app).as_posix()
         if rel in ALLOWED:
             continue
-        for number, line in enumerate(path.read_text().splitlines(), start=1):
+        source = path.read_text()
+        lines = source.splitlines()
+        for number, line in enumerate(lines, start=1):
             code = line.split("#", 1)[0]
             if CALL.search(code) and not code.lstrip().startswith("def "):
                 offenders.append(f"{rel}:{number}: {line.strip()}")
+        for number in imports_a_key_function(source):
+            offenders.append(f"{rel}:{number}: {lines[number - 1].strip()}")
     assert offenders == []
 
 
@@ -156,3 +173,16 @@ def test_the_guard_flags_every_way_of_calling_a_key_function():
     allowed = ["identity.nutrition_key(x)", "identity.key(x)"]
     assert all(CALL.search(code) for code in flagged)
     assert not any(CALL.search(code) for code in allowed)
+
+
+def test_the_guard_flags_an_import_of_a_key_function():
+    # Once imported, a key function can be called under any name
+    # (`item_key = canonical_key`), which the call check cannot see.
+    flagged = [
+        "from .canonical import canonical_key",
+        "from ..nutrition.defaults import nutrition_key as key_for",
+        "from .canonical import (\n    best_display,\n    canonical_key,\n)",
+    ]
+    allowed = ["from .canonical import best_display", "from .identity import Identity"]
+    assert all(imports_a_key_function(code) for code in flagged)
+    assert not any(imports_a_key_function(code) for code in allowed)
