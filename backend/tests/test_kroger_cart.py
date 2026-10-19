@@ -389,7 +389,10 @@ async def test_lines_that_cannot_be_ordered_are_named_not_counted(client, fake):
     resp = await send(client)
 
     assert resp.json()["added"] == 1
-    assert sorted(resp.json()["skipped"]) == ["saffron", "yeast"]
+    assert resp.json()["left_out"] == [
+        {"key": "saffron", "name": "saffron", "amounts": ["1 cup"], "problem": "no_match"},
+        {"key": "yeast", "name": "yeast", "amounts": ["1 cup"], "problem": "not_orderable"},
+    ]
 
 
 async def test_a_week_needing_more_than_one_package_orders_more_than_one(client, fake):
@@ -494,7 +497,9 @@ async def test_nothing_is_sent_when_nothing_matched(client, fake):
 
     assert resp.status_code == 200
     assert resp.json()["added"] == 0
-    assert resp.json()["skipped"] == ["saffron"]
+    assert resp.json()["left_out"] == [
+        {"key": "saffron", "name": "saffron", "amounts": ["1 cup"], "problem": "no_match"}
+    ]
     assert fake.carts == []
     # Nothing went, so nothing is recorded. A time stamped here would make the
     # page warn that a list is already in the cart when none is.
@@ -509,7 +514,9 @@ async def test_the_preview_says_what_would_be_sent_without_sending_it(client, fa
     body = (await client.get(f"/api/cart/preview?{RANGE}")).json()
 
     assert fake.carts == []
-    assert body["skipped"] == ["saffron"]
+    assert body["left_out"] == [
+        {"key": "saffron", "name": "saffron", "amounts": ["12 lb"], "problem": "no_match"}
+    ]
     assert body["lines"] == [
         {
             "key": "flour",
@@ -551,7 +558,9 @@ async def test_no_store_means_nothing_can_be_matched_to_order(client, fake):
     resp = await send(client)
 
     assert resp.json()["added"] == 0
-    assert resp.json()["skipped"] == ["flour"]
+    assert resp.json()["left_out"] == [
+        {"key": "flour", "name": "flour", "amounts": ["1 cup"], "problem": "no_match"}
+    ]
 
 
 async def test_an_end_before_the_start_is_refused(client, fake):
@@ -673,14 +682,16 @@ async def test_a_product_the_store_is_out_of_is_named_rather_than_sent(client, f
         await session.commit()
     await seed(["flour", "butter"])
 
+    butter = {"key": "butter", "name": "butter", "amounts": ["1 cup"], "problem": "out_of_stock"}
     preview = (await client.get(f"/api/cart/preview?{RANGE}")).json()
-    assert preview["out_of_stock"] == ["butter"]
-    assert preview["skipped"] == []
+    assert preview["left_out"] == [butter]
 
     resp = await send(client)
 
     assert resp.json()["added"] == 1
     assert [i["upc"] for i in fake.carts[0]["items"]] == ["000111100001"]
+    # Named after the send too: it is one more thing to add on kroger.com.
+    assert resp.json()["left_out"] == [butter]
 
 
 async def test_the_rotated_refresh_token_is_kept(client, fake):
@@ -822,7 +833,7 @@ async def test_a_pasted_list_reaches_the_cart_with_the_counts_set_in_the_review(
     client, fake
 ):
     await seed([])
-    text = "flour\neggs x2\nsugar\nsaffron"
+    text = "flour\neggs x2\nsugar\n1 tsp saffron"
 
     resp = await send_paste(
         client, text, quantities={"flour": 4}, removed=["sugar"], modality="DELIVERY"
@@ -830,7 +841,9 @@ async def test_a_pasted_list_reaches_the_cart_with_the_counts_set_in_the_review(
 
     assert resp.status_code == 200
     assert resp.json()["added"] == 2
-    assert resp.json()["skipped"] == ["saffron"]
+    assert resp.json()["left_out"] == [
+        {"key": "saffron", "name": "saffron", "amounts": ["1 tsp"], "problem": "no_match"}
+    ]
     assert fake.carts == [
         {
             "items": [

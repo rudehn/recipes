@@ -49,12 +49,13 @@ from ...models import CartSentLine, utcnow
 from ...schemas import (
     CartLine,
     CartPlan,
+    CartProblem,
     GroceryItem,
     GroceryList,
+    LeftOut,
     LineIssue,
     PastedLine,
     PastePlan,
-    PasteProblem,
     SentLine,
 )
 from .. import settings as settings_service
@@ -290,14 +291,20 @@ async def plan(
 
     Lines that cannot be sent are named rather than counted. "2 not sent" is a
     number the shopper cannot act on; "parsley, bay leaf" is a shopping list.
-    A product the store is out of today is named separately: it is matched
-    and priced and still cannot be ordered, and "buy it the usual way" is the
-    wrong advice for a shelf that is merely empty this morning.
+    Each says why: a product the store is out of today is matched and priced
+    and still cannot be ordered, and "buy it the usual way" is the wrong
+    advice for a shelf that is merely empty this morning.
     """
     store = await settings_service.selected_store(session)
     lines = _sendable(grocery_list)
     if store is None or not lines:
-        return CartPlan(lines=[], skipped=[line.name for line in lines])
+        return CartPlan(
+            lines=[],
+            left_out=[
+                LeftOut(key=line.key, name=line.name, amounts=line.amounts, problem="no_match")
+                for line in lines
+            ],
+        )
 
     already = await sent_lines(session)
     again = set(resend or [])
@@ -319,9 +326,7 @@ async def plan(
         session, [_wanted(line) for line in lines], store.location_id, quantities or {}
     )
     sending = [o.line for o in ordered if o.line is not None]
-    skipped = [o.wanted.name for o in ordered if o.problem in ("no_match", "not_orderable")]
-    out_of_stock = [o.wanted.name for o in ordered if o.problem == "out_of_stock"]
-    return CartPlan(lines=sending, skipped=skipped, out_of_stock=out_of_stock, sent=sent)
+    return CartPlan(lines=sending, left_out=left_out(ordered), sent=sent)
 
 
 @dataclass(frozen=True)
@@ -352,7 +357,21 @@ class Ordered:
     wanted: Wanted
     choice: pricing.Choice | None
     line: CartLine | None
-    problem: PasteProblem | None
+    problem: CartProblem | None
+
+
+def left_out(ordered: list[Ordered]) -> list[LeftOut]:
+    """The things that will not go, in the order they were asked for."""
+    return [
+        LeftOut(
+            key=o.wanted.key,
+            name=o.wanted.name,
+            amounts=list(o.wanted.amounts),
+            problem=o.problem,
+        )
+        for o in ordered
+        if o.problem is not None
+    ]
 
 
 def _wanted(line: GroceryItem) -> Wanted:

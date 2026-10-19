@@ -723,18 +723,31 @@ export interface SentLine {
   sent_at: string;
 }
 
+/** Why a line cannot go to the cart. */
+export type CartProblem = "no_match" | "out_of_stock" | "not_orderable";
+
+/**
+ * A line that cannot go to the cart, and so is the shopper's to buy.
+ *
+ * Named rather than counted, because a count is not something you can shop
+ * from, and with the amount the meals asked for, because after a send this is
+ * what gets added by hand on kroger.com.
+ */
+export interface LeftOut {
+  key: string;
+  name: string;
+  amounts: string[];
+  problem: CartProblem;
+}
+
 /**
  * What sending the list would order, and what it would leave behind.
  *
- * `skipped` names the lines rather than counting them, because a count is not
- * something you can shop from. `out_of_stock` are matched and priced and still
- * not orderable today. `sent` already went this trip and are left out unless
- * asked for again.
+ * `sent` already went this trip and are left out unless asked for again.
  */
 export interface CartPlan {
   lines: CartLine[];
-  skipped: string[];
-  out_of_stock: string[];
+  left_out: LeftOut[];
   sent: SentLine[];
 }
 
@@ -748,12 +761,9 @@ export interface CartPlan {
  */
 export interface CartResult {
   added: number;
-  skipped: string[];
+  left_out: LeftOut[];
   sent_at: string | null;
 }
-
-/** Why a pasted line cannot go to the cart. */
-export type PasteProblem = "no_match" | "out_of_stock" | "not_orderable";
 
 /**
  * One line of a pasted shopping list, as it would be ordered.
@@ -770,7 +780,7 @@ export interface PastedLine {
   amount: string | null;
   product: ItemPrice | null;
   hand_picked: boolean;
-  problem: PasteProblem | null;
+  problem: CartProblem | null;
   /** "unsized" when the count is one by default rather than worked out. */
   issue: LineIssue | null;
 }

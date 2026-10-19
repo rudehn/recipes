@@ -19,6 +19,7 @@ import {
   cartStatus,
   groceryItem,
   groceryList,
+  leftOut,
   pricedBackend,
 } from "../test/fixtures";
 import { renderApp } from "../test/render";
@@ -136,7 +137,7 @@ describe("sending the grocery list to a Kroger cart", () => {
           cartLine({ key: "flour", name: "flour", quantity: 1 }),
         ],
       }),
-      "POST /api/cart/add": { added: 2, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/add": { added: 2, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
@@ -176,7 +177,7 @@ describe("sending the grocery list to a Kroger cart", () => {
     withCart({
       "GET /api/cart/preview": cartPlan({
         lines: [cartLine()],
-        skipped: ["saffron", "bay leaf"],
+        left_out: [leftOut({ name: "saffron" }), leftOut({ key: "bay-leaf", name: "bay leaf" })],
       }),
     });
 
@@ -190,7 +191,7 @@ describe("sending the grocery list to a Kroger cart", () => {
   it("sends the range and how it is to be collected", async () => {
     const backend = withCart({
       "GET /api/cart/preview": cartPlan({ lines: [cartLine(), cartLine({ name: "sugar" })] }),
-      "POST /api/cart/add": { added: 2, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/add": { added: 2, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
@@ -208,7 +209,7 @@ describe("sending the grocery list to a Kroger cart", () => {
   it("can ask for delivery instead", async () => {
     const backend = withCart({
       "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
-      "POST /api/cart/add": { added: 1, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/add": { added: 1, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
@@ -228,7 +229,7 @@ describe("sending the grocery list to a Kroger cart", () => {
       // The server re-plans as it sends, and one line no longer resolved.
       "POST /api/cart/add": {
         added: 1,
-        skipped: ["sugar"],
+        left_out: [leftOut({ key: "sugar", name: "sugar" })],
         sent_at: "2026-07-29T16:05:00Z",
       },
     });
@@ -238,13 +239,87 @@ describe("sending the grocery list to a Kroger cart", () => {
     await user.click(await screen.findByRole("button", { name: /send 2 items to kroger/i }));
 
     expect(await screen.findByText(/1 item added to your kroger cart/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 left off/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1 still to add yourself" })).toBeInTheDocument();
+  });
+
+  it("lists what did not go, with the amount and why, to add on kroger.com", async () => {
+    // The shopper finishes the order on kroger.com by hand, so this is their
+    // shopping list for it: each thing, how much of it, and a way to find it.
+    withCart({
+      "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
+      "POST /api/cart/add": {
+        added: 1,
+        left_out: [
+          leftOut({ key: "fish-sauce", name: "fish sauce", amounts: ["2 tbsp"] }),
+          leftOut({
+            key: "butter",
+            name: "butter",
+            amounts: ["1 cup", "2"],
+            problem: "out_of_stock",
+          }),
+        ],
+        sent_at: "2026-07-29T16:05:00Z",
+      },
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+    await user.click(await screen.findByRole("button", { name: /send 1 item to kroger/i }));
+
+    const card = (await screen.findByRole("heading", { name: "2 still to add yourself" }))
+      .closest("section")!;
+    const [fishSauce, butter] = within(card).getAllByRole("listitem");
+
+    expect(within(fishSauce).getByText("fish sauce")).toBeInTheDocument();
+    expect(within(fishSauce).getByText("2 tbsp")).toBeInTheDocument();
+    expect(within(fishSauce).getByText("no match")).toBeInTheDocument();
+    expect(within(fishSauce).getByRole("link", { name: /search kroger for fish sauce/i }))
+      .toHaveAttribute("href", "https://www.kroger.com/search?query=fish%20sauce");
+
+    expect(within(butter).getByText("1 cup + 2")).toBeInTheDocument();
+    expect(within(butter).getByText("out of stock today")).toBeInTheDocument();
+    expect(within(butter).getByRole("link", { name: /search kroger for butter/i }))
+      .toHaveAttribute("href", "https://www.kroger.com/search?query=butter");
+  });
+
+  it("has nothing to add by hand when everything went", async () => {
+    withCart({
+      "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
+      "POST /api/cart/add": { added: 1, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+    await user.click(await screen.findByRole("button", { name: /send 1 item to kroger/i }));
+
+    expect(await screen.findByText(/1 item added to your kroger cart/i)).toBeInTheDocument();
+    expect(screen.queryByText(/still to add yourself/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the list to add by hand until the shopper is done with it", async () => {
+    withCart({
+      "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
+      "POST /api/cart/add": {
+        added: 1,
+        left_out: [leftOut({ name: "saffron" })],
+        sent_at: "2026-07-29T16:05:00Z",
+      },
+    });
+
+    const { user } = renderApp(WEEK);
+    await openReview(user);
+    await user.click(await screen.findByRole("button", { name: /send 1 item to kroger/i }));
+    await screen.findByRole("heading", { name: "1 still to add yourself" });
+
+    await user.click(screen.getByRole("button", { name: "Done" }));
+
+    expect(screen.queryByText(/still to add yourself/i)).not.toBeInTheDocument();
   });
 
   it("points at Kroger rather than claiming to know what is in the cart", async () => {
     withCart({
       "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
-      "POST /api/cart/add": { added: 1, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/add": { added: 1, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
@@ -326,7 +401,11 @@ describe("sending the grocery list to a Kroger cart", () => {
     withCart({
       "GET /api/cart/preview": cartPlan({ lines: [cartLine()] }),
       // The line went out of stock between the review and the send.
-      "POST /api/cart/add": { added: 0, skipped: ["flour"], sent_at: null },
+      "POST /api/cart/add": {
+        added: 0,
+        left_out: [leftOut({ key: "flour", name: "flour", problem: "out_of_stock" })],
+        sent_at: null,
+      },
     });
 
     const { user } = renderApp(WEEK);
@@ -338,11 +417,17 @@ describe("sending the grocery list to a Kroger cart", () => {
     const banner = await screen.findByText(/nothing was added to your kroger cart/i);
     expect(banner.closest(".error-banner")).not.toBeNull();
     expect(screen.queryByRole("link", { name: /open your cart/i })).not.toBeInTheDocument();
+    // And what to buy instead is still spelled out.
+    const card = screen.getByRole("heading", { name: "1 still to add yourself" }).closest("section")!;
+    expect(within(card).getByText("out of stock today")).toBeInTheDocument();
   });
 
   it("says so plainly when nothing on the list can be ordered", async () => {
     withCart({
-      "GET /api/cart/preview": cartPlan({ lines: [], skipped: ["flour", "sugar"] }),
+      "GET /api/cart/preview": cartPlan({
+        lines: [],
+        left_out: [leftOut({ key: "flour", name: "flour" }), leftOut({ key: "sugar", name: "sugar" })],
+      }),
     });
 
     const { user } = renderApp(WEEK);
@@ -370,7 +455,7 @@ describe("sending the grocery list to a Kroger cart", () => {
           },
         ],
       }),
-      "POST /api/cart/add": { added: 2, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/add": { added: 2, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
@@ -396,8 +481,10 @@ describe("sending the grocery list to a Kroger cart", () => {
     withCart({
       "GET /api/cart/preview": cartPlan({
         lines: [cartLine()],
-        skipped: ["saffron"],
-        out_of_stock: ["butter"],
+        left_out: [
+          leftOut({ name: "saffron" }),
+          leftOut({ key: "butter", name: "butter", problem: "out_of_stock" }),
+        ],
       }),
     });
 

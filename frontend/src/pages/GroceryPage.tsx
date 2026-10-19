@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import {
@@ -12,6 +12,7 @@ import {
   type GroceryPricing,
   type GroceryRecipeUse,
   type GroceryStatus,
+  type LeftOut,
   type LineIssue,
   type Modality,
 } from "../api";
@@ -20,7 +21,7 @@ import { LoadFailure } from "../components/LoadError";
 import { PasteToCart } from "../components/PasteToCart";
 import { Banner, Button, EmptyState, PageHead } from "../components/ui";
 import { addDays, formatWhen, fromISODate, startOfWeek, toISODate } from "../dates";
-import { ISSUE_LABELS, unsizedLabel } from "../issues";
+import { CART_PROBLEM_LABELS, ISSUE_LABELS, unsizedLabel } from "../issues";
 import { recipeIngredientPath } from "../recipeLink";
 import { useAction } from "../useAction";
 import { useDebounced } from "../useDebounced";
@@ -511,6 +512,10 @@ function PricingSummary({ pricing, list }: { pricing: GroceryPricing; list: Groc
 
 const KROGER_CART_URL = "https://www.kroger.com/cart";
 
+function krogerSearchUrl(name: string): string {
+  return `https://www.kroger.com/search?query=${encodeURIComponent(name)}`;
+}
+
 /**
  * Which lines the shopping still covers, as a value that changes when they do.
  *
@@ -592,36 +597,33 @@ function SendToCart({
       </Button>
     );
 
-    // The server re-plans as it sends, so a line that has gone since the
-    // review can leave this at nothing. Saying "0 items added" would read as a
-    // success and leave the shopper waiting at a collection point for an empty
-    // order.
-    if (sent.added === 0) {
-      return (
-        <Banner tone="error" spaced role="status">
-          <span>
-            Nothing was added to your Kroger cart - none of these lines could be
-            matched to a product at your store. Buy them the usual way.
-          </span>
-          {dismiss}
-        </Banner>
-      );
-    }
-
     return (
-      <Banner tone="notice" spaced role="status">
-        <span>
-          {itemCount(sent.added)} added to your Kroger cart
-          {sent.skipped.length > 0 && `, ${sent.skipped.length} left off`}.
-          {/* The app cannot read the cart back, so it does not claim to know
-              what is in there - it points at the place that does. */}{" "}
-          <a href={KROGER_CART_URL} target="_blank" rel="noreferrer">
-            Open your cart
-          </a>{" "}
-          to check it over and pick a time.
-        </span>
-        {dismiss}
-      </Banner>
+      <div className="cart-result" role="status">
+        {sent.added === 0 ? (
+          // The server re-plans as it sends, so a line that has gone since the
+          // review can leave this at nothing. Saying "0 items added" would read
+          // as a success and leave the shopper waiting at a collection point
+          // for an empty order.
+          <Banner tone="error">
+            <span>Nothing was added to your Kroger cart.</span>
+            {dismiss}
+          </Banner>
+        ) : (
+          <Banner tone="notice">
+            <span>
+              {itemCount(sent.added)} added to your Kroger cart.
+              {/* The app cannot read the cart back, so it does not claim to
+                  know what is in there - it points at the place that does. */}{" "}
+              <a href={KROGER_CART_URL} target="_blank" rel="noreferrer">
+                Open your cart
+              </a>{" "}
+              to check it over and pick a time.
+            </span>
+            {dismiss}
+          </Banner>
+        )}
+        {sent.left_out.length > 0 && <StillToAdd lines={sent.left_out} />}
+      </div>
     );
   }
 
@@ -678,6 +680,38 @@ function SendToCart({
           }}
         />
       )}
+    </section>
+  );
+}
+
+/**
+ * What a send left behind, as the list to finish the order from by hand.
+ *
+ * The shopper's next stop is kroger.com, adding these one by one, so each
+ * carries the amount the meals asked for and a search that finds it there. It
+ * stays until they say they are done, rather than fading: it is a list being
+ * worked through, not news.
+ */
+function StillToAdd({ lines }: { lines: LeftOut[] }) {
+  const headingId = useId();
+  return (
+    <section className="still-to-add" aria-labelledby={headingId}>
+      <h3 id={headingId}>{lines.length} still to add yourself</h3>
+      <ul>
+        {lines.map((line) => (
+          <li key={line.key}>
+            <span className="name">{line.name}</span>
+            {line.amounts.length > 0 && (
+              <span className="amount">{line.amounts.join(" + ")}</span>
+            )}
+            <span className={`why ${line.problem}`}>{CART_PROBLEM_LABELS[line.problem]}</span>
+            <a href={krogerSearchUrl(line.name)} target="_blank" rel="noreferrer">
+              Search Kroger <span className="visually-hidden">for {line.name}</span>
+              <span aria-hidden="true">↗</span>
+            </a>
+          </li>
+        ))}
+      </ul>
     </section>
   );
 }
@@ -797,9 +831,15 @@ function CartReview({
 
   // A shelf that is empty this morning is not a line nothing matched, and
   // "buy it the usual way" is the wrong advice for it.
-  const outOfStock = plan.out_of_stock.length > 0 && (
+  const emptyShelves = plan.left_out
+    .filter((line) => line.problem === "out_of_stock")
+    .map((line) => line.name);
+  const unmatched = plan.left_out
+    .filter((line) => line.problem !== "out_of_stock")
+    .map((line) => line.name);
+  const outOfStock = emptyShelves.length > 0 && (
     <p className="section-note">
-      Out of stock at your store today: {plan.out_of_stock.join(", ")}. Kroger may have
+      Out of stock at your store today: {emptyShelves.join(", ")}. Kroger may have
       them back by collection, or buy them the usual way.
     </p>
   );
@@ -852,10 +892,10 @@ function CartReview({
 
           {alreadySent}
 
-          {plan.skipped.length > 0 && (
+          {unmatched.length > 0 && (
             <p className="section-note">
               Not sent, because nothing at your store is matched to them:{" "}
-              {plan.skipped.join(", ")}. Buy these the usual way.
+              {unmatched.join(", ")}. Buy these the usual way.
             </p>
           )}
 

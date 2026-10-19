@@ -695,20 +695,39 @@ class SentLine(BaseModel):
     sent_at: datetime
 
 
+# Why a line cannot go to the cart. Nothing at the store matched it (or the
+# shopper chose nothing); the product is out today; or the product has no UPC,
+# which is what the cart is addressed by.
+CartProblem = Literal["no_match", "out_of_stock", "not_orderable"]
+
+
+class LeftOut(BaseModel):
+    """A line that cannot go to the cart, and so is the shopper's to buy.
+
+    Named rather than counted, because a number is not something a shopper
+    can do anything about and a list of names is. The amount the meals asked
+    for travels with it, since after a send this is what gets added by hand
+    on kroger.com, and "fish sauce, 2 tbsp" is a shopping list where "fish
+    sauce" is half of one. The problem tells an empty shelf this morning from
+    a line nothing matched, which want different advice.
+    """
+
+    key: str
+    name: str
+    amounts: list[str] = []
+    problem: CartProblem
+
+
 class CartPlan(BaseModel):
     """What sending the list would order, and what it would leave behind.
 
-    `skipped` holds names rather than a count, because a number is not
-    something a shopper can do anything about and a list of names is. The
-    same goes for `out_of_stock`, which are lines whose product the store
-    has none of today - matched, priced, and still not orderable - and for
-    `sent`, the lines a previous send this trip already put in the cart and
-    this one therefore leaves out unless asked.
+    `left_out` are the lines that cannot go, and `sent` the lines a previous
+    send this trip already put in the cart and this one therefore leaves out
+    unless asked.
     """
 
     lines: list[CartLine]
-    skipped: list[str]
-    out_of_stock: list[str] = []
+    left_out: list[LeftOut] = []
     sent: list[SentLine] = []
 
 
@@ -760,20 +779,18 @@ class CartRequest(BaseModel):
 class CartResult(BaseModel):
     """What actually went to Kroger.
 
+    `left_out` is planned again at the send rather than taken from the
+    review, so it is what the shopper still has to buy, not what the review
+    expected them to.
+
     `sent_at` is absent when nothing did. A time stamped on a send of nothing
     would make the page warn that a list is already in the cart when none is,
     and that warning is the only guard against ordering twice.
     """
 
     added: int
-    skipped: list[str]
+    left_out: list[LeftOut] = []
     sent_at: datetime | None = None
-
-
-# Why a pasted line cannot go to the cart. Nothing at the store matched it
-# (or the shopper chose nothing); the product is out today; or the product
-# has no UPC, which is what the cart is addressed by.
-PasteProblem = Literal["no_match", "out_of_stock", "not_orderable"]
 
 
 class PastedLine(BaseModel):
@@ -793,7 +810,7 @@ class PastedLine(BaseModel):
     amount: str | None = None
     product: ItemPrice | None = None
     hand_picked: bool = False
-    problem: PasteProblem | None = None
+    problem: CartProblem | None = None
     # "unsized" when the amount could not be related to the package, so the
     # count is one by default rather than worked out.
     issue: LineIssue | None = None

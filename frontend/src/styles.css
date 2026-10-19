@@ -1712,12 +1712,23 @@ button.cook-duration:hover {
   font-size: var(--text-md);
 }
 
-.notice-banner span {
+/* A banner can carry its own button - "Done", "Try again" - which stands at
+   the far end in either tone, not against the end of the sentence. */
+.error-banner:has(> .btn) {
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  flex-wrap: wrap;
+}
+
+.notice-banner span,
+.error-banner > span {
   flex: 1;
   min-width: 200px;
 }
 
-.notice-banner .btn {
+.notice-banner .btn,
+.error-banner > .btn {
   flex-shrink: 0;
 }
 
@@ -3091,6 +3102,78 @@ body.has-install-hint .page {
   font-size: var(--text-xs);
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+/* What a send says it did, and under it what it could not. */
+.cart-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  margin-bottom: var(--space-24);
+}
+
+/* The things a send left behind, to finish the order with by hand on
+   kroger.com. Accent-bordered so it is not read past as the end of a
+   success: it is the part of the order still to do. */
+.still-to-add {
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-12) var(--space-16) var(--space-4);
+}
+
+.still-to-add h3 {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  color: var(--accent-ink);
+}
+
+.still-to-add ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.still-to-add li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-4) var(--space-10);
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.still-to-add li:first-child { border-top: none; }
+
+.still-to-add .name { font-weight: var(--weight-semibold); color: var(--ink); }
+
+.still-to-add .amount { color: var(--muted); font-size: var(--text-sm); }
+
+/* The reason, as a pill at the row's end. An empty shelf wears the danger
+   tint, a line nothing matched the quiet one: the advice differs. */
+.still-to-add .why {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-8);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+}
+
+.still-to-add .why.out_of_stock {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.still-to-add a {
+  color: var(--accent-ink);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
 }
 
 /* A figure on the right of a suggestion row, for the folds that have one

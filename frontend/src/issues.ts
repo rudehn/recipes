@@ -12,7 +12,7 @@
  * sentences.
  */
 
-import type { LineIssue, NutritionIssue, PasteProblem } from "./api";
+import type { CartProblem, LineIssue, NutritionIssue } from "./api";
 
 export const ISSUE_LABELS: Record<LineIssue | NutritionIssue, string> = {
   amount_in_name: "amount is in the name",
@@ -30,8 +30,8 @@ export const ISSUE_LABELS: Record<LineIssue | NutritionIssue, string> = {
 /** The one reason that is the whole recipe's rather than a row's. */
 export const NO_SERVINGS_LABEL = "no serving count";
 
-/** Why a pasted line cannot go to the cart as it is. */
-export const PASTE_PROBLEM_LABELS: Record<PasteProblem, string> = {
+/** Why a line cannot go to the cart as it is. */
+export const CART_PROBLEM_LABELS: Record<CartProblem, string> = {
   no_match: ISSUE_LABELS.no_match,
   out_of_stock: ISSUE_LABELS.out_of_stock,
   not_orderable: "Kroger can't take this in a cart",

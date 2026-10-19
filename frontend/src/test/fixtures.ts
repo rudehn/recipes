@@ -19,6 +19,7 @@ import type {
   IngredientLine,
   IngredientSummary,
   ItemPrice,
+  LeftOut,
   Meal,
   MealPlanEntry,
   MergeSuggestion,
@@ -196,7 +197,11 @@ export function cartLine(overrides: Partial<CartLine> = {}): CartLine {
 }
 
 export function cartPlan(overrides: Partial<CartPlan> = {}): CartPlan {
-  return { lines: [], skipped: [], out_of_stock: [], sent: [], ...overrides };
+  return { lines: [], left_out: [], sent: [], ...overrides };
+}
+
+export function leftOut(overrides: Partial<LeftOut> = {}): LeftOut {
+  return { key: "saffron", name: "saffron", amounts: ["1 tsp"], problem: "no_match", ...overrides };
 }
 
 export function pastedLine(overrides: Partial<PastedLine> = {}): PastedLine {

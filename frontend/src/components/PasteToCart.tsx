@@ -7,7 +7,7 @@ import {
   type PastedLine,
   type PastePlan,
 } from "../api";
-import { PASTE_PROBLEM_LABELS, unsizedLabel } from "../issues";
+import { CART_PROBLEM_LABELS, unsizedLabel } from "../issues";
 import { errorMessage } from "../useLoad";
 import { CartStepper } from "./CartStepper";
 import { ProductPickerModal } from "./ProductPicker";
@@ -348,7 +348,7 @@ function PasteRow({
             {line.problem && (
               <span className="why">
                 {product ? " · " : ""}
-                {PASTE_PROBLEM_LABELS[line.problem]}
+                {CART_PROBLEM_LABELS[line.problem]}
               </span>
             )}
             {line.issue === "unsized" && line.amount && (

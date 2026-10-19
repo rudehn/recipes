@@ -180,7 +180,7 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
     if not plan.lines:
         # Nothing was sent, so nothing is recorded. Stamping a send here would
         # make the page warn that a list is already in the cart when none is.
-        return CartResult(added=0, skipped=plan.skipped)
+        return CartResult(added=0, left_out=plan.left_out)
 
     try:
         await cart.send(session, plan.lines, data.modality)
@@ -191,7 +191,7 @@ async def add(data: CartRequest, session: AsyncSession = Depends(get_session)):
 
     await cart.record_sent(session, plan.lines)
     sent_at = await settings_service.record_cart_send(session)
-    return CartResult(added=len(plan.lines), skipped=plan.skipped, sent_at=sent_at)
+    return CartResult(added=len(plan.lines), left_out=plan.left_out, sent_at=sent_at)
 
 
 # ----------------------------------------------------------- a pasted list ---
@@ -248,9 +248,9 @@ async def paste_add(data: PasteSend, session: AsyncSession = Depends(get_session
     except kroger.KrogerError:
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
     lines = [o.line for o in ordered if o.line is not None]
-    skipped = [o.wanted.name for o in ordered if o.line is None]
+    left_out = cart.left_out(ordered)
     if not lines:
-        return CartResult(added=0, skipped=skipped)
+        return CartResult(added=0, left_out=left_out)
 
     try:
         await cart.send(session, lines, data.modality)
@@ -260,4 +260,4 @@ async def paste_add(data: PasteSend, session: AsyncSession = Depends(get_session
         raise HTTPException(status_code=502, detail="Could not reach Kroger")
 
     sent_at = await settings_service.record_cart_send(session)
-    return CartResult(added=len(lines), skipped=skipped, sent_at=sent_at)
+    return CartResult(added=len(lines), left_out=left_out, sent_at=sent_at)

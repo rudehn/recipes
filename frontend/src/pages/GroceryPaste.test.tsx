@@ -17,6 +17,7 @@ import {
   groceryItem,
   groceryList,
   itemPrice,
+  leftOut,
   pastedLine,
   pastePlan,
   pricedBackend,
@@ -186,7 +187,11 @@ describe("pasting a list into the Kroger cart", () => {
   it("sends the text with the counts changed and the lines taken off", async () => {
     const backend = withCart({
       "POST /api/cart/paste/preview": pastePlan({ lines: [milk, eggs, beef, saffron] }),
-      "POST /api/cart/paste/add": { added: 2, skipped: ["saffron"], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/paste/add": {
+        added: 2,
+        left_out: [leftOut({ name: "saffron" })],
+        sent_at: "2026-07-29T16:05:00Z",
+      },
     });
 
     const { user } = renderApp(WEEK);
@@ -207,8 +212,10 @@ describe("pasting a list into the Kroger cart", () => {
     });
     // The server's count, not the one on screen, and the way to the cart it
     // cannot read back.
-    expect(await screen.findByText(/2 items added to your Kroger cart, 1 left off/)).toBeInTheDocument();
+    expect(await screen.findByText(/2 items added to your Kroger cart/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open your cart" })).toBeInTheDocument();
+    const card = screen.getByRole("heading", { name: "1 still to add yourself" }).closest("section")!;
+    expect(within(card).getByText("saffron")).toBeInTheDocument();
   });
 
   it("puts a line taken off back", async () => {
@@ -277,7 +284,7 @@ describe("pasting a list into the Kroger cart", () => {
   it("forgets the text once it has been sent", async () => {
     withCart({
       "POST /api/cart/paste/preview": pastePlan({ lines: [milk] }),
-      "POST /api/cart/paste/add": { added: 1, skipped: [], sent_at: "2026-07-29T16:05:00Z" },
+      "POST /api/cart/paste/add": { added: 1, left_out: [], sent_at: "2026-07-29T16:05:00Z" },
     });
 
     const { user } = renderApp(WEEK);
