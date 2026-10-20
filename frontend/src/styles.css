@@ -1669,6 +1669,178 @@ button.cook-duration:hover {
   color: var(--ink);
 }
 
+/* ---------- Recipe search box ---------- */
+
+/* What the dropdown hangs from. */
+.recipe-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* The tag input's field: tokens in line with the typing, so the search reads
+   as the field's value. The Clear control sits at the end of the last line. */
+.recipe-search-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-10);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  cursor: text;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.recipe-search-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.recipe-search-box input,
+.recipe-search-box input:focus {
+  flex: 1;
+  min-width: 120px;
+  padding: var(--space-4) 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+
+.recipe-search-box .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-4);
+  max-width: 100%;
+}
+
+/* A long tag or sentence stays a one-line token, cut short with its x in
+   reach; the token's title has the whole of it. */
+.recipe-search-token-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recipe-search-box .tag-input-remove:hover { background: var(--green-wash); }
+
+.recipe-search-box .chip.accent .tag-input-remove:hover {
+  background: color-mix(in srgb, var(--accent-ink) 14%, transparent);
+}
+
+.recipe-search-clear {
+  margin-left: auto;
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-xs);
+  color: var(--muted);
+  font-size: var(--text-xs);
+  transition: color var(--transition);
+}
+
+.recipe-search-clear:hover { color: var(--ink); }
+
+.search-drop {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+  z-index: var(--z-raised);
+  padding: var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  font-size: var(--text-sm);
+}
+
+.search-drop-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  /* Eight or so rows, then it scrolls: below it is the page, and on a phone
+     the keyboard. */
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.search-drop-heading {
+  padding: var(--space-6) var(--space-8) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.search-drop-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-6) var(--space-8);
+  border-radius: var(--radius-xs);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.search-drop-option:hover,
+.search-drop-option.active {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.search-drop-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.search-drop-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The letters typed, picked out so a long list scans. */
+.search-drop mark {
+  background: none;
+  color: var(--ink);
+  font-weight: var(--weight-bold);
+}
+
+.search-drop-count,
+.search-drop-forget {
+  flex: none;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.search-drop-forget {
+  padding: var(--space-2) var(--space-6);
+  border-radius: var(--radius-pill);
+}
+
+.search-drop-forget:hover { color: var(--ink); background: var(--surface-raised); }
+
+/* The row that searches for the text as typed, which Enter also does. */
+.search-drop-text { color: var(--muted); }
+
+.search-drop-note,
+.search-drop-hint {
+  margin: 0;
+  padding: var(--space-6) var(--space-8) var(--space-2);
+  color: var(--muted);
+  font-size: var(--text-2xs);
+}
+
+.search-drop-note { font-size: var(--text-sm); padding-bottom: var(--space-6); }
+
+.search-drop-list + .search-drop-hint {
+  margin-top: var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
 .form-actions {
   display: flex;
   gap: var(--space-12);
@@ -4023,6 +4195,24 @@ body.has-install-hint .page {
     display: flex;
     align-items: center;
     min-height: var(--tap);
+  }
+
+  /* Rows and the buttons in them are fingertip-sized. */
+  .search-drop-option {
+    min-height: var(--tap);
+  }
+
+  .search-drop-forget,
+  .recipe-search-clear {
+    min-width: var(--tap);
+    min-height: var(--tap);
+    margin-block: calc(var(--space-12) * -1);
+  }
+
+  .recipe-search-box .tag-input-remove {
+    width: 32px;
+    height: 32px;
+    margin: calc(var(--space-6) * -1) calc(var(--space-4) * -1) calc(var(--space-6) * -1) 0;
   }
 
   /* --------------------------------------------------------- recipes --- */
