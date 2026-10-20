@@ -24,6 +24,9 @@ MAX_TAG_LENGTH = 50
 # unbounded list would be an unbounded query.
 TagName = Annotated[str, StringConstraints(max_length=MAX_TAG_LENGTH)]
 MAX_TAG_FILTERS = 20
+# Ingredient keys are canonical keys, the same width the merge tables hold.
+MAX_INGREDIENT_KEY_LENGTH = 300
+IngredientKey = Annotated[str, StringConstraints(max_length=MAX_INGREDIENT_KEY_LENGTH)]
 
 
 class StoreOut(BaseModel):
@@ -1189,9 +1192,7 @@ class SearchIn(BaseModel):
 
     text: str = Field(default="", max_length=100)
     tags: list[TagName] = Field(default_factory=list, max_length=MAX_TAG_FILTERS)
-    ingredients: list[Annotated[str, StringConstraints(max_length=300)]] = Field(
-        default_factory=list, max_length=MAX_TAG_FILTERS
-    )
+    ingredients: list[IngredientKey] = Field(default_factory=list, max_length=MAX_TAG_FILTERS)
     on_sale: bool = False
 
 

@@ -1,10 +1,9 @@
 import uuid
 from datetime import date
-from typing import Annotated, Literal
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
-from pydantic import StringConstraints
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
@@ -15,6 +14,7 @@ from ..models import Ingredient, MealPlanEntry, Recipe, RecipeTag
 from ..schemas import (
     MAX_TAG_FILTERS,
     ImageFromUrl,
+    IngredientKey,
     RecentSearch,
     RecipeAttention,
     RecipeCost,
@@ -51,7 +51,7 @@ RecipeSort = Literal["title", "newest", "cooked", "sale"]
 
 # An ingredient filter is a key (or a name, which is reduced to one), bounded
 # like the rest: each one is read against every recipe's ingredients.
-IngredientName = Annotated[str, StringConstraints(max_length=300)]
+IngredientParam = IngredientKey
 MAX_INGREDIENT_FILTERS = 20
 
 # Every sort ends on a unique column. Ordering by title alone is not stable -
@@ -130,7 +130,7 @@ def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> 
 async def list_recipes(
     q: str = Query(default="", max_length=100),
     tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
-    ingredient: list[IngredientName] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
+    ingredient: list[IngredientParam] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
     sort: RecipeSort = "title",
     on_sale: bool = False,
     page: int = Query(default=1, ge=1),
