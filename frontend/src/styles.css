@@ -864,11 +864,13 @@ input:focus, select:focus, textarea:focus {
   visibility: hidden;
 }
 
+/* Right after the last tag, as the row was drawn: pushed to the line's far
+   end, it stood a gap of three tags away from them on a wide screen. A
+   phone's full row does keep it at the end (see the phone block). */
 .quick-tail {
   display: flex;
   align-items: center;
   gap: var(--space-8);
-  margin-left: auto;
 }
 
 /* Holds the row's line while its tags load; see QuickRowPlaceholder. */
@@ -877,7 +879,7 @@ input:focus, select:focus, textarea:focus {
 .quick-divider {
   align-self: stretch;
   width: 1px;
-  margin: var(--space-4) 0;
+  margin: var(--space-4);
   background: var(--line);
 }
 
@@ -4185,6 +4187,10 @@ body.has-install-hint .page {
 
   .quick-row,
   .quick-tail { gap: var(--space-6); }
+
+  /* The line's end, whatever the tags leave over, so On sale and All tags
+     sit in the same place on every search. */
+  .quick-tail { margin-left: auto; }
 
   .quick-row .tag-pill {
     padding-inline: var(--space-12);

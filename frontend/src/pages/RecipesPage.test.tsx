@@ -198,6 +198,7 @@ describe("RecipesPage", () => {
 
     const held = container.querySelector(".quick-row-wrap");
     expect(held).toHaveAttribute("aria-hidden", "true");
+    expect(within(held as HTMLElement).queryAllByRole("button", { hidden: true })).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /All tags/ })).toBeNull();
   });
 

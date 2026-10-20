@@ -153,6 +153,15 @@ describe("the quick row", () => {
     expect(rule(mediaBlock(below(PHONE)), ".quick-row .count")).toMatch(/display:\s*none/);
   });
 
+  it("follows its last tag on a wide screen, and keeps the line's end on a phone", () => {
+    // On a desktop line a tail pushed to the far end left a gap as wide as
+    // three tags between them; on a phone the row is full and the tail ends it.
+    const tails = (block: string) =>
+      [...block.matchAll(/(?:^|[\s},])\.quick-tail\s*\{([^}]*)\}/g)].map((m) => m[1]).join("");
+    expect(tails(css.slice(0, css.indexOf(`@media ${below(PHONE)} {`)))).not.toMatch(/margin-left:\s*auto/);
+    expect(tails(mediaBlock(below(PHONE)))).toMatch(/margin-left:\s*auto/);
+  });
+
   it("keeps the first chip's count on its name's line", () => {
     // A name that hides its overflow takes its bottom edge for a baseline,
     // and the count beside it sank three pixels below every other count.
