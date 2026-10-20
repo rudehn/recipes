@@ -277,27 +277,6 @@ class ItemPrice(BaseModel):
     estimated: float | None = None
 
 
-class SaleItem(BaseModel):
-    """An ingredient you cook with whose product is discounted this week."""
-
-    key: str
-    name: str
-    price: ItemPrice
-
-
-class RecipeOnSale(BaseModel):
-    """A recipe with something discounted in it this week.
-
-    `ingredient_count` is there so the discount can be read against the
-    whole: two of three ingredients on offer is a reason to cook the thing,
-    two of nineteen is a coincidence.
-    """
-
-    recipe: RecipeSummary
-    on_sale: list[SaleItem]
-    ingredient_count: int
-
-
 class CostLine(BaseModel):
     """What one ingredient costs a recipe.
 
@@ -504,37 +483,6 @@ class RecipeAttention(BaseModel):
     # it serves has no figure however well its rows are counted. Only set
     # for a recipe with something to count.
     no_servings: bool = False
-
-
-class CheapRecipe(BaseModel):
-    """A recipe that costs less per serving than the median across the box."""
-
-    recipe: RecipeSummary
-    per_serving: float
-    priced: int
-    total_lines: int
-
-
-class PantryRecipe(BaseModel):
-    """A recipe most of whose ingredients the pantry already has in stock."""
-
-    recipe: RecipeSummary
-    in_pantry: int
-    total_lines: int
-
-
-class Suggestions(BaseModel):
-    """Reasons to cook something this week, each list most compelling first.
-
-    `median_per_serving` is what `cheap` is measured against, so the page can
-    say "under $2.10 a serving" rather than just "cheap". Absent when nothing
-    could be costed.
-    """
-
-    on_sale: list[RecipeOnSale]
-    cheap: list[CheapRecipe]
-    median_per_serving: float | None = None
-    pantry: list[PantryRecipe]
 
 
 class MatchSelection(BaseModel):

@@ -24,22 +24,15 @@ is only discovered at the till.
 import logging
 from dataclasses import dataclass
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import IngredientProductMatch, Recipe
 from ...schemas import (
     GroceryItem,
     GroceryList,
     GroceryPricing,
     ItemPrice,
-    RecipeOnSale,
-    RecipeSummary,
-    SaleItem,
 )
 from .. import settings as settings_service
-from ..identity import Identity
-from ..recipe_filters import ingredient_names
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -99,93 +92,6 @@ def sized(line: GroceryItem, product: Product) -> bool:
         return False
     size = parse_size(product.size)
     return comparable(size, need, line.key, None, product.sold_by_piece) is not None
-
-
-async def _discounted(session: AsyncSession) -> dict[str, Product]:
-    """The ingredients whose chosen product is on offer, by key.
-
-    Built only from ingredients already matched to a product, and those rows
-    exist only because someone opened a list containing them. Nothing is
-    searched for here: this re-prices choices already made, which is the
-    difference between noticing an offer and gathering a catalogue.
-
-    Empty rather than an error when pricing is off, no store is set, or
-    Kroger cannot be reached: an offers panel with nothing in it is a normal
-    sight, and the page it sits on is not about offers.
-    """
-    store = await settings_service.selected_store(session)
-    if not enabled() or store is None:
-        return {}
-
-    rows = (
-        await session.execute(
-            select(IngredientProductMatch).where(
-                IngredientProductMatch.location_id == store.location_id,
-                IngredientProductMatch.product_id.is_not(None),
-            )
-        )
-    ).scalars().all()
-    if not rows:
-        return {}
-
-    try:
-        found = await products.by_ids(
-            sorted({row.product_id for row in rows if row.product_id}), store.location_id
-        )
-    except KrogerError as exc:
-        log.warning("Could not check for offers: %s", exc)
-        return {}
-
-    return {
-        row.canonical_key: product
-        for row in rows
-        if (product := found.get(row.product_id or "")) is not None and product.on_sale
-    }
-
-
-async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
-    """Recipes with something discounted in them this week, most first.
-
-    The offers used to be listed as ingredients on the grocery page, where
-    they answered a question nobody on that page was asking: the list's own
-    lines already show a sale price, and its total already says what the
-    offers saved. What a discount on an ingredient is good for is deciding
-    what to cook, so it is put with the recipes and phrased as them.
-
-    Ranked by how much of the recipe is on offer, because two of three
-    ingredients discounted is a reason to cook the thing and two of nineteen
-    is a coincidence. Ties go to the title so the order cannot wobble.
-    """
-    discounted = await _discounted(session)
-    if not discounted:
-        return []
-
-    names = await ingredient_names(session)
-    identity = await Identity.of(session)
-    recipes = (await session.execute(select(Recipe))).scalars().unique().all()
-
-    found: list[RecipeOnSale] = []
-    for recipe in recipes:
-        keys = {k for ing in recipe.ingredients if (k := identity.key(ing.name))}
-        hits = sorted(keys & discounted.keys(), key=lambda k: names.get(k, k))
-        if not hits:
-            continue
-        found.append(
-            RecipeOnSale(
-                recipe=RecipeSummary.model_validate(recipe),
-                on_sale=[
-                    SaleItem(
-                        key=key,
-                        name=names.get(key) or key.replace("-", " "),
-                        price=as_item_price(discounted[key]),
-                    )
-                    for key in hits
-                ],
-                ingredient_count=len(keys),
-            )
-        )
-    found.sort(key=lambda r: (-len(r.on_sale) / r.ingredient_count, r.recipe.title.casefold()))
-    return found
 
 
 def to_buy(grocery_list: GroceryList) -> list[GroceryItem]:

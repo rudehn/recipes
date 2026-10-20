@@ -30,7 +30,6 @@ from ..schemas import (
     RecipeSummary,
     SearchIn,
     SearchSuggestions,
-    Suggestions,
     TagCount,
     TagName,
 )
@@ -347,17 +346,6 @@ async def suggest(
         "tags": [{"name": name, "count": count} for name, count in tags],
         "recipes": [RecipeRef(id=r.id, title=r.title) for r in titled],
     }
-
-
-@router.get("/suggestions", response_model=Suggestions)
-async def suggestions(session: AsyncSession = Depends(get_session)):
-    """Reasons to cook something this week.
-
-    Declared above /{recipe_id} so that path does not swallow it. Answered
-    from products already decided on, never a search, so a page that is
-    merely being read costs one batched lookup at most.
-    """
-    return await costing.suggestions(session)
 
 
 @router.post("/searches", status_code=204)

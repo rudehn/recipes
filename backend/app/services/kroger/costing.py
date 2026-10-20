@@ -23,23 +23,18 @@ wrong by a factor of a thousand.
 import logging
 import math
 from datetime import date
-from statistics import median
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import MealPlanEntry, PantryItem, Recipe
+from ...models import MealPlanEntry, Recipe
 from ...schemas import (
-    CheapRecipe,
     CostLine,
     DayCost,
     EntryCost,
-    PantryRecipe,
     PlanCost,
     RecipeCost,
-    RecipeSummary,
     StoreOut,
-    Suggestions,
 )
 from .. import settings as settings_service
 from ..grocery import build_grocery_list, normalize_unit, scale_factor
@@ -60,12 +55,6 @@ PRICED_COVERAGE = 0.8
 # is called on sale. A few cents off one ingredient in twenty is a coupon, not
 # a reason to cook something.
 SALE_THRESHOLD = 0.15
-
-# How much of a recipe the pantry has to hold before it is suggested for it.
-PANTRY_SHARE = 0.75
-
-# Enough to rank within, without turning the panel into the recipe index.
-SUGGESTION_LIMIT = 6
 
 
 def _line_cost(
@@ -312,78 +301,3 @@ async def sale_percentages(session: AsyncSession) -> dict[int, int]:
         if off >= SALE_THRESHOLD:
             sales[recipe.id] = math.floor(off * 100)
     return sales
-
-
-async def suggestions(session: AsyncSession) -> Suggestions:
-    """Reasons to cook something this week.
-
-    Three signals, each honest about what it needs. Offers and cost per
-    serving need Kroger, and use only products already decided on - nothing
-    is searched for here, so the first visit costs a batched lookup rather
-    than a search per ingredient in the box. The pantry signal needs no
-    Kroger at all, and is answered even when pricing is off.
-    """
-    recipes = (await session.execute(select(Recipe))).scalars().unique().all()
-    recipes = [r for r in recipes if r.ingredients]
-
-    identity = await Identity.of(session)
-    pantry = {
-        identity.key(p.name)
-        for p in (await session.execute(select(PantryItem))).scalars().all()
-        if p.in_stock
-    }
-    from_pantry: list[PantryRecipe] = []
-    for recipe in recipes:
-        keys = {k for ing in recipe.ingredients if (k := identity.key(ing.name))}
-        have = len(keys & pantry)
-        if keys and have / len(keys) >= PANTRY_SHARE:
-            from_pantry.append(
-                PantryRecipe(
-                    recipe=RecipeSummary.model_validate(recipe),
-                    in_pantry=have,
-                    total_lines=len(keys),
-                )
-            )
-    from_pantry.sort(key=lambda p: (-p.in_pantry / p.total_lines, p.recipe.title.casefold()))
-
-    on_sale = await pricing.recipes_on_sale(session)
-
-    cheap: list[CheapRecipe] = []
-    median_per_serving: float | None = None
-    store = await settings_service.selected_store(session)
-    if enabled() and store is not None:
-        try:
-            found = await _products_for(session, recipes, store.location_id, resolve=False)
-        except KrogerError as exc:
-            log.warning("Could not cost the recipe box: %s", exc)
-            found = {}
-        costed: list[CheapRecipe] = []
-        for recipe in recipes:
-            if not recipe.servings:
-                continue
-            lines, total, priced = _cost_recipe(recipe, found, identity=identity)
-            if priced / len(lines) < PRICED_COVERAGE:
-                continue
-            costed.append(
-                CheapRecipe(
-                    recipe=RecipeSummary.model_validate(recipe),
-                    per_serving=to_cents(total / recipe.servings),
-                    priced=priced,
-                    total_lines=len(lines),
-                )
-            )
-        # One recipe is not a distribution, and "below the median of two" is
-        # just "the cheaper one".
-        if len(costed) >= 3:
-            median_per_serving = to_cents(median(c.per_serving for c in costed))
-            cheap = sorted(
-                (c for c in costed if c.per_serving < median_per_serving),
-                key=lambda c: (c.per_serving, c.recipe.title.casefold()),
-            )
-
-    return Suggestions(
-        on_sale=on_sale[:SUGGESTION_LIMIT],
-        cheap=cheap[:SUGGESTION_LIMIT],
-        median_per_serving=median_per_serving,
-        pantry=from_pantry[:SUGGESTION_LIMIT],
-    )

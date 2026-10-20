@@ -327,49 +327,6 @@ async def test_a_trip_with_no_offers_saved_nothing(client, catalog):
     assert (await fetch(client))["pricing"]["saved"] == 0.0
 
 
-async def suggestions(client) -> dict:
-    resp = await client.get("/api/recipes/suggestions")
-    assert resp.status_code == 200
-    return resp.json()
-
-
-async def test_offers_are_listed_as_the_recipes_they_would_go_into(client, catalog):
-    """Built from matches that exist only because a list was opened. Nothing
-    is searched for, so this notices an offer rather than gathering a
-    catalogue. And it answers as recipes rather than ingredients: a discount
-    on sugar is only interesting as a reason to bake something."""
-    await seed(["flour", "sugar"])
-    await fetch(client)
-
-    body = (await suggestions(client))["on_sale"]
-    assert [r["recipe"]["title"] for r in body] == ["Test bake"]
-    # Flour is matched but not discounted, so only sugar is an offer.
-    assert [s["name"] for s in body[0]["on_sale"]] == ["sugar"]
-    assert body[0]["on_sale"][0]["price"]["promo"] == 2.99
-    assert body[0]["on_sale"][0]["price"]["regular"] == 3.99
-    assert body[0]["ingredient_count"] == 2
-
-
-async def test_recipes_with_more_of_themselves_on_offer_come_first(client, catalog):
-    """Two of two ingredients discounted is a reason to cook the thing; one of
-    three is a coincidence. A recipe with nothing on offer is not listed."""
-    await seed(["flour", "sugar", "saffron"])
-    await fetch(client)
-    async with session_factory() as session:
-        for title, names in [("Sugar cookies", ["sugar"]), ("Plain bread", ["flour"])]:
-            recipe = Recipe(title=title, servings=4)
-            recipe.ingredients = [
-                Ingredient(name=n, quantity=1, unit="cup", position=i)
-                for i, n in enumerate(names)
-            ]
-            session.add(recipe)
-        await session.commit()
-
-    body = (await suggestions(client))["on_sale"]
-
-    assert [r["recipe"]["title"] for r in body] == ["Sugar cookies", "Test bake"]
-
-
 async def test_a_line_already_at_home_is_not_priced_into_the_trip(client, catalog):
     """"Have it" means it is not being bought, so it comes out of the total
     and out of the count the total is quoted against. A tick does not: what
@@ -453,20 +410,6 @@ async def test_forgetting_a_pick_lets_the_matcher_choose_again(client, catalog):
     line = (await fetch(client))["items"][0]
     assert line["price"]["description"] == "Kroger® All Purpose Flour"
     assert line["hand_picked"] is False
-
-
-async def test_offers_are_empty_before_anything_has_been_matched(client, catalog):
-    """No searching happens here, so with nothing matched there is nothing to
-    re-price - not an error, just an empty shelf."""
-    await seed(["flour"], store=True)
-
-    assert (await suggestions(client))["on_sale"] == []
-
-
-async def test_offers_are_empty_rather_than_an_error_without_a_store(client, catalog):
-    await seed(["flour"], store=False)
-
-    assert (await suggestions(client))["on_sale"] == []
 
 
 # ---------------------------------------------------------- recipe cost ---
@@ -657,77 +600,8 @@ async def test_plan_cost_refuses_a_range_that_runs_backwards(client, catalog):
 # ---------------------------------------------------------- suggestions ---
 
 
-async def test_cheap_recipes_are_those_under_the_median_per_serving(client, catalog):
-    """Below the median across the box, never against a price history. Only
-    answered from products already decided on: nothing here searches."""
-    await seed(["flour", "sugar"])
-    await fetch(client)
-    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
-    await make_recipe("Cake", [("flour", 2, "cup"), ("sugar", 2, "cup")], servings=4)
-    await make_recipe("Candy", [("sugar", 4, "cup")], servings=2)
-    searches_before = catalog.calls
-    requests_before = len(catalog.searches)
-
-    body = await suggestions(client)
-
-    # Per serving: Flatbread $0.04, "Test bake" from `seed` at a cup of each
-    # $0.10, Cake $0.20, Candy $0.53 (200 g of sugar a cup against a 5 lb bag
-    # at the sale price). The median of four is $0.15, so two are under it.
-    assert [c["recipe"]["title"] for c in body["cheap"]] == ["Flatbread", "Test bake"]
-    assert body["cheap"][0]["per_serving"] == 0.04
-    assert body["median_per_serving"] == 0.15
-    # One batched price lookup, and not one search.
-    assert catalog.calls - searches_before <= 2
-    assert all("filter.term" not in c for c in catalog.searches[requests_before:])
-
-
-async def test_a_half_costed_recipe_is_not_called_cheap(client, catalog):
-    """Saffron never matches, so Risotto is half priced - which is not the
-    same as half price."""
-    await seed(["flour", "sugar", "saffron"])
-    await fetch(client)
-    await make_recipe("Risotto", [("saffron", 1, "g"), ("flour", 1, "cup")], servings=4)
-    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
-    await make_recipe("Cake", [("flour", 2, "cup"), ("sugar", 2, "cup")], servings=4)
-
-    body = await suggestions(client)
-
-    assert "Risotto" not in [c["recipe"]["title"] for c in body["cheap"]]
-
-
-async def test_too_few_costed_recipes_means_no_median(client, catalog):
-    """"Below the median of two" is just "the cheaper one"."""
-    await seed(["flour"])
-    await fetch(client)
-    await make_recipe("Flatbread", [("flour", 1, "cup")], servings=4)
-
-    body = await suggestions(client)
-
-    assert body["cheap"] == []
-    assert body["median_per_serving"] is None
-
-
-async def test_recipes_mostly_in_the_pantry_are_suggested_without_kroger(client, monkeypatch):
-    """The one signal that needs no price at all, so it answers even when
-    pricing is off."""
-    monkeypatch.setattr(config, "KROGER_CLIENT_ID", "")
-    monkeypatch.setattr(config, "KROGER_CLIENT_SECRET", "")
-    await make_recipe("Pasta", [("pasta", 1, "lb"), ("olive oil", 2, "tbsp"), ("garlic", 2, None)])
-    await make_recipe(
-        "Curry", [("chicken", 1, "lb"), ("rice", 1, "cup"), ("curry paste", 2, "tbsp")]
-    )
-    async with session_factory() as session:
-        for name in ["Pasta", "Olive oil", "garlic", "rice"]:
-            session.add(PantryItem(name=name, in_stock=True))
-        await session.commit()
-
-    body = await suggestions(client)
-
-    assert [p["recipe"]["title"] for p in body["pantry"]] == ["Pasta"]
-    assert body["pantry"][0]["in_pantry"] == 3
-    assert body["pantry"][0]["total_lines"] == 3
-    assert body["on_sale"] == []
-    assert body["cheap"] == []
+async def test_the_old_suggestions_endpoint_is_gone(client):
+    assert (await client.get("/api/recipes/suggestions")).status_code != 200
 
 
 # ----------------------------------------------------- list then prices ---

@@ -9,7 +9,7 @@ product is chosen at the store, a food is chosen from USDA's.
 Three sources, none of which calls anyone. The recipe-side reasons are
 `services.lint`'s string checks over the rows. "Nothing matched" comes from
 the picks already made at the chosen store - never a search, for the same
-reason the suggestions never search - and only when there is a store to have
+reason listing recipes never searches - and only when there is a store to have
 matched at. The nutrition reasons are `nutrition.facts`, counted from the
 bundled USDA tables, and are there with pricing off as much as on.
 
