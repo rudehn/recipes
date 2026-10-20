@@ -5,6 +5,8 @@ over the whole collection, so the cases that matter are the ones where a page
 and the collection disagree.
 """
 
+from datetime import date, timedelta
+
 import pytest
 
 
@@ -269,3 +271,48 @@ async def test_tags_endpoint_counts_within_the_search(client):
     resp = await client.get("/api/recipes/tags", params={"q": "chicken"})
     counts = {t["name"]: t["count"] for t in resp.json()}
     assert counts == {"dinner": 2, "indian": 1, "soup": 1}
+
+
+async def test_an_ingredient_filter_matches_by_identity_not_substring(client):
+    await make_recipe(client, "Curry", ingredients=[{"name": "chicken thighs"}])
+    await make_recipe(client, "Wings", ingredients=[{"name": "chicken wings"}])
+
+    assert await titles(client, ingredient=["chicken-thigh"]) == ["Curry"]
+
+
+async def test_several_ingredients_must_all_be_used(client):
+    await make_recipe(client, "Curry", ingredients=[{"name": "rice"}, {"name": "onion"}])
+    await make_recipe(client, "Pilaf", ingredients=[{"name": "rice"}])
+
+    assert await titles(client, ingredient=["rice"]) == ["Curry", "Pilaf"]
+    assert await titles(client, ingredient=["rice", "onion"]) == ["Curry"]
+
+
+async def test_an_ingredient_filter_follows_a_merge(client):
+    await make_recipe(client, "Chili", ingredients=[{"name": "ground cumin"}])
+    await make_recipe(client, "Stew", ingredients=[{"name": "cumin"}, {"name": "beef"}])
+    await make_recipe(client, "Toast", ingredients=[{"name": "bread"}])
+    merged = await client.post(
+        "/api/ingredients/merges", json={"from_key": "ground-cumin", "to_key": "cumin"}
+    )
+    assert merged.status_code == 204, merged.text
+
+    assert await titles(client, ingredient=["ground-cumin"]) == ["Chili", "Stew"]
+    assert await titles(client, ingredient=["cumin"]) == ["Chili", "Stew"]
+
+
+async def test_recently_cooked_puts_the_latest_past_plan_first(client):
+    today = date.today()
+    recipes = {t: (await make_recipe(client, t))["id"] for t in "ABCD"}
+    for title, days in (("A", -1), ("B", -3), ("C", 1)):
+        resp = await client.post(
+            "/api/meal-plan",
+            json={
+                "plan_date": (today + timedelta(days=days)).isoformat(),
+                "meal": "dinner",
+                "recipe_id": recipes[title],
+            },
+        )
+        assert resp.status_code == 201, resp.text
+
+    assert await titles(client, sort="cooked") == ["A", "B", "C", "D"]

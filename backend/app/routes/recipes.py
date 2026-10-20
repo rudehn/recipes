@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 from typing import Annotated, Literal
 
 import httpx
@@ -10,7 +11,7 @@ from sqlalchemy.orm import noload
 
 from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
-from ..models import Ingredient, Recipe, RecipeTag
+from ..models import Ingredient, MealPlanEntry, Recipe, RecipeTag
 from ..schemas import (
     MAX_TAG_LENGTH,
     ImageFromUrl,
@@ -33,6 +34,7 @@ from ..services.images import (
 )
 from ..services.kroger import costing
 from ..services.nutrition import facts as nutrition
+from ..services.recipe_filters import intersect, recipes_using
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -41,13 +43,18 @@ DEFAULT_PER_PAGE = 24
 # here to remove.
 MAX_PER_PAGE = 100
 
-RecipeSort = Literal["title", "newest", "sale"]
+RecipeSort = Literal["title", "newest", "cooked", "sale"]
 
 # A tag filter names tags no longer than a tag can be, and no more of them
 # than anyone narrowing a recipe box would tap. Each one is a subquery, so an
 # unbounded list would be an unbounded query.
 TagName = Annotated[str, StringConstraints(max_length=MAX_TAG_LENGTH)]
 MAX_TAG_FILTERS = 20
+
+# An ingredient filter is a key (or a name, which is reduced to one), bounded
+# like the rest: each one is read against every recipe's ingredients.
+IngredientName = Annotated[str, StringConstraints(max_length=300)]
+MAX_INGREDIENT_FILTERS = 20
 
 # Every sort ends on a unique column. Ordering by title alone is not stable -
 # two recipes may share one - and an unstable order lets offsets skip or repeat
@@ -58,6 +65,8 @@ _SORTS: dict[str, tuple] = {
     # Without sale data nothing is on sale, which leaves the title order.
     # With it, `list_recipes` puts the percentages in front.
     "sale": (Recipe.title.asc(), Recipe.id.asc()),
+    # `list_recipes` joins the last-cooked dates in front of this.
+    "cooked": (Recipe.title.asc(), Recipe.id.asc()),
 }
 
 
@@ -123,6 +132,7 @@ def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> 
 async def list_recipes(
     q: str = Query(default="", max_length=100),
     tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
+    ingredient: list[IngredientName] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
     sort: RecipeSort = "title",
     on_sale: bool = False,
     page: int = Query(default=1, ge=1),
@@ -130,7 +140,12 @@ async def list_recipes(
     session: AsyncSession = Depends(get_session),
 ):
     sales = await costing.sale_percentages(session)
-    filtered = _filtered_recipes(q.strip(), _tag_filter(tag), set(sales) if on_sale else None)
+    # Both restrictions apply together: on sale AND using every ingredient.
+    only = intersect(
+        set(sales) if on_sale else None,
+        await recipes_using(session, ingredient) if ingredient else None,
+    )
+    filtered = _filtered_recipes(q.strip(), _tag_filter(tag), only)
     total = await session.scalar(select(func.count()).select_from(filtered.subquery()))
 
     order = _SORTS[sort]
@@ -138,6 +153,21 @@ async def list_recipes(
         # Biggest first, and everything not on sale after it. An empty mapping
         # is not valid for `case`, hence the guard.
         order = (case(sales, value=Recipe.id, else_=-1).desc(), *_SORTS["sale"])
+
+    if sort == "cooked":
+        # Plans in the future are intentions, not history: a recipe planned
+        # only for tomorrow has not been cooked, so it ranks with the rest.
+        last = (
+            select(
+                MealPlanEntry.recipe_id.label("recipe_id"),
+                func.max(MealPlanEntry.plan_date).label("last"),
+            )
+            .where(MealPlanEntry.plan_date <= date.today())
+            .group_by(MealPlanEntry.recipe_id)
+            .subquery()
+        )
+        filtered = filtered.outerjoin(last, last.c.recipe_id == Recipe.id)
+        order = (last.c.last.desc().nulls_last(), *_SORTS["cooked"])
 
     # A page past the end is an empty page, not an error: the collection can
     # shrink under a client that is holding a page number.
