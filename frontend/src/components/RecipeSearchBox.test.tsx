@@ -66,9 +66,6 @@ function setup({
   };
 }
 
-/** Generous for the 250 ms debounce plus a request, so a loaded machine is not a failure. */
-const SETTLE = { timeout: 4000 };
-
 function options(): string[] {
   const list = screen.queryByRole("listbox");
   return list ? within(list).getAllByRole("option").map((o) => o.textContent ?? "") : [];
@@ -151,7 +148,7 @@ describe("RecipeSearchBox", () => {
     const { user, backend, box } = setup();
     await user.type(box, "chi");
 
-    await screen.findByText("Ingredient", {}, SETTLE);
+    await screen.findByText("Ingredient");
     const headings = screen.getAllByRole("presentation").map((h) => h.textContent);
     expect(headings).toEqual(["Ingredient", "Tag", "Recipe"]);
     expect(options()).toEqual([
@@ -172,7 +169,7 @@ describe("RecipeSearchBox", () => {
   it("asks for suggestions given the tokens already in the box", async () => {
     const { user, backend, box } = setup({ initial: { ...EMPTY_SEARCH, tags: ["dinner"] } });
     await user.type(box, "chi");
-    await screen.findByText("Ingredient", {}, SETTLE);
+    await screen.findByText("Ingredient");
     expect(backend.requestsTo("GET /api/recipes/suggest").at(-1)?.searchParams.getAll("tag")).toEqual([
       "dinner",
     ]);
@@ -181,7 +178,7 @@ describe("RecipeSearchBox", () => {
   it("adds a picked ingredient as a token and clears the typing", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: /chicken thighs/ }, SETTLE));
+    await user.click(await screen.findByRole("option", { name: /chicken thighs/ }));
 
     expect(search().ingredients).toEqual([{ key: "chicken-thighs", name: "chicken thighs" }]);
     expect(box).toHaveValue("");
@@ -191,7 +188,7 @@ describe("RecipeSearchBox", () => {
   it("adds a picked tag as a token", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: /chinese/ }, SETTLE));
+    await user.click(await screen.findByRole("option", { name: /chinese/ }));
 
     expect(search().tags).toEqual(["chinese"]);
     expect(box).toHaveValue("");
@@ -220,7 +217,7 @@ describe("RecipeSearchBox", () => {
   it("opens a recipe picked from the suggestions", async () => {
     const { user, box, onOpenRecipe, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: "Chicken Fried Rice" }, SETTLE));
+    await user.click(await screen.findByRole("option", { name: "Chicken Fried Rice" }));
 
     expect(onOpenRecipe).toHaveBeenCalledWith(42);
     expect(search()).toEqual(EMPTY_SEARCH);
@@ -229,7 +226,7 @@ describe("RecipeSearchBox", () => {
   it("moves through suggestions with the arrow keys", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await screen.findByText("Ingredient", {}, SETTLE);
+    await screen.findByText("Ingredient");
 
     await user.keyboard("{ArrowDown}{ArrowDown}");
     const second = screen.getByRole("option", { name: /chives/ });

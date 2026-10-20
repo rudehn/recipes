@@ -599,7 +599,7 @@ async def test_plan_cost_refuses_a_range_that_runs_backwards(client, catalog):
     assert resp.status_code == 422
 
 
-# ---------------------------------------------------------- suggestions ---
+# ------------------------------------- the removed suggestions endpoint ---
 
 
 async def test_the_old_suggestions_endpoint_is_gone(client):
@@ -888,7 +888,7 @@ async def test_facets_count_the_recipes_on_sale_within_the_filters(client, catal
     assert narrowed.json()["on_sale"] == 0
 
 
-# ------------------------------------------- sale data never holds the list ---
+# --------------------------------------- sale data never holds the list ---
 
 
 async def cold_prices(client) -> None:
