@@ -399,6 +399,19 @@ describe("RecipesPage", () => {
     await waitFor(() => expect(resultLine()).toBe("1 recipe · 🥕 chicken thighs"));
   });
 
+  it("names a token for an ingredient merged away since, under the key it holds", async () => {
+    // The facets answer under the key the page asked with, so an old bookmark's
+    // token takes the name of the ingredient it became.
+    const backend = recipesBackend(page([curry]), {
+      ...FACETS,
+      ingredients: [{ key: "ground-cumin", name: "cumin" }],
+    });
+    renderApp("/recipes?ing=ground-cumin");
+
+    expect(await screen.findByRole("button", { name: "Remove cumin" })).toBeInTheDocument();
+    expect(lastListRequest(backend).searchParams.getAll("ingredient")).toEqual(["ground-cumin"]);
+  });
+
   describe("search history", () => {
     it("records the search when a recipe is opened from it", async () => {
       const backend = recipesBackend(page([curry]), FACETS, { "GET /api/recipes/:id": recipe({ id: 1 }) });

@@ -1156,6 +1156,8 @@ class RecipeFacets(BaseModel):
     # None says there is nothing to know about sales (pricing off, no store),
     # which is not the same as none being on sale.
     on_sale: int | None
+    # The ingredient filters, each under the key it was asked for by - a
+    # bookmark may hold one merged away since - and named as it is now.
     ingredients: list[IngredientName]
 
 

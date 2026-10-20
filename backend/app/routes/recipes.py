@@ -276,15 +276,21 @@ async def facets(
             select(func.count()).select_from(filtered.where(Recipe.id.in_(set(sales))).subquery())
         )
 
+    # Each ingredient is named as the one it is now, after merges, but under
+    # the key it was asked for by: that is the key the page's token holds.
     identity = await Identity.of(session)
     names = await ingredient_names(session)
-    keys = dict.fromkeys(identity.resolve(k.strip().lower()) for k in ingredient if k.strip())
+    asked = dict.fromkeys(k.strip() for k in ingredient if k.strip())
+    named = []
+    for key in asked:
+        resolved = identity.resolve(key.lower())
+        named.append(
+            IngredientName(key=key, name=names.get(resolved) or resolved.replace("-", " "))
+        )
     return {
         "tags": [{"name": name, "count": counts[name]} for name in tags],
         "on_sale": on_sale_count,
-        "ingredients": [
-            IngredientName(key=key, name=names.get(key) or key.replace("-", " ")) for key in keys
-        ],
+        "ingredients": named,
     }
 
 

@@ -414,6 +414,23 @@ async def test_facets_name_the_ingredients_asked_for(client):
     ]
 
 
+async def test_facets_name_a_merged_away_ingredient_under_the_key_asked_for(client):
+    """A bookmark may name an ingredient merged away since. The facets name
+    it as the one it became, under the key the page asked with, so the page
+    can find the name for the token it holds."""
+    await make_recipe(client, "Chili", ingredients=[{"name": "ground cumin"}])
+    await make_recipe(client, "Stew", ingredients=[{"name": "cumin"}])
+    await make_recipe(client, "Soup", ingredients=[{"name": "cumin"}])
+    merged = await client.post(
+        "/api/ingredients/merges", json={"from_key": "ground-cumin", "to_key": "cumin"}
+    )
+    assert merged.status_code == 204, merged.text
+
+    body = await facets(client, ingredient=["ground-cumin"])
+
+    assert body["ingredients"] == [{"key": "ground-cumin", "name": "cumin"}]
+
+
 async def test_suggestions_group_ingredients_tags_and_recipes(client):
     await make_recipe(
         client,
