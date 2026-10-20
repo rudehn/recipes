@@ -736,6 +736,84 @@ input:focus, select:focus, textarea:focus {
   visibility: hidden;
 }
 
+/* ---------- Quick row ---------- */
+
+/* What the All tags panel hangs from. */
+.quick-row-wrap {
+  position: relative;
+}
+
+/* One line, never scrolling: QuickRow leaves a tag that would not fit to
+   All tags, and the tail keeps its room. Spare tags are measured but out of
+   the flow, like a card's (see .card-tags). */
+.quick-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  min-width: 0;
+  overflow: hidden;
+}
+
+.quick-row .tag-pill,
+.quick-tail {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* A tag can be fifty characters. The first, always shown, is the one
+   allowed to give way, ending in an ellipsis. */
+.quick-row .quick-tag:first-child {
+  flex: 0 1 auto;
+  display: inline-flex;
+  min-width: 0;
+}
+
+.quick-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.quick-row .quick-tag.spare {
+  position: absolute;
+  top: 0;
+  left: 0;
+  visibility: hidden;
+}
+
+.quick-tail {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  margin-left: auto;
+}
+
+.quick-divider {
+  align-self: stretch;
+  width: 1px;
+  margin: var(--space-4) 0;
+  background: var(--line);
+}
+
+.quick-panel {
+  position: absolute;
+  top: calc(100% + var(--space-4));
+  left: 0;
+  right: 0;
+  z-index: var(--z-raised);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  max-height: 50vh;
+  overflow-y: auto;
+  padding: var(--space-12);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+}
+
 /* ---------- Tag filter & URL import ---------- */
 
 /* Holds the fades over the bar's edges, drawn by the rules it shares with
@@ -4077,6 +4155,9 @@ body.has-install-hint .page {
  */
 @media (max-width: 720px) {
   /* ----------------------------------------------------------- shell --- */
+
+  /* The quick row drops its counts to make room for more tags. */
+  .quick-row .count { display: none; }
 
   /* The name comes back: with the sections along the bottom, the top bar is a
      title bar, and hiding the app's name in it was paying for room it no
