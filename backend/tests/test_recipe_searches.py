@@ -107,11 +107,55 @@ async def test_recent_names_ingredients_and_follows_merges(client):
     ]
 
 
+async def test_a_search_made_before_and_after_a_merge_is_one_search(client):
+    """Searches are told apart by the ingredients they name now, after
+    merges, not as they were named when made: "ground cumin" searched before
+    it was merged into cumin is the same search as cumin searched after, and
+    forgetting it forgets both."""
+    await client.post(
+        "/api/recipes",
+        json={
+            "title": "Chili",
+            "servings": 2,
+            "ingredients": [{"name": "Cumin", "quantity": 1, "unit": "tsp"}],
+        },
+    )
+    await record(client, ingredients=["ground-cumin"])
+    async with session_factory() as session:
+        session.add(IngredientMerge(from_key="ground-cumin", to_key="cumin"))
+        await session.commit()
+    await record(client, ingredients=["cumin"])
+
+    rows = await recent(client)
+
+    assert without_signature(rows) == [entry(ingredients=[("cumin", "Cumin")])]
+    resp = await client.delete("/api/recipes/searches", params={"signature": rows[0]["signature"]})
+    assert resp.status_code == 204
+    assert await recent(client) == []
+    async with session_factory() as session:
+        assert (await session.execute(select(RecipeSearch))).scalars().all() == []
+
+
+async def test_the_longest_search_can_be_recorded_and_forgotten(client):
+    """However long the search, and however far outside ASCII, the handle
+    the page forgets it by stays short enough to send back."""
+    text = "é" * 100
+    tags = [f"{i:02d}" + "ü" * 48 for i in range(20)]
+    ingredients = [f"{i:02d}" + "ñ" * 298 for i in range(20)]
+    await record(client, text=text, tags=tags, ingredients=ingredients, on_sale=True)
+    [row] = await recent(client)
+    assert row["text"] == text
+
+    resp = await client.delete("/api/recipes/searches", params={"signature": row["signature"]})
+
+    assert resp.status_code == 204
+    assert await recent(client) == []
+
+
 async def test_searches_older_than_sixty_days_are_dropped(client):
     async with session_factory() as session:
         session.add(
             RecipeSearch(
-                signature="old",
                 text="old",
                 tags=["stale"],
                 ingredients=[],
@@ -125,7 +169,7 @@ async def test_searches_older_than_sixty_days_are_dropped(client):
 
     assert [r["text"] for r in await recent(client)] == ["new"]
     async with session_factory() as session:
-        rows = (await session.execute(select(RecipeSearch.signature))).scalars().all()
+        rows = (await session.execute(select(RecipeSearch.text))).scalars().all()
         assert "old" not in rows
         assert len(rows) == 1
 

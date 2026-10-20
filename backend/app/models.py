@@ -345,16 +345,16 @@ class RecipeSearch(Base):
     """One time a recipe was opened from a search on the Recipes page.
 
     An event log, so the same search made twice is two rows: recent searches
-    are the distinct `signature`s, newest first, and a tag's popularity is
-    how many rows hold it. `ingredients` are identity keys, resolved through
-    merges again when read. Rows past the history window are pruned when a
-    new one is written.
+    are the distinct searches, newest first, and a tag's popularity is how
+    many rows hold it. `ingredients` are identity keys, resolved through
+    merges again when read - which is why what makes two rows the same
+    search is worked out on reading rather than stored. Rows past the
+    history window are pruned when a new one is written.
     """
 
     __tablename__ = "recipe_searches"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    signature: Mapped[str] = mapped_column(String(1000), index=True)
     text: Mapped[str] = mapped_column(String(100))
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     ingredients: Mapped[list[str]] = mapped_column(JSON, default=list)

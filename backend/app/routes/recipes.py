@@ -378,7 +378,7 @@ async def recent_searches(
 
 @router.delete("/searches", status_code=204)
 async def forget_search(
-    signature: str = Query(max_length=1000),
+    signature: str = Query(max_length=64),
     session: AsyncSession = Depends(get_session),
 ):
     """Forget a search, every time it was made."""

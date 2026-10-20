@@ -27,7 +27,6 @@ def upgrade() -> None:
     op.create_table(
         "recipe_searches",
         sa.Column("id", sa.Integer(), nullable=False),
-        sa.Column("signature", sa.String(length=1000), nullable=False),
         sa.Column("text", sa.String(length=100), nullable=False),
         sa.Column("tags", sa.JSON(), nullable=False),
         sa.Column("ingredients", sa.JSON(), nullable=False),
@@ -35,11 +34,9 @@ def upgrade() -> None:
         sa.Column("searched_at", sa.DateTime(timezone=True), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index(op.f("ix_recipe_searches_signature"), "recipe_searches", ["signature"])
     op.create_index(op.f("ix_recipe_searches_searched_at"), "recipe_searches", ["searched_at"])
 
 
 def downgrade() -> None:
     op.drop_index(op.f("ix_recipe_searches_searched_at"), table_name="recipe_searches")
-    op.drop_index(op.f("ix_recipe_searches_signature"), table_name="recipe_searches")
     op.drop_table("recipe_searches")
