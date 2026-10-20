@@ -963,3 +963,17 @@ async def test_no_store_means_nothing_is_on_sale(client, catalog):
 
     assert await sale_percents(client) == {"Test bake": None}
     assert (await listing(client, on_sale=True))["total"] == 0
+
+
+async def test_facets_count_the_recipes_on_sale_within_the_filters(client, catalog):
+    await seed(["flour", "sugar"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    await make_recipe("Plain bread", [("flour", 1, "cup")])
+
+    everything = await client.get("/api/recipes/facets")
+    narrowed = await client.get("/api/recipes/facets", params={"q": "bread"})
+
+    # Sugar cookies and the fixture's Test bake are on sale; bread is not.
+    assert everything.json()["on_sale"] == 2
+    assert narrowed.json()["on_sale"] == 0

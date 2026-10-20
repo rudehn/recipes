@@ -1201,6 +1201,30 @@ class IngredientName(BaseModel):
     name: str
 
 
+class RecipeFacets(BaseModel):
+    """What the quick row offers, counted within the list's filters."""
+
+    tags: list[TagCount]
+    # None says there is nothing to know about sales (pricing off, no store),
+    # which is not the same as none being on sale.
+    on_sale: int | None
+    ingredients: list[IngredientName]
+
+
+class IngredientSuggestion(BaseModel):
+    key: str
+    name: str
+    count: int
+
+
+class SearchSuggestions(BaseModel):
+    """What typing into the search box offers, grouped as the dropdown is."""
+
+    ingredients: list[IngredientSuggestion]
+    tags: list[TagCount]
+    recipes: list[RecipeRef]
+
+
 class RecentSearch(BaseModel):
     """A remembered search, ready to put back in the box."""
 

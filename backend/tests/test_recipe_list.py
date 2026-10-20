@@ -330,3 +330,175 @@ async def test_recently_cooked_puts_the_latest_past_plan_first(client):
         assert resp.status_code == 201, resp.text
 
     assert await titles(client, sort="cooked") == ["Mango", "Zucchini", "Beans", "Apple", "Cake"]
+
+
+async def facets(client, **params):
+    resp = await client.get("/api/recipes/facets", params=params)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def suggest(client, text, **params):
+    resp = await client.get("/api/recipes/suggest", params={"text": text, **params})
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def search_for_tags(client, *tags):
+    resp = await client.post(
+        "/api/recipes/searches",
+        json={"text": "", "tags": list(tags), "ingredients": [], "on_sale": False},
+    )
+    assert resp.status_code == 204, resp.text
+
+
+async def test_facets_count_tags_within_the_filters(client):
+    await make_recipe(client, "Curry", tags=["dinner", "indian"])
+    await make_recipe(client, "Soup", tags=["dinner", "soup"])
+    await make_recipe(client, "Cake", tags=["dessert"])
+
+    body = await facets(client, tag=["dinner"])
+
+    assert {t["name"]: t["count"] for t in body["tags"]} == {
+        "dessert": 0,
+        "dinner": 2,
+        "indian": 1,
+        "soup": 1,
+    }
+
+
+async def test_facets_put_the_most_searched_tags_first(client):
+    for n in range(3):
+        await make_recipe(client, f"Dinner {n}", tags=["dinner"])
+    await make_recipe(client, "Taco", tags=["mexican"])
+    await search_for_tags(client, "mexican")
+    await search_for_tags(client, "mexican", "dinner")
+    await search_for_tags(client, "mexican")
+    await search_for_tags(client, "dinner")
+
+    body = await facets(client)
+
+    # Mexican is in three searches, dinner in two, though dinner has more recipes.
+    assert [t["name"] for t in body["tags"]] == ["mexican", "dinner"]
+
+
+async def test_facets_fall_back_to_the_biggest_tags_without_history(client):
+    await make_recipe(client, "A", tags=["soup", "zesty"])
+    await make_recipe(client, "B", tags=["soup", "dinner"])
+    await make_recipe(client, "C", tags=["soup", "dinner", "apple"])
+
+    body = await facets(client)
+
+    assert [(t["name"], t["count"]) for t in body["tags"]] == [
+        ("soup", 3),
+        ("dinner", 2),
+        ("apple", 1),
+        ("zesty", 1),
+    ]
+
+
+async def test_facets_say_nothing_about_sales_without_a_store(client):
+    await make_recipe(client, "Curry", tags=["dinner"])
+
+    assert (await facets(client))["on_sale"] is None
+
+
+async def test_facets_name_the_ingredients_asked_for(client):
+    await make_recipe(client, "Curry", ingredients=[{"name": "chicken thighs"}])
+
+    body = await facets(client, ingredient=["chicken-thigh", "vanished-thing"])
+
+    assert body["ingredients"] == [
+        {"key": "chicken-thigh", "name": "chicken thighs"},
+        {"key": "vanished-thing", "name": "vanished thing"},
+    ]
+
+
+async def test_suggestions_group_ingredients_tags_and_recipes(client):
+    await make_recipe(
+        client,
+        "Chicken Fried Rice",
+        tags=["chinese"],
+        ingredients=[{"name": "chicken thighs"}, {"name": "chili powder"}],
+    )
+    await make_recipe(client, "Toast", tags=["breakfast"], ingredients=[{"name": "bread"}])
+
+    body = await suggest(client, "CHI")
+
+    assert body["ingredients"] == [
+        {"key": "chicken-thigh", "name": "chicken thighs", "count": 1},
+        {"key": "chili-powder", "name": "chili powder", "count": 1},
+    ]
+    assert body["tags"] == [{"name": "chinese", "count": 1}]
+    assert [r["title"] for r in body["recipes"]] == ["Chicken Fried Rice"]
+
+
+async def test_suggestions_count_within_the_current_filters_and_drop_dead_ends(client):
+    await make_recipe(
+        client,
+        "Curry",
+        tags=["dinner", "spicy"],
+        ingredients=[{"name": "rice"}, {"name": "ricotta"}],
+    )
+    await make_recipe(client, "Pilaf", tags=["dinner"], ingredients=[{"name": "rice"}])
+    await make_recipe(client, "Rice pudding", tags=["dessert"], ingredients=[{"name": "rice"}])
+
+    body = await suggest(client, "ric", tag=["dinner"])
+
+    # Ricotta only in Curry (1), rice in two dinners; the dessert is filtered out.
+    assert body["ingredients"] == [
+        {"key": "rice", "name": "rice", "count": 2},
+        {"key": "ricotta", "name": "ricotta", "count": 1},
+    ]
+    assert body["recipes"] == []
+
+    narrowed = await suggest(client, "ric", tag=["spicy"], ingredient=["ricotta"])
+    assert [i["key"] for i in narrowed["ingredients"]] == ["rice"]
+
+    # No recipe in the filters carries "des", so the dessert tag is a dead end.
+    assert (await suggest(client, "des", tag=["dinner"]))["tags"] == []
+
+
+async def test_suggestions_leave_out_what_is_already_picked(client):
+    await make_recipe(client, "Chili", tags=["chili night"], ingredients=[{"name": "chili powder"}])
+    await make_recipe(client, "Chips", tags=["chips"], ingredients=[{"name": "chili flakes"}])
+
+    body = await suggest(client, "chi", tag=["chili night"], ingredient=["chili-powder"])
+
+    assert body["ingredients"] == []
+    assert body["tags"] == []
+
+
+async def test_suggestions_keep_to_five_per_group_in_order(client):
+    for n in range(7):
+        await make_recipe(client, f"Pie {n}", tags=[f"pie{n}"], ingredients=[{"name": f"pear {n}"}])
+    await make_recipe(client, "Pie 0 again", ingredients=[{"name": "pear 0"}])
+
+    body = await suggest(client, "pie")
+
+    assert [t["name"] for t in body["tags"]] == ["pie0", "pie1", "pie2", "pie3", "pie4"]
+    assert [r["title"] for r in body["recipes"]] == [
+        "Pie 0",
+        "Pie 0 again",
+        "Pie 1",
+        "Pie 2",
+        "Pie 3",
+    ]
+    ingredients = (await suggest(client, "pear"))["ingredients"]
+    assert [(i["name"], i["count"]) for i in ingredients] == [
+        ("pear 0", 2),
+        ("pear 1", 1),
+        ("pear 2", 1),
+        ("pear 3", 1),
+        ("pear 4", 1),
+    ]
+
+
+async def test_suggestions_match_typed_wildcards_literally(client):
+    await make_recipe(client, "Half off", tags=["100%"])
+    await make_recipe(client, "Plain", tags=["plain"])
+
+    body = await suggest(client, "%")
+
+    assert [t["name"] for t in body["tags"]] == ["100%"]
+    assert body["recipes"] == []

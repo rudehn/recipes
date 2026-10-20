@@ -1,4 +1,5 @@
 import uuid
+from collections import Counter
 from datetime import date
 from typing import Literal
 
@@ -15,21 +16,27 @@ from ..schemas import (
     MAX_TAG_FILTERS,
     ImageFromUrl,
     IngredientKey,
+    IngredientName,
+    IngredientSuggestion,
     RecentSearch,
     RecipeAttention,
     RecipeCost,
+    RecipeFacets,
     RecipeIn,
     RecipeNutrition,
     RecipeOut,
     RecipePage,
+    RecipeRef,
     RecipeSummary,
     SearchIn,
+    SearchSuggestions,
     Suggestions,
     TagCount,
     TagName,
 )
 from ..services import search_history
 from ..services.attention import recipes_needing_a_look
+from ..services.identity import Identity
 from ..services.images import (
     ImageTooLarge,
     declared_length_exceeds,
@@ -38,7 +45,7 @@ from ..services.images import (
 )
 from ..services.kroger import costing
 from ..services.nutrition import facts as nutrition
-from ..services.recipe_filters import intersect, recipes_using
+from ..services.recipe_filters import ingredient_names, intersect, recipes_using
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -53,6 +60,8 @@ RecipeSort = Literal["title", "newest", "cooked", "sale"]
 # like the rest: each one is read against every recipe's ingredients.
 IngredientParam = IngredientKey
 MAX_INGREDIENT_FILTERS = 20
+# A typed-ahead group is a handful of choices, not a second list.
+MAX_SUGGESTIONS = 5
 
 # Every sort ends on a unique column. Ordering by title alone is not stable -
 # two recipes may share one - and an unstable order lets offsets skip or repeat
@@ -126,6 +135,23 @@ def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> 
     return stmt
 
 
+async def _restricted(
+    session: AsyncSession, q: str, tags: list[str], ingredients: list[str], on_sale: bool
+) -> tuple[Select, dict[int, int]]:
+    """Recipes matching every filter, and the sale percentages found on the way.
+
+    The list, the facets and the suggestions all answer to this, so a count
+    the page shows can never disagree with the recipes a click on it lists.
+    """
+    sales = await costing.sale_percentages(session)
+    # Both restrictions apply together: on sale AND using every ingredient.
+    only = intersect(
+        set(sales) if on_sale else None,
+        await recipes_using(session, ingredients) if ingredients else None,
+    )
+    return _filtered_recipes(q.strip(), _tag_filter(tags), only), sales
+
+
 @router.get("", response_model=RecipePage)
 async def list_recipes(
     q: str = Query(default="", max_length=100),
@@ -137,13 +163,7 @@ async def list_recipes(
     per_page: int = Query(default=DEFAULT_PER_PAGE, ge=1, le=MAX_PER_PAGE),
     session: AsyncSession = Depends(get_session),
 ):
-    sales = await costing.sale_percentages(session)
-    # Both restrictions apply together: on sale AND using every ingredient.
-    only = intersect(
-        set(sales) if on_sale else None,
-        await recipes_using(session, ingredient) if ingredient else None,
-    )
-    filtered = _filtered_recipes(q.strip(), _tag_filter(tag), only)
+    filtered, sales = await _restricted(session, q, tag, ingredient, on_sale)
     total = await session.scalar(select(func.count()).select_from(filtered.subquery()))
 
     order = _SORTS[sort]
@@ -202,16 +222,131 @@ async def list_tags(
 
     Declared above /{recipe_id} so that path does not swallow "tags".
     """
-    matching = _filtered_recipes(q.strip(), _tag_filter(tag)).with_only_columns(Recipe.id)
+    counts = await _tag_counts(session, _filtered_recipes(q.strip(), _tag_filter(tag)))
+    return [{"name": name, "count": count} for name, count in sorted(counts.items())]
+
+
+async def _tag_counts(session: AsyncSession, filtered: Select) -> dict[str, int]:
+    """Every tag in use, with how many of the `filtered` recipes carry it."""
+    matching = filtered.with_only_columns(Recipe.id)
     result = await session.execute(
         select(
             RecipeTag.name,
             func.count(RecipeTag.recipe_id).filter(RecipeTag.recipe_id.in_(matching)),
-        )
-        .group_by(RecipeTag.name)
-        .order_by(RecipeTag.name)
+        ).group_by(RecipeTag.name)
     )
-    return [{"name": name, "count": count} for name, count in result.all()]
+    return dict(result.tuples().all())
+
+
+@router.get("/facets", response_model=RecipeFacets)
+async def facets(
+    q: str = Query(default="", max_length=100),
+    tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
+    ingredient: list[IngredientParam] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
+    on_sale: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
+    """What the quick row offers within the filters.
+
+    Tags come most-searched first, so the row shows what the owner reaches
+    for; with no history that is the tags with the most recipes. Every tag is
+    listed, zeros included, and the page leaves out the dead ends itself.
+
+    Declared above /{recipe_id} so that path does not swallow "facets".
+    """
+    filtered, sales = await _restricted(session, q, tag, ingredient, on_sale)
+    counts = await _tag_counts(session, filtered)
+    frequency = await search_history.tag_frequency(session)
+    tags = sorted(counts, key=lambda name: (-frequency[name], -counts[name], name))
+
+    # Nothing to count without prices; with them but with Kroger down the
+    # count is honestly zero.
+    on_sale_count = None
+    if await costing.pricing_store(session) is not None:
+        on_sale_count = await session.scalar(
+            select(func.count()).select_from(filtered.where(Recipe.id.in_(set(sales))).subquery())
+        )
+
+    identity = await Identity.of(session)
+    names = await ingredient_names(session)
+    keys = dict.fromkeys(identity.resolve(k.strip().lower()) for k in ingredient if k.strip())
+    return {
+        "tags": [{"name": name, "count": counts[name]} for name in tags],
+        "on_sale": on_sale_count,
+        "ingredients": [
+            IngredientName(key=key, name=names.get(key) or key.replace("-", " ")) for key in keys
+        ],
+    }
+
+
+@router.get("/suggest", response_model=SearchSuggestions)
+async def suggest(
+    text: str = Query(default="", max_length=100),
+    q: str = Query(default="", max_length=100),
+    tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
+    ingredient: list[IngredientParam] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
+    on_sale: bool = False,
+    session: AsyncSession = Depends(get_session),
+):
+    """Ingredients, tags and recipes whose names contain the typed `text`.
+
+    Counted within the filters, so a suggestion promises what picking it
+    would leave. One that would leave nothing is a dead end and is left out,
+    as is anything the filters already hold.
+
+    Declared above /{recipe_id} so that path does not swallow "suggest".
+    """
+    needle = text.strip().casefold()
+    if not needle:
+        return {"ingredients": [], "tags": [], "recipes": []}
+    filtered, _ = await _restricted(session, q, tag, ingredient, on_sale)
+
+    counts = await _tag_counts(session, filtered)
+    picked_tags = set(_tag_filter(tag))
+    tags = sorted(
+        (
+            (name, count)
+            for name, count in counts.items()
+            if count and needle in name.casefold() and name not in picked_tags
+        ),
+        key=lambda pair: (-pair[1], pair[0]),
+    )[:MAX_SUGGESTIONS]
+
+    identity = await Identity.of(session)
+    picked = {identity.resolve(k.strip().lower()) for k in ingredient if k.strip()}
+    in_scope = filtered.with_only_columns(Recipe.id)
+    used: dict[int, set[str]] = {}
+    rows = await session.execute(
+        select(Ingredient.recipe_id, Ingredient.name).where(Ingredient.recipe_id.in_(in_scope))
+    )
+    for recipe_id, name in rows.tuples():
+        used.setdefault(recipe_id, set()).add(identity.key(name))
+    uses: Counter[str] = Counter(key for keys in used.values() for key in keys)
+    names = await ingredient_names(session)
+    named = [
+        (key, names.get(key) or key.replace("-", " "), count)
+        for key, count in uses.items()
+        if key and key not in picked
+    ]
+    ingredients = sorted(
+        (item for item in named if needle in item[1].casefold()),
+        key=lambda item: (-item[2], item[1]),
+    )[:MAX_SUGGESTIONS]
+
+    titled = await session.scalars(
+        filtered.where(Recipe.title.ilike(_contains(needle), escape="\\"))
+        .options(noload(Recipe.ingredients))
+        .order_by(Recipe.title.asc(), Recipe.id.asc())
+        .limit(MAX_SUGGESTIONS)
+    )
+    return {
+        "ingredients": [
+            IngredientSuggestion(key=key, name=name, count=count)
+            for key, name, count in ingredients
+        ],
+        "tags": [{"name": name, "count": count} for name, count in tags],
+        "recipes": [RecipeRef(id=r.id, title=r.title) for r in titled],
+    }
 
 
 @router.get("/suggestions", response_model=Suggestions)

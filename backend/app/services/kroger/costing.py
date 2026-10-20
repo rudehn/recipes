@@ -252,6 +252,16 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
     )
 
 
+async def pricing_store(session: AsyncSession):
+    """The store prices come from, or None when there are no prices to show.
+
+    Pricing off and no store chosen are the two reasons sale data does not
+    exist at all, as distinct from existing and being empty.
+    """
+    store = await settings_service.selected_store(session)
+    return store if enabled() else None
+
+
 async def sale_percentages(session: AsyncSession) -> dict[int, int]:
     """Whole percent off, for each recipe whose ingredients are on offer.
 
@@ -266,8 +276,8 @@ async def sale_percentages(session: AsyncSession) -> dict[int, int]:
     reason there is no sale data (pricing off, no store, Kroger down) is
     an empty answer, so the recipe list still loads.
     """
-    store = await settings_service.selected_store(session)
-    if not enabled() or store is None:
+    store = await pricing_store(session)
+    if store is None:
         return {}
     box = (await session.execute(select(Recipe))).scalars().unique().all()
     recipes = [r for r in box if r.ingredients]
