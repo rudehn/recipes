@@ -66,6 +66,9 @@ function setup({
   };
 }
 
+/** Generous for the 250 ms debounce plus a request, so a loaded machine is not a failure. */
+const SETTLE = { timeout: 4000 };
+
 function options(): string[] {
   const list = screen.queryByRole("listbox");
   return list ? within(list).getAllByRole("option").map((o) => o.textContent ?? "") : [];
@@ -121,11 +124,34 @@ describe("RecipeSearchBox", () => {
     expect(search()).toEqual(EMPTY_SEARCH);
   });
 
+  it("forgets the highlighted recent search with Delete, keeping the highlight in the list", async () => {
+    const { user, backend, box } = setup({
+      recent: [
+        ...RECENT,
+        { signature: "sig-soup", text: "soup", tags: [], ingredients: [], on_sale: false },
+      ],
+    });
+    await user.click(box);
+    await screen.findByText("Recent searches");
+
+    await user.keyboard("{ArrowDown}{Delete}");
+    expect(backend.requestsTo("DELETE /api/recipes/searches")[0].searchParams.get("signature")).toBe(
+      "sig-dinner-sale",
+    );
+    expect(options()).toEqual(["↺blackstone · 🥕 ground beef✕", "↺“soup”✕"]);
+    expect(screen.getByRole("option", { name: /blackstone/ })).toHaveAttribute("aria-selected", "true");
+
+    // Forgetting the last row steps the highlight back to the one above.
+    await user.keyboard("{ArrowDown}{Delete}");
+    expect(options()).toEqual(["↺blackstone · 🥕 ground beef✕"]);
+    expect(screen.getByRole("option", { name: /blackstone/ })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("switches to grouped suggestions as you type", async () => {
     const { user, backend, box } = setup();
     await user.type(box, "chi");
 
-    await screen.findByText("Ingredient");
+    await screen.findByText("Ingredient", {}, SETTLE);
     const headings = screen.getAllByRole("presentation").map((h) => h.textContent);
     expect(headings).toEqual(["Ingredient", "Tag", "Recipe"]);
     expect(options()).toEqual([
@@ -137,15 +163,17 @@ describe("RecipeSearchBox", () => {
     ]);
     const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
     expect(marks).toEqual(["chi", "chi", "chi", "Chi"]);
-    expect(backend.requestsTo("GET /api/recipes/suggest")).toHaveLength(1);
-    expect(backend.requestsTo("GET /api/recipes/suggest")[0].searchParams.get("text")).toBe("chi");
+    // Keystrokes may straddle a debounce window; the last ask is the settled one.
+    expect(backend.requestsTo("GET /api/recipes/suggest").at(-1)?.searchParams.get("text")).toBe(
+      "chi",
+    );
   });
 
   it("asks for suggestions given the tokens already in the box", async () => {
     const { user, backend, box } = setup({ initial: { ...EMPTY_SEARCH, tags: ["dinner"] } });
     await user.type(box, "chi");
-    await screen.findByText("Ingredient");
-    expect(backend.requestsTo("GET /api/recipes/suggest")[0].searchParams.getAll("tag")).toEqual([
+    await screen.findByText("Ingredient", {}, SETTLE);
+    expect(backend.requestsTo("GET /api/recipes/suggest").at(-1)?.searchParams.getAll("tag")).toEqual([
       "dinner",
     ]);
   });
@@ -153,7 +181,7 @@ describe("RecipeSearchBox", () => {
   it("adds a picked ingredient as a token and clears the typing", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: /chicken thighs/ }));
+    await user.click(await screen.findByRole("option", { name: /chicken thighs/ }, SETTLE));
 
     expect(search().ingredients).toEqual([{ key: "chicken-thighs", name: "chicken thighs" }]);
     expect(box).toHaveValue("");
@@ -163,7 +191,7 @@ describe("RecipeSearchBox", () => {
   it("adds a picked tag as a token", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: /chinese/ }));
+    await user.click(await screen.findByRole("option", { name: /chinese/ }, SETTLE));
 
     expect(search().tags).toEqual(["chinese"]);
     expect(box).toHaveValue("");
@@ -192,7 +220,7 @@ describe("RecipeSearchBox", () => {
   it("opens a recipe picked from the suggestions", async () => {
     const { user, box, onOpenRecipe, search } = setup();
     await user.type(box, "chi");
-    await user.click(await screen.findByRole("option", { name: "Chicken Fried Rice" }));
+    await user.click(await screen.findByRole("option", { name: "Chicken Fried Rice" }, SETTLE));
 
     expect(onOpenRecipe).toHaveBeenCalledWith(42);
     expect(search()).toEqual(EMPTY_SEARCH);
@@ -201,7 +229,7 @@ describe("RecipeSearchBox", () => {
   it("moves through suggestions with the arrow keys", async () => {
     const { user, box, search } = setup();
     await user.type(box, "chi");
-    await screen.findByText("Ingredient");
+    await screen.findByText("Ingredient", {}, SETTLE);
 
     await user.keyboard("{ArrowDown}{ArrowDown}");
     const second = screen.getByRole("option", { name: /chives/ });

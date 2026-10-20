@@ -1,12 +1,19 @@
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 // Vitest runs without globals, so Testing Library's own auto-cleanup hook
 // never registers. Without this, mounted trees pile up across tests and
 // queries start matching elements from a previous test.
 afterEach(cleanup);
+
+// A failing wait is a test that was never going to pass, so a long timeout
+// costs nothing there. A passing one returns the moment its element appears;
+// the default second is what a test file's first mount of the whole app - and
+// every debounced search - can overrun when the files run in parallel on a
+// loaded machine, which showed up as a different test failing now and then.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom implements no object URLs, and the recipe form previews a newly chosen
 // photo with one. A fixed string is enough: tests assert that the preview

@@ -281,6 +281,16 @@ export function RecipeSearchBox({
       case "Tab":
         close();
         break;
+      case "Delete": {
+        // The keyboard's way to the visible x: forgets the recent search moved to.
+        const option = listed && active >= 0 ? options[active] : null;
+        if (option?.kind !== "recent") break;
+        e.preventDefault();
+        forget(option.signature);
+        // The next search slides into this row; past the last, step back.
+        setActive(active === options.length - 1 ? active - 1 : active);
+        break;
+      }
       case "Backspace":
         if (draft === "" && tokens.length > 0) onChange(without(search, tokens[tokens.length - 1]));
         break;
@@ -382,7 +392,10 @@ export function RecipeSearchBox({
           enterKeyHint="search"
           onChange={handleChange}
           onKeyDown={handleKeyDown}
-          onFocus={() => setOpen(true)}
+          onFocus={() => {
+            pressingList.current = false;
+            setOpen(true);
+          }}
           onClick={() => setOpen(true)}
           onBlur={() => {
             // A press on a row can take focus on some touch browsers before
@@ -413,6 +426,14 @@ export function RecipeSearchBox({
           className="search-drop"
           onPointerDown={() => {
             pressingList.current = true;
+          }}
+          // A press dragged off the dropdown never clicks a row, and must not
+          // leave the next real blur to be swallowed.
+          onPointerUp={() => {
+            pressingList.current = false;
+          }}
+          onPointerCancel={() => {
+            pressingList.current = false;
           }}
           // Keeps focus in the field, so the keyboard stays up on a phone and
           // the field never blurs on the way to the click.
