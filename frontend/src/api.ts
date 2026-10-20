@@ -1,3 +1,5 @@
+import { toISODate } from "./dates";
+
 export type Meal = "breakfast" | "lunch" | "dinner" | "snack";
 
 /** A Kroger store, exactly as Kroger describes it. Never reworded for display. */
@@ -897,7 +899,15 @@ function filterParams({ q, tags, ingredients, onSale }: RecipeFilters) {
 export const api = {
   listRecipes: ({ sort, page, per_page, ...filters }: RecipeQuery = {}) =>
     request<Page<RecipeSummary>>(
-      `/api/recipes${queryString({ ...filterParams(filters), sort, page, per_page })}`,
+      `/api/recipes${queryString({
+        ...filterParams(filters),
+        sort,
+        // Recently cooked reads plans up to today, and today is this device's:
+        // the server's clock may already be on tomorrow.
+        today: sort === "cooked" ? toISODate(new Date()) : undefined,
+        page,
+        per_page,
+      })}`,
     ),
   recipeFacets: (filters: RecipeFilters = {}) =>
     request<RecipeFacets>(`/api/recipes/facets${queryString(filterParams(filters))}`),

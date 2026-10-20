@@ -332,6 +332,22 @@ async def test_recently_cooked_puts_the_latest_past_plan_first(client):
     assert await titles(client, sort="cooked") == ["Mango", "Zucchini", "Beans", "Apple", "Cake"]
 
 
+async def test_recently_cooked_counts_from_the_day_the_client_says_it_is(client):
+    """"Today" is the owner's, not the server's: a server on UTC is already
+    on tomorrow during a US evening. Mango is planned for the 11th and
+    Zucchini the 10th, so on the 10th Mango is still to come."""
+    recipes = {t: (await make_recipe(client, t))["id"] for t in ("Zucchini", "Mango", "Apple")}
+    for title, day in (("Zucchini", "2030-01-10"), ("Mango", "2030-01-11")):
+        resp = await client.post(
+            "/api/meal-plan",
+            json={"plan_date": day, "meal": "dinner", "recipe_id": recipes[title]},
+        )
+        assert resp.status_code == 201, resp.text
+
+    assert await titles(client, sort="cooked", today="2030-01-11") == ["Mango", "Zucchini", "Apple"]
+    assert await titles(client, sort="cooked", today="2030-01-10") == ["Zucchini", "Apple", "Mango"]
+
+
 async def facets(client, **params):
     resp = await client.get("/api/recipes/facets", params=params)
     assert resp.status_code == 200, resp.text

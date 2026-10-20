@@ -121,6 +121,26 @@ describe("request", () => {
     );
   });
 
+  it("sends the local date with Recently cooked, and only with it", async () => {
+    // The server may run on UTC, already tomorrow during a US evening, and a
+    // plan for tomorrow has not been cooked yet.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date(2026, 9, 20, 22, 30));
+      const fetchMock = stubFetch(() =>
+        jsonResponse({ items: [], total: 0, page: 1, per_page: 24 }),
+      );
+
+      await api.listRecipes({ sort: "cooked" });
+      expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes?sort=cooked&today=2026-10-20");
+
+      await api.listRecipes({ sort: "newest" });
+      expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes?sort=newest");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("asks for tag counts within the same filters as the list", async () => {
     const fetchMock = stubFetch(() => jsonResponse([]));
 

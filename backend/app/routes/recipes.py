@@ -167,6 +167,7 @@ async def list_recipes(
     ingredient: list[IngredientParam] = Query(default=[], max_length=MAX_INGREDIENT_FILTERS),
     sort: RecipeSort = "title",
     on_sale: bool = False,
+    today: date | None = None,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=DEFAULT_PER_PAGE, ge=1, le=MAX_PER_PAGE),
     session: AsyncSession = Depends(get_session),
@@ -184,12 +185,14 @@ async def list_recipes(
     if sort == "cooked":
         # Plans in the future are intentions, not history: a recipe planned
         # only for tomorrow has not been cooked, so it ranks with the rest.
+        # Today is the owner's, as the page sends it: the server's clock may
+        # be on UTC, already tomorrow during a US evening.
         last = (
             select(
                 MealPlanEntry.recipe_id.label("recipe_id"),
                 func.max(MealPlanEntry.plan_date).label("last"),
             )
-            .where(MealPlanEntry.plan_date <= date.today())
+            .where(MealPlanEntry.plan_date <= (today or date.today()))
             .group_by(MealPlanEntry.recipe_id)
             .subquery()
         )
