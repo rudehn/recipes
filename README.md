@@ -16,8 +16,9 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   The title, ingredients, steps, times, servings and tags are read from how the recipe is written - Markdown headings, "Ingredients:" labels, bullets, "Serves 4" - with no AI model and nothing sent anywhere, and fill in the form for you to review.
   Notes and tips are kept at the end of the description, the chat's small talk is left out, and the form says what it could not find, such as an ingredients list.
   A "Source:" link in the text becomes the recipe's link, and is checked against your box like an imported one.
-* Tags you can combine: tap several to narrow the box to recipes carrying all of them, with each tag counting how many recipes it would leave.
-  Search also matches ingredients ("what can I make with basil?").
+* One search box finds a recipe by ingredient, tag or title, and combines them: "🥕 chicken thighs · dinner" leaves the dinners that use chicken thighs, an ingredient matched by what it is rather than how it is spelled.
+  Typing suggests ingredients, tags and recipes, each counting how many recipes it would leave, and clicking into the empty box offers your recent searches, the same on every device.
+  Under the box, one row holds the tags you search for most, On sale and All tags; four sorts put the box A-Z, newest first, most recently cooked or biggest sale first.
   An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.
 * Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
 * Generated grocery list for a date range.
@@ -25,6 +26,7 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
 * Ingredients: one page per ingredient, with the recipes that use it, whether it is a staple, the product it is priced with and the food it counts as, each changeable where it is shown.
   Two names for one thing - "ground cumin" and "cumin" - can be merged once, and every part of the app then treats them as one, recipes keeping their wording; likely pairs are suggested, never merged without you.
   A broken recipe line can be fixed from its ingredient's page, or read again by today's importer.
+  Needs a look lists every line that will price, shop or count wrongly, by recipe or by ingredient, each with a link to its fix.
   The Staples view is the pantry: items you always keep in stock, the ones that ran out first.
   Out-of-stock staples are added to the grocery list, and checking a staple off the list marks it back in stock.
   When a planned recipe calls for a staple you already have, it is set aside under "already in your pantry" rather than put on the list - listed with the amount the week's meals need, so you can buy more anyway if the jar won't cover it.
@@ -35,7 +37,7 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   The figure is shown only when every ingredient could be counted; otherwise the recipe says which ones could not and why, and a food can be chosen for an ingredient once for every recipe that uses it.
 * Optional grocery pricing from Kroger, off unless you supply an API key.
   Each line on the list carries a price and the product it came from, with a total that says how much of the list it actually covers - "est. $84.39, 26 of 26 priced" - because a total that quietly drops what it could not match reads exactly like a complete one.
-  Items on offer show the saving, and a folded panel lists the things you cook with that are discounted this week.
+  Items on offer show the saving, and a recipe this week's offers take 15% or more off wears a "% off" ribbon on the Recipes page, where it can be filtered to and sorted by.
   Tap any price to see the alternatives and pick a different product; a hand-picked choice is never overwritten.
 * Send the list to a real Kroger cart, once you connect your Kroger account.
   You see exactly what will be ordered first - products and quantities both - because Kroger's cart cannot be read back or emptied by this app, so nothing goes without being reviewed.
