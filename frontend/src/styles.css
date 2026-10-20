@@ -841,12 +841,17 @@ input:focus, select:focus, textarea:focus {
 .quick-row .quick-tag:first-child {
   flex: 0 1 auto;
   display: inline-flex;
+  /* Its count on the name's baseline, as in the inline chips beside it; a
+     flex line would otherwise lift the smaller type to the top. */
+  align-items: baseline;
   min-width: 0;
 }
 
+/* Clipped rather than hidden: a box that hides its overflow takes its
+   bottom edge for a baseline, which would drop the count beside it. */
 .quick-name {
   min-width: 0;
-  overflow: hidden;
+  overflow: clip;
   text-overflow: ellipsis;
 }
 
@@ -1841,9 +1846,12 @@ button.cook-duration:hover {
   box-shadow: var(--ring);
 }
 
+/* Wrapped by its least width rather than by the width a text field picks
+   for itself, so Clear stays on the typing's line instead of dropping to
+   one of its own under it. */
 .recipe-search-box input,
 .recipe-search-box input:focus {
-  flex: 1;
+  flex: 1 1 120px;
   min-width: 120px;
   padding: var(--space-4) 0;
   border: none;
@@ -4164,8 +4172,18 @@ body.has-install-hint .page {
 @media (max-width: 720px) {
   /* ----------------------------------------------------------- shell --- */
 
-  /* The quick row drops its counts to make room for more tags. */
+  /* The quick row drops its counts, and its chips their spare padding and a
+     step of type, to make room for more tags: at 375px that is two short
+     tags beside On sale and All tags rather than one. */
   .quick-row .count { display: none; }
+
+  .quick-row,
+  .quick-tail { gap: var(--space-6); }
+
+  .quick-row .tag-pill {
+    padding-inline: var(--space-12);
+    font-size: var(--text-sm);
+  }
 
   /* The box takes the whole width, and the sort sits at the end of the line
      saying what is listed - placed after it, though it comes first in the
@@ -4182,6 +4200,14 @@ body.has-install-hint .page {
   .recipes-sort {
     order: 1;
     align-self: center;
+  }
+
+  /* One line beside the sort, cut short rather than wrapped into a narrow
+     column: the count leads it, and what it describes is in the box above. */
+  .recipes-result {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* A thumbnail's corner is small; the ribbon sits tighter in it. */

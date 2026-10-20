@@ -152,6 +152,12 @@ describe("the quick row", () => {
   it("drops its counts on a phone", () => {
     expect(rule(mediaBlock(below(PHONE)), ".quick-row .count")).toMatch(/display:\s*none/);
   });
+
+  it("keeps the first chip's count on its name's line", () => {
+    // A name that hides its overflow takes its bottom edge for a baseline,
+    // and the count beside it sank three pixels below every other count.
+    expect(rule(css, ".quick-name")).toMatch(/overflow:\s*clip/);
+  });
 });
 
 /**
@@ -170,6 +176,12 @@ describe("the Recipes page controls", () => {
     const controls = rules(".recipes-controls");
     expect(controls.length).toBeGreaterThan(0);
     for (const rule of controls) expect(rule).not.toMatch(/grid-template-areas/);
+  });
+
+  it("wrap the search's typing by its least width, keeping Clear on its line", () => {
+    // A text field's own width is about twenty characters; wrapped by that,
+    // Clear dropped to a line of its own under a phone's tokens.
+    expect(rules(".recipe-search-box input:focus")[0]).toMatch(/flex:\s*1 1 120px/);
   });
 });
 
