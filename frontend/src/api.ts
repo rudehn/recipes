@@ -63,6 +63,8 @@ export interface RecipeSummary {
   cook_minutes: number | null;
   servings: number | null;
   tags: string[];
+  /** How far below regular price its ingredients are right now, whole percent. Null unless it is on sale. */
+  sale_percent: number | null;
 }
 
 export interface Recipe extends RecipeSummary {
@@ -98,12 +100,65 @@ export interface RecipeFilters {
   q?: string;
   /** A recipe has to carry every one of these. */
   tags?: readonly string[];
+  /** Canonical ingredient keys; a recipe has to use every one of these. */
+  ingredients?: readonly string[];
+  /** Only recipes that are on sale. */
+  onSale?: boolean;
 }
 
+export type RecipeSort = "title" | "newest" | "cooked" | "sale";
+
 export interface RecipeQuery extends RecipeFilters {
-  sort?: "title" | "newest";
+  sort?: RecipeSort;
   page?: number;
   per_page?: number;
+}
+
+/** An ingredient by its canonical key, with the name to show for it. */
+export interface IngredientName {
+  key: string;
+  name: string;
+}
+
+/**
+ * What a recipe search could add. Tag counts are what choosing that tag would
+ * leave. `on_sale` is how many of the matches are on sale, null when sales are
+ * unavailable (pricing off, no store, Kroger unreachable). `ingredients` names
+ * the ingredient filters already applied.
+ */
+export interface RecipeFacets {
+  tags: TagCount[];
+  on_sale: number | null;
+  ingredients: IngredientName[];
+}
+
+/** An ingredient suggestion, with how many recipes choosing it would leave. */
+export interface IngredientSuggestion extends IngredientName {
+  count: number;
+}
+
+/** What typing into the search box offers: ingredients, tags, and recipes to open. */
+export interface SearchSuggestions {
+  ingredients: IngredientSuggestion[];
+  tags: TagCount[];
+  recipes: RecipeRef[];
+}
+
+/** A search as it is recorded: ingredients by key. */
+export interface SearchInput {
+  text: string;
+  tags: string[];
+  ingredients: string[];
+  on_sale: boolean;
+}
+
+/** A recorded search, with its ingredients named for display. */
+export interface RecentSearch {
+  signature: string;
+  text: string;
+  tags: string[];
+  ingredients: IngredientName[];
+  on_sale: boolean;
 }
 
 export interface RecipeInput {
@@ -880,11 +935,28 @@ function queryString(params: Record<string, QueryValue | readonly string[]>): st
   return query ? `?${query}` : "";
 }
 
+/** The query params every recipe search endpoint shares. */
+function filterParams({ q, tags, ingredients, onSale }: RecipeFilters) {
+  return { q, tag: tags, ingredient: ingredients, on_sale: onSale ? "true" : undefined };
+}
+
 export const api = {
-  listRecipes: ({ q, tags, sort, page, per_page }: RecipeQuery = {}) =>
+  listRecipes: ({ sort, page, per_page, ...filters }: RecipeQuery = {}) =>
     request<Page<RecipeSummary>>(
-      `/api/recipes${queryString({ q, tag: tags, sort, page, per_page })}`,
+      `/api/recipes${queryString({ ...filterParams(filters), sort, page, per_page })}`,
     ),
+  recipeFacets: (filters: RecipeFilters = {}) =>
+    request<RecipeFacets>(`/api/recipes/facets${queryString(filterParams(filters))}`),
+  suggestRecipes: (text: string, filters: RecipeFilters = {}) =>
+    request<SearchSuggestions>(
+      `/api/recipes/suggest${queryString({ text, ...filterParams(filters) })}`,
+    ),
+  recentSearches: (limit = 5) =>
+    request<RecentSearch[]>(`/api/recipes/searches${queryString({ limit })}`),
+  recordSearch: (search: SearchInput) =>
+    request<void>("/api/recipes/searches", { method: "POST", body: JSON.stringify(search) }),
+  forgetSearch: (signature: string) =>
+    request<void>(`/api/recipes/searches${queryString({ signature })}`, { method: "DELETE" }),
   listRecipeTags: ({ q, tags }: RecipeFilters = {}) =>
     request<TagCount[]>(`/api/recipes/tags${queryString({ q, tag: tags })}`),
   getRecipe: (id: number) => request<Recipe>(`/api/recipes/${id}`),

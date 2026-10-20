@@ -31,6 +31,7 @@ import type {
   PlanCost,
   Recipe,
   RecipeDraft,
+  RecipeFacets,
   RecipeSummary,
   TagCount,
 } from "../api";
@@ -51,6 +52,7 @@ export function recipeSummary(overrides: Partial<RecipeSummary> = {}): RecipeSum
     cook_minutes: 20,
     servings: 4,
     tags: [],
+    sale_percent: null,
     ...overrides,
   };
 }
@@ -65,6 +67,10 @@ export function page<T>(items: T[], overrides: Partial<Page<T>> = {}): Page<T> {
 
 export function tagCount(name: string, count = 1): TagCount {
   return { name, count };
+}
+
+export function recipeFacets(overrides: Partial<RecipeFacets> = {}): RecipeFacets {
+  return { tags: [], on_sale: null, ingredients: [], ...overrides };
 }
 
 export function recipe(overrides: Partial<Recipe> = {}): Recipe {

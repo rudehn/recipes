@@ -31,7 +31,7 @@ describe("request", () => {
     const [url] = fetchMock.mock.calls.at(-1)!;
     const init = lastInit(fetchMock);
     expect(url).toBe("/api/pantry");
-    expect(init.method).toBe("POST");
+    expect(init?.method).toBe("POST");
     expect(init.headers).toEqual({ "Content-Type": "application/json" });
     expect(JSON.parse(String(init.body))).toEqual({ name: "olive oil", in_stock: true });
   });
@@ -131,6 +131,49 @@ describe("request", () => {
 
     await api.listRecipeTags();
     expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/tags");
+  });
+
+  it("sends ingredients as repeated params and on sale only when set", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ tags: [], on_sale: null, ingredients: [] }));
+
+    await api.recipeFacets({ ingredients: ["ground-beef", "rice"], onSale: true });
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe(
+      "/api/recipes/facets?ingredient=ground-beef&ingredient=rice&on_sale=true",
+    );
+
+    await api.recipeFacets({ onSale: false });
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/facets");
+  });
+
+  it("asks for suggestions with the typed text and the filters", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ingredients: [], tags: [], recipes: [] }));
+
+    await api.suggestRecipes("100% egg", { tags: ["dinner"] });
+
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/suggest?text=100%25+egg&tag=dinner");
+  });
+
+  it("records, lists and forgets searches", async () => {
+    const fetchMock = stubFetch(() => new Response(null, { status: 204 }));
+
+    await api.recordSearch({ text: "x", tags: ["a"], ingredients: ["rice"], on_sale: true });
+    const [url, init] = fetchMock.mock.calls.at(-1)!;
+    expect(url).toBe("/api/recipes/searches");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({
+      text: "x",
+      tags: ["a"],
+      ingredients: ["rice"],
+      on_sale: true,
+    });
+
+    await api.forgetSearch("a|b");
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/searches?signature=a%7Cb");
+    expect(fetchMock.mock.calls.at(-1)![1]?.method).toBe("DELETE");
+
+    fetchMock.mockImplementation(async () => jsonResponse([]));
+    await api.recentSearches();
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe("/api/recipes/searches?limit=5");
   });
 
   it("passes the date range as query parameters", async () => {
