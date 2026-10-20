@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -146,11 +146,53 @@ describe("QuickRow", () => {
     expect(shown()).toEqual(["dinner12", "quick9", "vegetarian7", "On sale4", "All tags ▾"]);
   });
 
-  it("returns focus to All tags when Escape closes the panel", async () => {
+  it("returns focus to All tags when Escape closes the panel, without scrolling to it", async () => {
     setup();
     const toggle = screen.getByRole("button", { name: /All tags/ });
     await userEvent.click(toggle);
+    const focus = vi.spyOn(toggle, "focus");
     await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "All tags" })).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
+  it("closes the panel on a press elsewhere without pulling focus back to All tags", async () => {
+    // Focusing the toggle on the press would scroll it into view before the
+    // release, and the recipe card pressed would never get its click.
+    render(
+      <>
+        <QuickRow
+          tags={TAGS}
+          onSale={4}
+          saleSelected={false}
+          onPickTag={() => {}}
+          onPickSale={() => {}}
+        />
+        <input aria-label="elsewhere" />
+        <p>A recipe card</p>
+      </>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: /All tags/ }));
+    screen.getByLabelText("elsewhere").focus();
+
+    fireEvent.pointerDown(screen.getByText("A recipe card"));
+
+    expect(screen.queryByRole("group", { name: "All tags" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText("elsewhere"));
+  });
+
+  it("puts focus back on All tags when a press elsewhere closes the panel focus was in", async () => {
+    // The chip that held focus goes with the panel, and focus with it.
+    setup();
+    const toggle = screen.getByRole("button", { name: /All tags/ });
+    await userEvent.click(toggle);
+    within(screen.getByRole("group", { name: "All tags" }))
+      .getByRole("button", { name: /dinner/ })
+      .focus();
+
+    fireEvent.pointerDown(document.body);
+
     expect(screen.queryByRole("group", { name: "All tags" })).toBeNull();
     expect(document.activeElement).toBe(toggle);
   });

@@ -77,13 +77,19 @@ export function QuickRow({
 
   const wrap = useRef<HTMLDivElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
       if (e.type === "keydown" && (e as KeyboardEvent).key !== "Escape") return;
       if (e.type === "pointerdown" && wrap.current?.contains(e.target as Node)) return;
+      // Focus comes back to the toggle from Escape, or from a chip that is
+      // about to go with the panel - never just for a press elsewhere, which
+      // would scroll the toggle into view before the release, so the recipe
+      // card pressed would lose its click.
+      const inPanel = panel.current?.contains(document.activeElement) ?? false;
       setOpen(false);
-      toggle.current?.focus();
+      if (e.type === "keydown" || inPanel) toggle.current?.focus({ preventScroll: true });
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -145,7 +151,7 @@ export function QuickRow({
         </div>
       </div>
       {open && (
-        <div className="quick-panel" role="group" aria-label="All tags">
+        <div className="quick-panel" role="group" aria-label="All tags" ref={panel}>
           {alphabetical.map((tag) => (
             <button
               key={tag.name}
