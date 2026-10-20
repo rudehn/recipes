@@ -958,6 +958,28 @@ async def test_the_list_answers_without_sale_data_when_kroger_is_down(
     assert [r["title"] for r in (await listing(client, sort="sale"))["items"]] == ["Test bake"]
 
 
+async def test_facets_and_suggestions_answer_without_sale_data_when_kroger_is_down(
+    client, catalog, monkeypatch
+):
+    await seed(["sugar"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+
+    async def down(*args, **kwargs):
+        raise kroger.KrogerError("down")
+
+    monkeypatch.setattr(products, "by_ids", down)
+
+    facets = await client.get("/api/recipes/facets")
+    suggested = await client.get("/api/recipes/suggest", params={"text": "sug"})
+
+    assert facets.status_code == 200, facets.text
+    assert facets.json()["on_sale"] == 0
+    assert suggested.status_code == 200, suggested.text
+    assert [i["name"] for i in suggested.json()["ingredients"]] == ["sugar"]
+    assert [r["title"] for r in suggested.json()["recipes"]] == ["Sugar cookies"]
+
+
 async def test_no_store_means_nothing_is_on_sale(client, catalog):
     await seed(["sugar"], store=False)
 
