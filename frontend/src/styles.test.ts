@@ -162,6 +162,14 @@ describe("the quick row", () => {
     expect(tails(mediaBlock(below(PHONE)))).toMatch(/margin-left:\s*auto/);
   });
 
+  it("gives its chips a full tap's height on a phone", () => {
+    // Standalone controls take the whole --tap; the row's smaller type had
+    // left its chips 39px tall.
+    expect(rule(mediaBlock(below(PHONE)), ".quick-row .tag-pill")).toMatch(
+      /min-height:\s*var\(--tap\)/,
+    );
+  });
+
   it("keeps the first chip's count on its name's line", () => {
     // A name that hides its overflow takes its bottom edge for a baseline,
     // and the count beside it sank three pixels below every other count.

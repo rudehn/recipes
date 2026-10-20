@@ -4192,10 +4192,17 @@ body.has-install-hint .page {
      sit in the same place on every search. */
   .quick-tail { margin-left: auto; }
 
+  /* Narrower, but a full tap tall: each chip is a control of its own, and
+     the smaller type alone left it at 39px. */
   .quick-row .tag-pill {
+    min-height: var(--tap);
     padding-inline: var(--space-12);
     font-size: var(--text-sm);
   }
+
+  /* Its count is hidden here, so there is no baseline to share, and the name
+     sits in the middle of the taller chip like every other label. */
+  .quick-row .quick-tag:first-child { align-items: center; }
 
   /* The box takes the whole width, and the sort sits at the end of the line
      saying what is listed - placed after it, though it comes first in the
