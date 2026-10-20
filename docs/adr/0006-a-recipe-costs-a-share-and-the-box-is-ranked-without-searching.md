@@ -18,11 +18,11 @@ A weight-sold rate is charged at the rate with no floor: a costing is not a purc
 Where an amount cannot be related to its package, the line is costed as the whole package and carries `whole_package: true`.
 An ingredient with no amount at all is not priced.
 
-Coverage travels with every figure, in the shape "est. $8.40 · 3 of 4 ingredients priced", on the recipe page and the planner.
+Coverage travels with every figure, in the shape "est. $8.40 · 3 of 4 ingredients priced", on the recipe page, the planner, and the suggestions.
 
 A single recipe's page may search for ingredients nothing has matched yet.
 Ranking the whole box may not: `matching.stored_picks` answers only from products already decided on, and a recipe nothing has priced is not ranked.
-A recipe is called on sale only when at least 80 percent of its ingredients are priced.
+"Cheap" means below the median cost per serving across the recipes that are at least 80 percent priced, and only once three or more are.
 
 ## Why
 
@@ -32,13 +32,13 @@ A recipe is called on sale only when at least 80 percent of its ingredients are 
 Both arrive as an amount in a unit the size parser does not know.
 So the figure is shown with its reason in the row rather than folded silently into the total, and "salt, to taste" - no amount at all - is left unpriced, because a package of salt would be wrong by a thousand.
 
-**Listing the recipes must not be a search per ingredient in the box.**
+**The first visit to the recipes page must not be a search per ingredient in the box.**
 Two hundred recipes is a few hundred distinct ingredients, and a search each would be slow and would spend the day's allowance on a page that is merely being read.
-Using only remembered picks makes the sale ribbons a batched lookup at most, and means they improve as grocery lists are priced.
+Using only remembered picks makes the suggestions a batched lookup at most, and means they improve as grocery lists are priced.
 
-**Never against a price history.**
+**Below the median across the box, never against a price history.**
 Issue 13 records why: accumulating prices over time is prohibited by Kroger's acceptable use policy.
-So a recipe is compared with its own regular price, not with what it used to cost.
+A median needs a distribution, so it is not offered for fewer than three costed recipes, where "below the median of two" is just "the cheaper one".
 
 **The plan cost and the grocery total are shown together on purpose.**
 Cooking prices the share of each package; shopping prices whole packages.
@@ -48,4 +48,11 @@ The gap is the pantry surplus the shopper is left holding, which is worth seeing
 
 - A recipe page costs one batched lookup, plus one search per ingredient the first time it is seen.
 - The planner costs one batched lookup plus a grocery list build per view.
-- No recipe shows a sale ribbon in a recipe box that has never had a grocery list priced, and nothing says so.
+- The suggestions are empty for a recipe box that has never had a grocery list priced, and say nothing about it: an empty fold is not shown.
+
+## Note, October 2026
+
+The cheap fold, with its median cost per serving, and the suggestions endpoint behind it were removed when the Recipes page gained search.
+What remains of ranking the box is the sale ribbon: a recipe is on sale when the offers take at least 15 percent off its regular cost, and only when at least 80 percent of its ingredient lines are priced.
+It still uses only remembered picks, so listing the recipes searches for nothing.
+Its prices are waited on for at most a second and a half, and past that the list is answered without sale data, so a slow Kroger never holds up finding a recipe.
