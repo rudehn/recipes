@@ -841,3 +841,104 @@ async def test_recipes_needing_a_look_are_listed_with_their_rows(client, catalog
         ("Optional: 1 diced ripe avocado", "amount_in_name", ["price", "nutrition"])
     ]
     assert catalog.calls == calls_before
+
+
+# ------------------------------------------------------- sale percentages ---
+
+
+async def listing(client, **params) -> dict:
+    resp = await client.get("/api/recipes", params=params)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def sale_percents(client, **params) -> dict[str, int | None]:
+    return {r["title"]: r["sale_percent"] for r in (await listing(client, **params))["items"]}
+
+
+async def test_a_recipe_mostly_on_offer_carries_its_sale_percent(client, catalog):
+    """A recipe of only sugar is as discounted as sugar is: 2.99 against 3.99
+    is 25.06% off, and the ribbon rounds down rather than promising 26."""
+    await seed(["sugar"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+
+    assert await sale_percents(client) == {"Sugar cookies": 25, "Test bake": 25}
+
+
+async def test_a_small_discount_does_not_make_a_recipe_on_sale(client, catalog):
+    """A cup of sugar is 200 g of a 2268 g bag: $0.35 regular, $0.26 today.
+    Eight cups of flour is 1000 g of a $2.59 bag: $1.14. The 9 cents off
+    $1.49 is 5.9%, under the 15% it takes."""
+    await seed(["flour", "sugar"])
+    await fetch(client)
+    await make_recipe("Flour heavy", [("sugar", 1, "cup"), ("flour", 8, "cup")])
+
+    assert (await sale_percents(client))["Flour heavy"] is None
+
+
+async def test_a_recipe_mostly_unpriced_is_never_on_sale(client, catalog):
+    """Sugar is 25% off, but saffron never matched: half the recipe is
+    unknown, and a discount on the half that is known proves nothing."""
+    await seed(["sugar", "saffron"])
+    await fetch(client)
+    await make_recipe("Saffron cake", [("sugar", 1, "cup"), ("saffron", 1, "g")])
+
+    assert (await sale_percents(client))["Saffron cake"] is None
+
+
+async def test_the_on_sale_filter_keeps_only_recipes_on_sale(client, catalog):
+    await seed(["flour", "sugar", "saffron"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    await make_recipe("Plain bread", [("flour", 1, "cup")])
+
+    body = await listing(client, on_sale=True)
+
+    assert [r["title"] for r in body["items"]] == ["Sugar cookies"]
+    assert body["total"] == 1
+
+
+async def test_biggest_sale_sorts_by_percent_then_title(client, catalog):
+    """Sugar alone is 25%. Adding a cup of flour ($0.14 at regular) dilutes
+    the 9 cents off $0.49 to 17.8%, so 17. Test bake has saffron, so it is
+    not on sale and sorts with the rest, A-Z."""
+    await seed(["flour", "sugar", "saffron"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    await make_recipe("Apple sugar cookies", [("sugar", 1, "cup")])
+    await make_recipe("Sugar bread", [("sugar", 1, "cup"), ("flour", 1, "cup")])
+    await make_recipe("Plain bread", [("flour", 1, "cup")])
+
+    body = await listing(client, sort="sale")
+
+    assert [(r["title"], r["sale_percent"]) for r in body["items"]] == [
+        ("Apple sugar cookies", 25),
+        ("Sugar cookies", 25),
+        ("Sugar bread", 17),
+        ("Plain bread", None),
+        ("Test bake", None),
+    ]
+
+
+async def test_the_list_answers_without_sale_data_when_kroger_is_down(
+    client, catalog, monkeypatch
+):
+    await seed(["sugar"])
+    await fetch(client)
+
+    async def down(*args, **kwargs):
+        raise kroger.KrogerError("down")
+
+    monkeypatch.setattr(products, "by_ids", down)
+
+    assert await sale_percents(client) == {"Test bake": None}
+    assert (await listing(client, on_sale=True))["total"] == 0
+    assert [r["title"] for r in (await listing(client, sort="sale"))["items"]] == ["Test bake"]
+
+
+async def test_no_store_means_nothing_is_on_sale(client, catalog):
+    await seed(["sugar"], store=False)
+
+    assert await sale_percents(client) == {"Test bake": None}
+    assert (await listing(client, on_sale=True))["total"] == 0

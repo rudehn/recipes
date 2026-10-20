@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from pydantic import StringConstraints
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
@@ -20,6 +20,7 @@ from ..schemas import (
     RecipeNutrition,
     RecipeOut,
     RecipePage,
+    RecipeSummary,
     Suggestions,
     TagCount,
 )
@@ -40,7 +41,7 @@ DEFAULT_PER_PAGE = 24
 # here to remove.
 MAX_PER_PAGE = 100
 
-RecipeSort = Literal["title", "newest"]
+RecipeSort = Literal["title", "newest", "sale"]
 
 # A tag filter names tags no longer than a tag can be, and no more of them
 # than anyone narrowing a recipe box would tap. Each one is a subquery, so an
@@ -54,6 +55,9 @@ MAX_TAG_FILTERS = 20
 _SORTS: dict[str, tuple] = {
     "title": (Recipe.title.asc(), Recipe.id.asc()),
     "newest": (Recipe.created_at.desc(), Recipe.id.desc()),
+    # Without sale data nothing is on sale, which leaves the title order.
+    # With it, `list_recipes` puts the percentages in front.
+    "sale": (Recipe.title.asc(), Recipe.id.asc()),
 }
 
 
@@ -87,16 +91,19 @@ def _tag_filter(tags: list[str]) -> list[str]:
     return list(dict.fromkeys(name for name in (t.strip().lower() for t in tags) if name))
 
 
-def _filtered_recipes(q: str, tags: list[str]) -> Select:
+def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> Select:
     """Recipes matching the filters, unordered and unpaginated.
 
     Both the page query and the count run off this, so a total can never
     disagree with the rows it counts. Related tables are matched with EXISTS
     rather than a join, so a recipe with three matching ingredients is still
     one result - and each tag is an EXISTS of its own, so a recipe has to
-    carry every tag named, not just one of them.
+    carry every tag named, not just one of them. `only` restricts the result
+    to those ids, and an empty set matches nothing.
     """
     stmt = select(Recipe)
+    if only is not None:
+        stmt = stmt.where(Recipe.id.in_(only))
     for name in tags:
         stmt = stmt.where(Recipe.tag_rows.any(RecipeTag.name == name))
     if q:
@@ -117,23 +124,34 @@ async def list_recipes(
     q: str = Query(default="", max_length=100),
     tag: list[TagName] = Query(default=[], max_length=MAX_TAG_FILTERS),
     sort: RecipeSort = "title",
+    on_sale: bool = False,
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=DEFAULT_PER_PAGE, ge=1, le=MAX_PER_PAGE),
     session: AsyncSession = Depends(get_session),
 ):
-    filtered = _filtered_recipes(q.strip(), _tag_filter(tag))
+    sales = await costing.sale_percentages(session)
+    filtered = _filtered_recipes(q.strip(), _tag_filter(tag), set(sales) if on_sale else None)
     total = await session.scalar(select(func.count()).select_from(filtered.subquery()))
+
+    order = _SORTS[sort]
+    if sort == "sale" and sales:
+        # Biggest first, and everything not on sale after it. An empty mapping
+        # is not valid for `case`, hence the guard.
+        order = (case(sales, value=Recipe.id, else_=-1).desc(), *_SORTS["sale"])
 
     # A page past the end is an empty page, not an error: the collection can
     # shrink under a client that is holding a page number.
     result = await session.execute(
         filtered.options(noload(Recipe.ingredients))
-        .order_by(*_SORTS[sort])
+        .order_by(*order)
         .offset((page - 1) * per_page)
         .limit(per_page)
     )
     return {
-        "items": result.scalars().all(),
+        "items": [
+            RecipeSummary.model_validate(r).model_copy(update={"sale_percent": sales.get(r.id)})
+            for r in result.scalars().all()
+        ],
         "total": total or 0,
         "page": page,
         "per_page": per_page,

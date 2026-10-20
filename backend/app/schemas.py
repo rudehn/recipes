@@ -149,6 +149,9 @@ class RecipeSummary(BaseModel):
     cook_minutes: int | None
     servings: int | None
     tags: list[str] = []
+    # Whole percent off at the chosen store, only on the recipe list and only
+    # for a recipe that qualifies as on sale.
+    sale_percent: int | None = None
 
 
 class RecipePage(BaseModel):

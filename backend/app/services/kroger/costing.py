@@ -21,6 +21,7 @@ wrong by a factor of a thousand.
 """
 
 import logging
+import math
 from datetime import date
 from statistics import median
 
@@ -51,9 +52,14 @@ from .units import measure, parse_size, share_of_package, to_cents
 log = logging.getLogger(__name__)
 
 # How much of a recipe has to be priced before its cost per serving is
-# trusted enough to rank it against the others. A recipe with half its
-# ingredients unpriced is not cheap, it is half-costed.
-SUGGESTION_COVERAGE = 0.8
+# trusted enough to rank it against the others, or to call it on sale. A
+# recipe with half its ingredients unpriced is not cheap, it is half-costed.
+PRICED_COVERAGE = 0.8
+
+# How much of a recipe's cost the offers have to take off before the recipe
+# is called on sale. A few cents off one ingredient in twenty is a coupon, not
+# a reason to cook something.
+SALE_THRESHOLD = 0.15
 
 # How much of a recipe the pantry has to hold before it is suggested for it.
 PANTRY_SHARE = 0.75
@@ -63,16 +69,25 @@ SUGGESTION_LIMIT = 6
 
 
 def _line_cost(
-    ingredient_key: str, quantity: float | None, unit: str | None, product: Product
+    ingredient_key: str,
+    quantity: float | None,
+    unit: str | None,
+    product: Product,
+    price: float | None,
 ) -> tuple[float | None, bool]:
-    """A line's cost and whether it is a whole package rather than a share."""
-    if product.price is None or quantity is None:
+    """A line's cost and whether it is a whole package rather than a share.
+
+    `price` is passed rather than read off the product so the same arithmetic
+    can cost a line at today's price and at the regular one, which is how a
+    recipe's discount is measured.
+    """
+    if price is None or quantity is None:
         return None, False
     # An amount in a unit nothing can read - "1 bunch", "2 sprigs" - is still
     # an amount, and is costed whole for want of anything better.
     need = measure(quantity, unit)
     share = share_of_package(
-        product.price,
+        price,
         parse_size(product.size),
         product.sold_by,
         need,
@@ -82,7 +97,7 @@ def _line_cost(
     )
     if share is not None:
         return share, False
-    return product.price, True
+    return price, True
 
 
 async def _products_for(
@@ -127,7 +142,8 @@ def _cost_recipe(
         if product is not None:
             line.product = pricing.as_item_price(product)
             quantity = ing.quantity * factor if ing.quantity is not None else None
-            cost, whole = _line_cost(key, quantity, normalize_unit(ing.unit), product)
+            unit = normalize_unit(ing.unit)
+            cost, whole = _line_cost(key, quantity, unit, product, product.price)
             if cost is not None:
                 line.cost = to_cents(cost)
                 line.whole_package = whole
@@ -236,6 +252,58 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
     )
 
 
+async def sale_percentages(session: AsyncSession) -> dict[int, int]:
+    """Whole percent off, for each recipe whose ingredients are on offer.
+
+    A recipe is on sale when the offers take at least `SALE_THRESHOLD` off
+    what it costs at regular prices, both costed over the recipe's share of
+    each package. Only recipes with `PRICED_COVERAGE` of their lines priced
+    are judged: a discount on the two ingredients that could be priced says
+    nothing about a recipe whose other half is unknown. The percent is
+    rounded down, so a ribbon never promises more than the shelf gives.
+
+    Nothing is searched for - products come from stored picks - and any
+    reason there is no sale data (pricing off, no store, Kroger down) is
+    an empty answer, so the recipe list still loads.
+    """
+    store = await settings_service.selected_store(session)
+    if not enabled() or store is None:
+        return {}
+    box = (await session.execute(select(Recipe))).scalars().unique().all()
+    recipes = [r for r in box if r.ingredients]
+    try:
+        found = await _products_for(session, recipes, store.location_id, resolve=False)
+    except KrogerError as exc:
+        log.warning("Could not find recipes on sale: %s", exc)
+        return {}
+
+    identity = await Identity.of(session)
+    sales: dict[int, int] = {}
+    for recipe in recipes:
+        regular_total = 0.0
+        today_total = 0.0
+        priced = 0
+        for ing in recipe.ingredients:
+            key = identity.key(ing.name)
+            product = found.get(key)
+            if product is None:
+                continue
+            unit = normalize_unit(ing.unit)
+            regular, _ = _line_cost(key, ing.quantity, unit, product, product.regular)
+            today, _ = _line_cost(key, ing.quantity, unit, product, product.price)
+            if regular is None or today is None:
+                continue
+            regular_total += regular
+            today_total += today
+            priced += 1
+        if priced / len(recipe.ingredients) < PRICED_COVERAGE or regular_total <= 0:
+            continue
+        off = (regular_total - today_total) / regular_total
+        if off >= SALE_THRESHOLD:
+            sales[recipe.id] = math.floor(off * 100)
+    return sales
+
+
 async def suggestions(session: AsyncSession) -> Suggestions:
     """Reasons to cook something this week.
 
@@ -284,7 +352,7 @@ async def suggestions(session: AsyncSession) -> Suggestions:
             if not recipe.servings:
                 continue
             lines, total, priced = _cost_recipe(recipe, found, identity=identity)
-            if priced / len(lines) < SUGGESTION_COVERAGE:
+            if priced / len(lines) < PRICED_COVERAGE:
                 continue
             costed.append(
                 CheapRecipe(
