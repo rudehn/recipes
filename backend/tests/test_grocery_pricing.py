@@ -23,6 +23,7 @@ from app.models import (
     MealPlanEntry,
     PantryItem,
     Recipe,
+    RecipeTag,
 )
 from app.services.kroger import client as kroger
 from app.services.kroger import matching, products
@@ -963,7 +964,13 @@ async def test_facets_and_suggestions_answer_without_sale_data_when_kroger_is_do
 ):
     await seed(["sugar"])
     await fetch(client)
-    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    cookies = await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    async with session_factory() as session:
+        session.add(RecipeTag(recipe_id=cookies, name="sweet"))
+        await session.commit()
+
+    # Sugar is on offer, so with Kroger up the outage below is what changes it.
+    assert (await client.get("/api/recipes/facets")).json()["on_sale"] >= 1
 
     async def down(*args, **kwargs):
         raise kroger.KrogerError("down")
@@ -972,12 +979,15 @@ async def test_facets_and_suggestions_answer_without_sale_data_when_kroger_is_do
 
     facets = await client.get("/api/recipes/facets")
     suggested = await client.get("/api/recipes/suggest", params={"text": "sug"})
+    sweet = await client.get("/api/recipes/suggest", params={"text": "swe"})
 
     assert facets.status_code == 200, facets.text
     assert facets.json()["on_sale"] == 0
+    assert facets.json()["tags"] == [{"name": "sweet", "count": 1}]
     assert suggested.status_code == 200, suggested.text
     assert [i["name"] for i in suggested.json()["ingredients"]] == ["sugar"]
     assert [r["title"] for r in suggested.json()["recipes"]] == ["Sugar cookies"]
+    assert sweet.json()["tags"] == [{"name": "sweet", "count": 1}]
 
 
 async def test_no_store_means_nothing_is_on_sale(client, catalog):
