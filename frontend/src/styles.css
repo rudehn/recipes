@@ -469,7 +469,9 @@ input:focus, select:focus, textarea:focus {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  padding: var(--space-6) var(--space-4);
+  /* Hardly any at the sides: the label is centred, and every pixel of the
+     fifth goes to it, so "Ingredients" still fits whole on a 375px phone. */
+  padding: var(--space-6) var(--space-2);
   color: var(--muted);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
