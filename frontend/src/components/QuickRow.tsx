@@ -48,11 +48,17 @@ export function QuickRow({
     const measure = () => {
       const chips = [...el.querySelectorAll<HTMLElement>(".quick-tag")];
       const gap = parseFloat(getComputedStyle(el).columnGap) || 0;
-      const widths = chips.map((chip) => Math.max(chip.offsetWidth, chip.scrollWidth));
+      // The first chip may be squeezed (see .quick-tag:first-child), and it is
+      // its name that is clipped, so add back what the name is cut by: the
+      // fit must be judged on natural widths, or a row a little too narrow
+      // for four tags would squeeze the first and wrongly keep all four.
+      const widths = chips.map((chip) => {
+        const name = chip.querySelector<HTMLElement>(".quick-name");
+        const cut = name ? Math.max(0, name.scrollWidth - name.offsetWidth) : 0;
+        return chip.offsetWidth + cut;
+      });
       setKept(
         chipsThatFit({
-          // A chip already cut short reports its cut width; scrollWidth is
-          // the width it wants.
           widths,
           total: widths.length,
           plus: 0,
@@ -70,12 +76,14 @@ export function QuickRow({
   }, [candidates, onSale, saleSelected]);
 
   const wrap = useRef<HTMLDivElement>(null);
+  const toggle = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
     const close = (e: Event) => {
       if (e.type === "keydown" && (e as KeyboardEvent).key !== "Escape") return;
       if (e.type === "pointerdown" && wrap.current?.contains(e.target as Node)) return;
       setOpen(false);
+      toggle.current?.focus();
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -121,6 +129,7 @@ export function QuickRow({
           <button
             type="button"
             className="tag-pill"
+            ref={toggle}
             aria-expanded={open}
             onClick={() => setOpen((was) => !was)}
           >

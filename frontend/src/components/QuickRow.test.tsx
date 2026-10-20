@@ -100,6 +100,35 @@ describe("QuickRow", () => {
     setup();
     expect(shown()).toEqual(["dinner12", "On sale4", "All tags ▾"]);
   });
+
+  it("judges the fit on natural widths even when the first chip is squeezed", () => {
+    // Four 100px tags need 400px but only 360px is free, so three belong. The
+    // first chip, squeezed by the browser to 60px, reports that width with its
+    // name cut (20px shown of 60px); counted at 60 the four would seem to fit.
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("quick-row") ? 460 : 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("quick-tail")) return 100;
+      if (this.classList.contains("quick-name")) return this.textContent === "dinner" ? 20 : 0;
+      if (this.classList.contains("tag-pill")) return this.textContent?.startsWith("dinner") ? 60 : 100;
+      return 0;
+    });
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains("quick-name") && this.textContent === "dinner" ? 60 : 0;
+    });
+    setup();
+    expect(shown()).toEqual(["dinner12", "quick9", "vegetarian7", "On sale4", "All tags ▾"]);
+  });
+
+  it("returns focus to All tags when Escape closes the panel", async () => {
+    setup();
+    const toggle = screen.getByRole("button", { name: /All tags/ });
+    await userEvent.click(toggle);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("group", { name: "All tags" })).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+  });
 });
 
 function renderRow(props: Partial<Parameters<typeof QuickRow>[0]>) {
