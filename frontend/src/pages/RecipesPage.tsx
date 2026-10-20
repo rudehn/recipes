@@ -11,7 +11,7 @@ import {
 import { firstParagraph } from "../description";
 import { LoadFailure } from "../components/LoadError";
 import { NoMatches } from "../components/NoMatches";
-import { QuickRow } from "../components/QuickRow";
+import { QuickRow, QuickRowPlaceholder } from "../components/QuickRow";
 import { RecipePhoto, TagChips, TimeChips } from "../components/RecipeBits";
 import { RecipeSearchBox } from "../components/RecipeSearchBox";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
@@ -134,7 +134,7 @@ export default function RecipesPage() {
 
   // Asked with the list's own search, so each count is what picking that
   // tag would leave.
-  const { data: facets } = useLoad(
+  const { data: facets, loading: facetsLoading } = useLoad(
     useCallback(() => api.recipeFacets(toFilters(applied)), [applied]),
   );
 
@@ -249,45 +249,52 @@ export default function RecipesPage() {
         </Toolbar>
       </PageHead>
 
-      <div className="recipes-controls">
-        <RecipeSearchBox
-          search={boxSearch}
-          onChange={setSearch}
-          draft={draft}
-          onDraft={setDraft}
-          onOpenRecipe={openRecipe}
-        />
-        <label className="recipes-sort">
-          Sort
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as RecipeSort)}
-          >
-            {sorts.map(([value, name]) => (
-              <option key={value} value={value}>
-                {name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {!blank && !emptyBox && facets && (
-          <QuickRow
-            tags={quickTags}
-            onSale={facets.on_sale}
-            saleSelected={search.onSale}
-            onPickTag={(name) =>
-              setSearch((s) => (s.tags.includes(name) ? s : { ...s, tags: [...s.tags, name] }))
-            }
-            onPickSale={() => setSearch((s) => ({ ...s, onSale: true }))}
+      {/* An empty box has nothing to search or sort; its empty state says
+          how to fill it. */}
+      {!emptyBox && (
+        <div className="recipes-controls">
+          <RecipeSearchBox
+            search={boxSearch}
+            onChange={setSearch}
+            draft={draft}
+            onDraft={setDraft}
+            onOpenRecipe={openRecipe}
           />
-        )}
-        {answered && !emptyBox && (
-          <p className="recipes-result">
-            {recipeCount(total)}
-            {!isEmpty(answered) && ` · ${describe(answered)}`}
-          </p>
-        )}
-      </div>
+          <label className="recipes-sort">
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as RecipeSort)}
+            >
+              {sorts.map(([value, name]) => (
+                <option key={value} value={value}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {/* Held only while the facets are on their way: if they fail, the
+              row is simply absent rather than a blank line. */}
+          {!blank && !facets && facetsLoading && <QuickRowPlaceholder />}
+          {!blank && facets && (
+            <QuickRow
+              tags={quickTags}
+              onSale={facets.on_sale}
+              saleSelected={search.onSale}
+              onPickTag={(name) =>
+                setSearch((s) => (s.tags.includes(name) ? s : { ...s, tags: [...s.tags, name] }))
+              }
+              onPickSale={() => setSearch((s) => ({ ...s, onSale: true }))}
+            />
+          )}
+          {answered && (
+            <p className="recipes-result">
+              {recipeCount(total)}
+              {!isEmpty(answered) && ` · ${describe(answered)}`}
+            </p>
+          )}
+        </div>
+      )}
 
       {error && (
         <LoadFailure

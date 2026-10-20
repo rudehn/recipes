@@ -184,6 +184,21 @@ describe("RecipesPage", () => {
       "href",
       "/recipes/new",
     );
+    // Nothing to search or sort: the box and the menu would only be in the way.
+    expect(screen.queryByRole("combobox", { name: "Search recipes" })).toBeNull();
+    expect(screen.queryByLabelText("Sort")).toBeNull();
+  });
+
+  it("holds the quick row's line while its tags load", async () => {
+    // The facets answer after the recipes; until then an invisible chip keeps
+    // the row's height, so the grid does not jump down when they arrive.
+    recipesBackend(page([curry]), () => new Promise(() => {}));
+    const { container } = renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
+
+    const held = container.querySelector(".quick-row-wrap");
+    expect(held).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByRole("button", { name: /All tags/ })).toBeNull();
   });
 
   it("hands the search to the server and shows what comes back", async () => {

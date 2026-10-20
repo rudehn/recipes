@@ -72,6 +72,21 @@ describe("QuickRow", () => {
     expect(shown()).toEqual(["On sale2", "All tags ▾"]);
   });
 
+  it("leaves the row out when no pick would leave a recipe", () => {
+    // A search that matches nothing: every tag counts zero and nothing is on
+    // sale, so All tags would open on a panel of disabled chips.
+    const { container } = render(
+      <QuickRow
+        tags={[{ name: "soup", count: 0 }, { name: "dinner", count: 0 }]}
+        onSale={0}
+        saleSelected={false}
+        onPickTag={vi.fn()}
+        onPickSale={vi.fn()}
+      />,
+    );
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it("lists every tag alphabetically under All tags and picks one", async () => {
     const { onPickTag } = setup();
     const toggle = screen.getByRole("button", { name: /All tags/ });

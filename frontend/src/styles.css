@@ -764,25 +764,27 @@ input:focus, select:focus, textarea:focus {
 /* The search box with the sort beside it, the quick row under both, and the
    line saying what is listed. On a phone the sort moves down into that line
    (see the phone block), so it is in reach with nothing picked and the box
-   keeps the screen's width. */
+   keeps the screen's width.
+
+   Placed by column alone, rows left to the grid: a named row stays in the
+   grid when what fills it is absent - the quick row with nothing to offer,
+   the result line before the first answer - and keeps both of its gaps. */
 .recipes-controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "search sort"
-    "quick quick"
-    "result result";
   align-items: center;
   gap: var(--space-12) var(--space-12);
   margin-bottom: var(--space-20);
 }
 
-.recipes-controls .recipe-search { grid-area: search; }
-.recipes-controls .quick-row-wrap { grid-area: quick; }
+.recipes-controls .recipe-search { grid-column: 1; }
+
+.recipes-controls .quick-row-wrap,
+.recipes-controls .recipes-result { grid-column: 1 / -1; }
 
 /* Level with the box's first line, however many lines of tokens it grows. */
 .recipes-sort {
-  grid-area: sort;
+  grid-column: 2;
   align-self: start;
   display: flex;
   align-items: center;
@@ -803,7 +805,6 @@ input:focus, select:focus, textarea:focus {
 }
 
 .recipes-result {
-  grid-area: result;
   margin: 0;
   min-width: 0;
   color: var(--muted);
@@ -862,6 +863,9 @@ input:focus, select:focus, textarea:focus {
   gap: var(--space-8);
   margin-left: auto;
 }
+
+/* Holds the row's line while its tags load; see QuickRowPlaceholder. */
+.quick-placeholder { visibility: hidden; }
 
 .quick-divider {
   align-self: stretch;
@@ -4164,17 +4168,21 @@ body.has-install-hint .page {
   .quick-row .count { display: none; }
 
   /* The box takes the whole width, and the sort sits at the end of the line
-     saying what is listed. */
+     saying what is listed - placed after it, though it comes first in the
+     markup. */
   .recipes-controls {
-    grid-template-areas:
-      "search search"
-      "quick quick"
-      "result sort";
     gap: var(--space-10) var(--space-12);
     margin-bottom: var(--space-16);
   }
 
-  .recipes-sort { align-self: center; }
+  .recipes-controls .recipe-search { grid-column: 1 / -1; }
+
+  .recipes-controls .recipes-result { grid-column: 1; }
+
+  .recipes-sort {
+    order: 1;
+    align-self: center;
+  }
 
   /* A thumbnail's corner is small; the ribbon sits tighter in it. */
   .sale-ribbon {

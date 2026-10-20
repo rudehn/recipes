@@ -155,6 +155,25 @@ describe("the quick row", () => {
 });
 
 /**
+ * The controls above the recipes. Named grid rows stayed in the grid when
+ * what filled them was absent - the quick row before its tags arrive, the
+ * result line before the first answer - each keeping both gaps, and the
+ * recipes jumped when the row came in.
+ */
+describe("the Recipes page controls", () => {
+  const rules = (selector: string) =>
+    [...css.matchAll(new RegExp(`(?:^|[\\s}])${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`, "g"))].map(
+      (m) => m[1],
+    );
+
+  it("place by column alone, so an absent row leaves no gap", () => {
+    const controls = rules(".recipes-controls");
+    expect(controls.length).toBeGreaterThan(0);
+    for (const rule of controls) expect(rule).not.toMatch(/grid-template-areas/);
+  });
+});
+
+/**
  * The Ingredients switcher on a phone. In the phone's equal thirds, "Needs a
  * look 47" broke over two lines beside an "All 107" with room to spare, and
  * the control stopped short of the row's end. Each option sized to its label

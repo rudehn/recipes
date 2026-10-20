@@ -99,6 +99,10 @@ export function QuickRow({
   );
   const showSale = onSale != null && onSale > 0 && !saleSelected;
 
+  // A search that matches nothing leaves every tag at zero; All tags would
+  // open on a panel of disabled chips, and the empty state has the way out.
+  if (!showSale && !tags.some((tag) => tag.count > 0)) return null;
+
   return (
     <div className="quick-row-wrap" ref={wrap}>
       <div className="quick-row" ref={row}>
@@ -159,6 +163,21 @@ export function QuickRow({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * The row's line, held while its tags load: one invisible chip, so the line
+ * is exactly a chip tall at every width and the recipes under it do not jump
+ * down when the real row arrives.
+ */
+export function QuickRowPlaceholder() {
+  return (
+    <div className="quick-row-wrap" aria-hidden="true">
+      <div className="quick-row">
+        <span className="tag-pill quick-placeholder">&nbsp;</span>
+      </div>
     </div>
   );
 }
