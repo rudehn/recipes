@@ -3229,6 +3229,45 @@ body.has-install-hint .page {
 
 .attention-more { margin: var(--space-8) 0 var(--space-12); }
 
+/* A recipe in "Needs a look": the recipe on the left, its lines on the right.
+   Split at the card's own fractions rather than by content, for the reason
+   given on .offer, whose look it keeps without depending on it - the Recipes
+   page's folds that share .offer are going away, and this list is not. */
+.attention-recipe {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: start;
+  gap: var(--space-16);
+  padding: var(--space-12) var(--space-16);
+  background: var(--surface);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--space-8);
+}
+
+.attention-title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.attention-title a {
+  font-weight: var(--weight-semibold);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 2px;
+}
+
+.attention-title a:hover { text-decoration-color: currentColor; }
+
+/* How much of the recipe is held up, read against the whole. */
+.attention-coverage {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
 /* A recipe's lines in "Needs a look", a list for each thing they hold up, in
    the card's right-hand column. */
 .attention-groups {
@@ -4556,7 +4595,8 @@ body.has-install-hint .page {
 
   /* The cards' two columns become two rows on a phone, and a single figure
      sits under the recipe rather than across from it. */
-  .offer {
+  .offer,
+  .attention-recipe {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-8);
   }

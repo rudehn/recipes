@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import type { IngredientSummary } from "../api";
 import { HttpError, mockBackend } from "../test/backend";
-import { ingredientSummary, itemPrice, mergeSuggestion, staple } from "../test/fixtures";
+import { ingredientSummary, itemPrice, mergeSuggestion, recipeSummary, staple } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
 /** The list as the server sends it: already in name order. */
@@ -360,5 +360,111 @@ describe("IngredientsPage: suggested merges", () => {
       "href",
       "/ingredients/ground-cumin?merge=cumin",
     );
+  });
+});
+
+describe("IngredientsPage: Needs a look, by recipe", () => {
+  const fries = ingredientSummary({
+    key: "waffle-fries",
+    name: "waffle fries",
+    product: { status: "no_match", product: null },
+    problems: ["no_match"],
+  });
+  const curry = recipeSummary({ id: 7, title: "Weeknight chicken curry" });
+  const bread = recipeSummary({ id: 8, title: "Banana bread" });
+  const attention = [
+    {
+      recipe: curry,
+      issues: [
+        { ingredient_id: 21, name: "paprica", issue: "no_match", affects: ["price"] },
+        { ingredient_id: 22, name: "can black beans", issue: "unweighable", affects: ["nutrition"] },
+      ],
+      no_servings: false,
+    },
+    {
+      recipe: bread,
+      issues: [{ ingredient_id: 31, name: "ripe bananas", issue: "no_food", affects: ["nutrition"] }],
+      no_servings: false,
+    },
+  ];
+
+  function lookBackend(entries: unknown = attention) {
+    return mockBackend({
+      "GET /api/ingredients": list(fries),
+      "GET /api/recipes/attention": entries,
+    });
+  }
+
+  it("lists what needs a look by recipe, each line linking to its fix", async () => {
+    lookBackend();
+    const { user } = renderApp("/ingredients?view=look");
+    await screen.findByRole("region", { name: "No product at your store" });
+
+    await user.click(within(screen.getByRole("group", { name: "Group" })).getByRole("button", { name: "By recipe" }));
+
+    const title = await screen.findByRole("link", { name: "Weeknight chicken curry" });
+    expect(title).toHaveAttribute("href", "/recipes/7");
+    const entry = title.closest<HTMLElement>(".attention-recipe")!;
+    expect(within(entry).getByText("1 for nutrition · 1 for price")).toBeInTheDocument();
+    expect(within(entry).getByRole("link", { name: "paprica" })).toHaveAttribute(
+      "href",
+      "/recipes/7?ingredient=21",
+    );
+    expect(within(entry).getByRole("link", { name: "can black beans" })).toHaveAttribute(
+      "href",
+      "/recipes/7?nutrition=22",
+    );
+    expect(screen.queryByRole("region", { name: "No product at your store" })).not.toBeInTheDocument();
+  });
+
+  it("remembers By recipe on this device", async () => {
+    lookBackend();
+    const { user } = renderApp("/ingredients?view=look");
+    await screen.findByRole("region", { name: "No product at your store" });
+    expect(localStorage.getItem("ingredients-look-by")).toBe("ingredient");
+
+    await user.click(screen.getByRole("button", { name: "By recipe" }));
+    expect(localStorage.getItem("ingredients-look-by")).toBe("recipe");
+  });
+
+  it("opens on By recipe when this device left it there", async () => {
+    localStorage.setItem("ingredients-look-by", "recipe");
+    lookBackend();
+    renderApp("/ingredients?view=look");
+
+    expect(await screen.findByRole("link", { name: "Banana bread" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "By recipe" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("narrows the by-recipe list with the search box", async () => {
+    localStorage.setItem("ingredients-look-by", "recipe");
+    lookBackend();
+    const { user } = renderApp("/ingredients?view=look");
+    await screen.findByRole("link", { name: "Banana bread" });
+
+    // By a line's name.
+    await user.type(screen.getByLabelText("Search ingredients"), "paprica");
+    expect(screen.getByRole("link", { name: "Weeknight chicken curry" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Banana bread" })).not.toBeInTheDocument();
+
+    // By the recipe's title.
+    await user.clear(screen.getByLabelText("Search ingredients"));
+    await user.type(screen.getByLabelText("Search ingredients"), "banana bread");
+    expect(screen.getByRole("link", { name: "Banana bread" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Weeknight chicken curry" })).not.toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText("Search ingredients"));
+    await user.type(screen.getByLabelText("Search ingredients"), "saffron");
+    expect(screen.getByText("No recipes match “saffron”.")).toBeInTheDocument();
+    expect(screen.queryByText("Nothing needs a look")).not.toBeInTheDocument();
+  });
+
+  it("says nothing needs a look when no recipe has a problem", async () => {
+    localStorage.setItem("ingredients-look-by", "recipe");
+    lookBackend([]);
+    renderApp("/ingredients?view=look");
+
+    expect(await screen.findByText("Nothing needs a look")).toBeInTheDocument();
+    expect(screen.getByText("Every recipe's lines read right.")).toBeInTheDocument();
   });
 });

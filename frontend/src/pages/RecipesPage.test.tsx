@@ -615,7 +615,7 @@ describe("RecipesPage", () => {
     /** The fold's entry for one recipe, opened. */
     async function openEntry(user: AppRender["user"], title: string): Promise<HTMLElement> {
       await user.click(await screen.findByText(/needs a look/i));
-      return screen.getByRole("link", { name: title }).closest<HTMLElement>(".offer")!;
+      return screen.getByRole("link", { name: title }).closest<HTMLElement>(".attention-recipe")!;
     }
 
     /**

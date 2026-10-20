@@ -229,6 +229,13 @@ describe("the recipes page's folds", () => {
     expect(rule(".offer")).toMatch(/grid-template-columns:\s*minmax\(0,\s*\d+fr\)\s+minmax\(0,\s*\d+fr\)/);
   });
 
+  it("splits a Needs a look card the same way, without borrowing .offer", () => {
+    expect(rule(".attention-recipe")).toMatch(/display:\s*grid/);
+    expect(rule(".attention-recipe")).toMatch(
+      /grid-template-columns:\s*minmax\(0,\s*\d+fr\)\s+minmax\(0,\s*\d+fr\)/,
+    );
+  });
+
   it("lets no right-hand block size itself to its content", () => {
     for (const selector of [".offer-items", ".attention-groups"]) {
       expect(rule(selector), `${selector} has no rule`).not.toBe("");

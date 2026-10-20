@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type IngredientSummary, type MergeSuggestion } from "../api";
+import { api, type IngredientSummary, type MergeSuggestion, type RecipeAttention } from "../api";
 import { LoadFailure } from "../components/LoadError";
+import { RecipeAttentionList } from "../components/RecipeAttentionList";
 import { SuggestionRow } from "../components/SuggestionRow";
 import { Banner, Button, EmptyState, LinkButton, PageHead, Segmented, Switch } from "../components/ui";
 import { PROBLEM_GROUPS, PROBLEM_LABELS, matchesSearch, summaryLine } from "../ingredients";
@@ -22,6 +23,18 @@ function storedView(): View {
     return isView(stored) ? stored : "staples";
   } catch {
     return "staples";
+  }
+}
+
+type LookBy = "ingredient" | "recipe";
+const LOOK_BY_KEY = "ingredients-look-by";
+
+/** How this device last grouped Needs a look; by ingredient until it says otherwise. */
+function storedLookBy(): LookBy {
+  try {
+    return localStorage.getItem(LOOK_BY_KEY) === "recipe" ? "recipe" : "ingredient";
+  } catch {
+    return "ingredient";
   }
 }
 
@@ -47,6 +60,7 @@ export default function IngredientsPage() {
     const asked = params.get("view");
     return isView(asked) ? asked : storedView();
   });
+  const [lookBy, setLookBy] = useState<LookBy>(storedLookBy);
   const [query, setQuery] = useState("");
 
   useEffect(() => {
@@ -56,6 +70,14 @@ export default function IngredientsPage() {
       // A per-device convenience; nothing is lost if it cannot be kept.
     }
   }, [view]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOOK_BY_KEY, lookBy);
+    } catch {
+      // As above.
+    }
+  }, [lookBy]);
 
   const staples = (data?.ingredients ?? []).filter((i) => i.staple !== null);
   const toRestock = staples.filter((i) => !i.staple!.in_stock).length;
@@ -146,7 +168,21 @@ export default function IngredientsPage() {
             />
           </div>
 
-          {query.trim() && shown.length === 0 && (
+          {view === "look" && (
+            <div className="ingredients-controls">
+              <Segmented
+                label="Group"
+                value={lookBy}
+                onChange={setLookBy}
+                options={[
+                  { value: "ingredient", label: "By ingredient" },
+                  { value: "recipe", label: "By recipe" },
+                ]}
+              />
+            </div>
+          )}
+
+          {query.trim() && shown.length === 0 && !(view === "look" && lookBy === "recipe") && (
             <p className="list-status">No ingredients match “{query.trim()}”.</p>
           )}
 
@@ -154,7 +190,8 @@ export default function IngredientsPage() {
             <StaplesView staples={shown} query={query} onToggle={setStock} onAdd={addStaple} />
           )}
           {view === "all" && shown.map((item) => <IngredientRow key={item.key} item={item} />)}
-          {view === "look" && (
+          {view === "look" && lookBy === "recipe" && <LookByRecipe query={query} />}
+          {view === "look" && lookBy === "ingredient" && (
             <LookView
               items={shown}
               suggestions={query.trim() ? [] : data.suggestions}
@@ -334,4 +371,37 @@ function LookView({
       ))}
     </>
   );
+}
+
+/** Whether a recipe's entry has the search's words in its title or in a line's name. */
+function entryMatches(entry: RecipeAttention, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  return (
+    entry.recipe.title.toLowerCase().includes(needle) ||
+    entry.issues.some((issue) => issue.name.toLowerCase().includes(needle))
+  );
+}
+
+/**
+ * The same problems as the other grouping, gathered by recipe so a recipe's
+ * lines can be fixed in one sitting. Loaded only when asked for, since the
+ * ingredient grouping never needs it.
+ */
+function LookByRecipe({ query }: { query: string }) {
+  const { data, error, reload } = useLoad(useCallback(() => api.recipesAttention(), []));
+  if (error) {
+    return <LoadFailure what="what needs a look" message={error} onRetry={reload} showing={data !== null} />;
+  }
+  if (!data) return null;
+
+  const shown = query.trim() ? data.filter((entry) => entryMatches(entry, query)) : data;
+  if (shown.length === 0) {
+    if (query.trim()) return <p className="list-status">No recipes match “{query.trim()}”.</p>;
+    return (
+      <EmptyState glyph="✅" title="Nothing needs a look">
+        <p>Every recipe&apos;s lines read right.</p>
+      </EmptyState>
+    );
+  }
+  return <RecipeAttentionList entries={shown} />;
 }
