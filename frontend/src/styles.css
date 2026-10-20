@@ -864,9 +864,9 @@ input:focus, select:focus, textarea:focus {
   visibility: hidden;
 }
 
-/* Right after the last tag, as the row was drawn: pushed to the line's far
-   end, it stood a gap of three tags away from them on a wide screen. A
-   phone's full row does keep it at the end (see the phone block). */
+/* Right after the last tag, as the row was drawn, at every width: pushed to
+   the line's far end it stood apart from the tags - three tags away on a
+   wide screen, and on a phone as far as the next tag that did not fit. */
 .quick-tail {
   display: flex;
   align-items: center;
@@ -4181,22 +4181,18 @@ body.has-install-hint .page {
   /* ----------------------------------------------------------- shell --- */
 
   /* The quick row drops its counts, and its chips their spare padding and a
-     step of type, to make room for more tags: at 375px that is two short
-     tags beside On sale and All tags rather than one. */
+     step of type, to make room for more tags: at 375px that is two tags the
+     length of "dinner" and "blackstone" beside On sale and All tags. */
   .quick-row .count { display: none; }
 
   .quick-row,
   .quick-tail { gap: var(--space-6); }
 
-  /* The line's end, whatever the tags leave over, so On sale and All tags
-     sit in the same place on every search. */
-  .quick-tail { margin-left: auto; }
-
   /* Narrower, but a full tap tall: each chip is a control of its own, and
      the smaller type alone left it at 39px. */
   .quick-row .tag-pill {
     min-height: var(--tap);
-    padding-inline: var(--space-12);
+    padding-inline: var(--space-8);
     font-size: var(--text-sm);
   }
 

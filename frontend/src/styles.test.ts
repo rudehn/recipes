@@ -153,13 +153,13 @@ describe("the quick row", () => {
     expect(rule(mediaBlock(below(PHONE)), ".quick-row .count")).toMatch(/display:\s*none/);
   });
 
-  it("follows its last tag on a wide screen, and keeps the line's end on a phone", () => {
-    // On a desktop line a tail pushed to the far end left a gap as wide as
-    // three tags between them; on a phone the row is full and the tail ends it.
+  it("follows its last tag at every width", () => {
+    // A tail pushed to the line's far end left a gap between it and the
+    // tags: three tags wide on a desktop, and on a phone whatever the next
+    // tag that did not fit would have taken.
     const tails = (block: string) =>
       [...block.matchAll(/(?:^|[\s},])\.quick-tail\s*\{([^}]*)\}/g)].map((m) => m[1]).join("");
-    expect(tails(css.slice(0, css.indexOf(`@media ${below(PHONE)} {`)))).not.toMatch(/margin-left:\s*auto/);
-    expect(tails(mediaBlock(below(PHONE)))).toMatch(/margin-left:\s*auto/);
+    expect(tails(css)).not.toMatch(/margin-left:\s*auto/);
   });
 
   it("gives its chips a full tap's height on a phone", () => {
