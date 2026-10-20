@@ -127,28 +127,30 @@ describe("date fields", () => {
 });
 
 /**
- * The tag bar on a phone. Wrapped, a box with a dozen tags put three rows of
- * pills between the search field and the first recipe, and that wall grew
- * with every tag. One row that scrolls sideways costs one row however many
- * tags there are - which no rendered test can see, since jsdom lays nothing
- * out.
+ * The quick row under the recipe search. The tag bar it replaced scrolled
+ * sideways on a phone, which left On sale and All tags reachable only by
+ * swiping; the row is one line that never scrolls, and QuickRow leaves a tag
+ * that would not fit to All tags. That it never scrolls, and drops its counts
+ * on a phone to make room, is what a stylesheet can be held to without a
+ * browser to lay it out.
  */
-describe("the tag bar on a phone", () => {
-  const rule = (selector: string) => {
-    const match = new RegExp(`(?:^|[\\s}])\\${selector}\\s*\\{([^}]*)\\}`).exec(
-      mediaBlock(below(PHONE)),
+describe("the quick row", () => {
+  const rule = (block: string, selector: string) => {
+    const match = new RegExp(`(?:^|[\\s}])${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`).exec(
+      block,
     );
-    expect(match, `the phone block has no ${selector} rule`).not.toBeNull();
+    expect(match, `no ${selector} rule`).not.toBeNull();
     return match![1];
   };
 
-  it("is one row that scrolls sideways rather than wrapping", () => {
-    expect(rule(".tag-filter")).toMatch(/flex-wrap:\s*nowrap/);
-    expect(rule(".tag-filter")).toMatch(/overflow-x:\s*auto/);
+  it("is one line that never scrolls sideways", () => {
+    const row = rule(css, ".quick-row");
+    expect(row).toMatch(/overflow:\s*hidden/);
+    expect(row).not.toMatch(/flex-wrap:\s*wrap/);
   });
 
-  it("keeps every pill whole instead of squeezing them to fit", () => {
-    expect(rule(".tag-filter .tag-pill")).toMatch(/flex:\s*none/);
+  it("drops its counts on a phone", () => {
+    expect(rule(mediaBlock(below(PHONE)), ".quick-row .count")).toMatch(/display:\s*none/);
   });
 });
 
@@ -214,22 +216,17 @@ describe("the phone's edges", () => {
 });
 
 /**
- * The recipes page's folds: a card per recipe, the recipe on the left and its
+ * Needs a look, by recipe: a card per recipe, the recipe on the left and its
  * lines on the right. When the right-hand block was as wide as its longest
- * line, every card's lines started somewhere else and the fold read ragged -
+ * line, every card's lines started somewhere else and the list read ragged -
  * visible only laid out, so what is assertable is that the split is the
  * card's, not the content's.
  */
-describe("the recipes page's folds", () => {
+describe("Needs a look's recipe cards", () => {
   const rule = (selector: string) =>
     new RegExp(`(?:^|\\n)${selector.replace(/[.]/g, "\\.")}\\s*\\{([^}]*)\\}`).exec(css)?.[1] ?? "";
 
   it("splits every card at the same place, whatever its lines say", () => {
-    expect(rule(".offer")).toMatch(/display:\s*grid/);
-    expect(rule(".offer")).toMatch(/grid-template-columns:\s*minmax\(0,\s*\d+fr\)\s+minmax\(0,\s*\d+fr\)/);
-  });
-
-  it("splits a Needs a look card the same way, without borrowing .offer", () => {
     expect(rule(".attention-recipe")).toMatch(/display:\s*grid/);
     expect(rule(".attention-recipe")).toMatch(
       /grid-template-columns:\s*minmax\(0,\s*\d+fr\)\s+minmax\(0,\s*\d+fr\)/,
@@ -237,10 +234,8 @@ describe("the recipes page's folds", () => {
   });
 
   it("lets no right-hand block size itself to its content", () => {
-    for (const selector of [".offer-items", ".attention-groups"]) {
-      expect(rule(selector), `${selector} has no rule`).not.toBe("");
-      expect(rule(selector)).not.toMatch(/max-width|flex:\s*none/);
-    }
+    expect(rule(".attention-groups"), ".attention-groups has no rule").not.toBe("");
+    expect(rule(".attention-groups")).not.toMatch(/max-width|flex:\s*none/);
   });
 });
 

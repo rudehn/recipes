@@ -522,13 +522,12 @@ describe("remembered picks", () => {
     // The list's own lines show a sale price and the total says what the
     // offers saved. What a discount is good for is deciding what to cook,
     // and that lives with the recipes.
-    const backend = withList(groceryList({ items: [sugar] }));
+    withList(groceryList({ items: [sugar] }));
 
     renderApp(WEEK);
 
     await screen.findByText("sugar");
     expect(screen.queryByText(/^On sale/)).not.toBeInTheDocument();
-    expect(backend.requestsTo("GET /api/recipes/suggestions")).toHaveLength(0);
   });
 
   it("says when the store is out of a line's product today", async () => {

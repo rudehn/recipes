@@ -204,18 +204,10 @@ describe("RecipeDetailPage", () => {
   it("deletes after confirming, then returns to the recipe list", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const backend = mockBackend({
-      // Before the ":id" route, which would otherwise answer them with a recipe.
-      "GET /api/recipes/suggestions": {
-        on_sale: [],
-        cheap: [],
-        median_per_serving: null,
-        pantry: [],
-      },
-      "GET /api/recipes/attention": [],
       "GET /api/recipes/:id": curry,
       "DELETE /api/recipes/:id": undefined,
       "GET /api/recipes": page([]),
-      "GET /api/recipes/tags": [],
+      "GET /api/recipes/facets": { tags: [], on_sale: null, ingredients: [] },
     });
     const { user } = renderApp("/recipes/1");
     await screen.findByRole("heading", { name: "Weeknight chicken curry" });

@@ -119,7 +119,10 @@ export function QuickRow({
           );
         })}
         <div className="quick-tail" ref={tail}>
-          <span className="quick-divider" aria-hidden />
+          {/* Only between tags and the tail. Hung on whether there are tags
+              to offer rather than on how many fit, which the divider's own
+              width feeds into. */}
+          {candidates.length > 0 && <span className="quick-divider" aria-hidden />}
           {showSale && (
             <button type="button" className="tag-pill" onClick={onPickSale}>
               On sale

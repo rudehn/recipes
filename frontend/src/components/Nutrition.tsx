@@ -127,7 +127,7 @@ export function NutritionBreakdown({
 
   return (
     <details
-      className="offers-section nutrition-section"
+      className="fold-section nutrition-section"
       id="nutrition"
       ref={sectionRef}
       open={open}

@@ -439,53 +439,6 @@ export interface GroceryPricing {
   total_lines: number;
 }
 
-/** An ingredient you cook with whose product is discounted this week. */
-export interface SaleItem {
-  key: string;
-  name: string;
-  price: ItemPrice;
-}
-
-/**
- * A recipe with something discounted in it this week.
- *
- * `ingredient_count` is what the discount is read against: two of three
- * ingredients on offer is a reason to cook the thing, two of nineteen is a
- * coincidence.
- */
-export interface RecipeOnSale {
-  recipe: RecipeSummary;
-  on_sale: SaleItem[];
-  ingredient_count: number;
-}
-
-/** A recipe costing less per serving than the median across the recipe box. */
-export interface CheapRecipe {
-  recipe: RecipeSummary;
-  per_serving: number;
-  priced: number;
-  total_lines: number;
-}
-
-/** A recipe most of whose ingredients the pantry has in stock. */
-export interface PantryRecipe {
-  recipe: RecipeSummary;
-  in_pantry: number;
-  total_lines: number;
-}
-
-/**
- * Reasons to cook something this week. `median_per_serving` is what `cheap`
- * is measured against, so the page can say "under $2.10 a serving"; null when
- * too little of the box has been costed to have one.
- */
-export interface Suggestions {
-  on_sale: RecipeOnSale[];
-  cheap: CheapRecipe[];
-  median_per_serving: number | null;
-  pantry: PantryRecipe[];
-}
-
 /**
  * What one ingredient costs a recipe. `cost` is null when it could not be
  * priced. `whole_package` says the figure is a whole package rather than the
@@ -1080,8 +1033,6 @@ export const api = {
   newGroceryTrip: () => request<void>("/api/grocery-list/new-trip", { method: "POST" }),
 
   pricingStatus: () => request<PricingStatus>("/api/pricing/status"),
-  /** Reasons to cook something this week. Answered from picks already made, never a search. */
-  suggestions: () => request<Suggestions>("/api/recipes/suggestions"),
   /** Recipes with ingredient rows that will price or shop wrongly, most first. */
   recipesAttention: () => request<RecipeAttention[]>("/api/recipes/attention"),
   /** What a recipe costs to cook. Null when there is nothing to price it with. */

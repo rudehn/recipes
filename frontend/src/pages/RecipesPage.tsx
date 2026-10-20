@@ -1,59 +1,141 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
   api,
+  type IngredientName,
   type Page,
+  type RecipeSort,
   type RecipeSummary,
-  type TagCount,
 } from "../api";
 import { firstParagraph } from "../description";
 import { LoadFailure } from "../components/LoadError";
-import { RecipeAttentionList } from "../components/RecipeAttentionList";
+import { NoMatches } from "../components/NoMatches";
+import { QuickRow } from "../components/QuickRow";
 import { RecipePhoto, TagChips, TimeChips } from "../components/RecipeBits";
+import { RecipeSearchBox } from "../components/RecipeSearchBox";
 import { Button, EmptyState, LinkButton, PageHead, Toolbar } from "../components/ui";
+import {
+  describe,
+  isEmpty,
+  searchFromParams,
+  sortFromParams,
+  toFilters,
+  toInput,
+  writeParams,
+  type Search,
+} from "../recipeSearch";
 import { useDebounced } from "../useDebounced";
 import { useLoad } from "../useLoad";
-import { useScrollEdges } from "../useScrollEdges";
 
 const PER_PAGE = 24;
 
+/** The sorts, in the menu's order. Biggest sale is offered only while sales are known. */
+const SORTS: [RecipeSort, string][] = [
+  ["title", "A-Z"],
+  ["newest", "Recently added"],
+  ["cooked", "Recently cooked"],
+  ["sale", "Biggest sale"],
+];
+
 interface Listing extends Page<RecipeSummary> {
   /**
-   * The filters these results answer.
+   * The search and order these results answer.
    *
-   * While a search is in flight the input has moved on but the results have
-   * not, and pairing the new filters with the old total makes the page state
-   * things that were never true ("31 matches" for a query nothing has counted
-   * yet). Carrying the filters with the results keeps every number and every
-   * message describing the same request.
+   * While a search is in flight the box has moved on but the results have
+   * not, and pairing the new search with the old total makes the page state
+   * things that were never true ("31 recipes · zuppa" for a query nothing has
+   * counted yet). Carrying the search with the results keeps every number and
+   * every message describing the same request.
    */
-  filters: { q: string; tags: string[] };
+  search: Search;
+  sort: RecipeSort;
 }
 
-/** “a”, “b” and “c”: names quoted the way the page quotes a search. */
-function quotedList(names: readonly string[]): string {
-  const quoted = names.map((name) => `“${name}”`);
-  return quoted.length < 2
-    ? quoted.join("")
-    : `${quoted.slice(0, -1).join(", ")} and ${quoted[quoted.length - 1]}`;
+/**
+ * A request's identity, for telling whether a page fetched for one search
+ * still belongs to the search on screen.
+ */
+function requestKey(search: Search, sort: RecipeSort): string {
+  return JSON.stringify([toFilters(search), sort]);
+}
+
+/**
+ * `search` with its ingredients named the way the facets name them. The URL
+ * carries only an ingredient's key; until the facets answer, the token is
+ * the key spelled with spaces.
+ */
+function named(search: Search, names: IngredientName[] | undefined): Search {
+  if (!names || search.ingredients.length === 0) return search;
+  return {
+    ...search,
+    ingredients: search.ingredients.map(
+      (ingredient) => names.find((n) => n.key === ingredient.key) ?? ingredient,
+    ),
+  };
+}
+
+const recipeCount = (n: number) => `${n} ${n === 1 ? "recipe" : "recipes"}`;
+
+/**
+ * Remembers a search a recipe was opened from, for the box's recent searches
+ * and the quick row's most-searched tags. Never waited on and never reported:
+ * history is a convenience, and opening the recipe is what was asked for.
+ */
+function remember(search: Search) {
+  if (isEmpty(search)) return;
+  api.recordSearch(toInput(search)).catch(() => {});
+}
+
+/**
+ * How many recipes are in the box, for the header. An unfiltered listing is
+ * the whole box, so its total is the count; a page opened already filtered
+ * asks once.
+ */
+function useSavedCount(listing: Listing | null): number | null {
+  const [saved, setSaved] = useState<number | null>(null);
+  const whole = listing && isEmpty(listing.search) ? listing.total : null;
+  // Kept for when the page goes on to filter, so the header holds still.
+  if (whole !== null && whole !== saved) setSaved(whole);
+  const missing = saved === null && whole === null && listing !== null;
+  useEffect(() => {
+    if (!missing) return;
+    let current = true;
+    api.listRecipes({ per_page: 1 }).then(
+      (found) => current && setSaved(found.total),
+      // The header goes without a count rather than the page failing for it.
+      () => {},
+    );
+    return () => {
+      current = false;
+    };
+  }, [missing]);
+  return whole ?? saved;
 }
 
 export default function RecipesPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
-  // The URL seeds the filters and then mirrors them, so a filtered view is
-  // shareable and is still there after opening a recipe and coming back.
-  // Several tags are several `tag` params, the same shape the server reads.
-  const [input, setInput] = useState(() => searchParams.get("q") ?? "");
-  const [activeTags, setActiveTags] = useState(() => searchParams.getAll("tag"));
-  const query = useDebounced(input.trim());
+  // The URL seeds the search and then mirrors it, so a search is shareable
+  // and is still there after opening a recipe and coming back. An old link's
+  // `q` and `tag` arrive as a text token and tags.
+  const [search, setSearch] = useState(() => searchFromParams(searchParams));
+  const [sort, setSort] = useState(() => sortFromParams(searchParams));
+  // What is typed and not yet a token. The grid follows it once it settles.
+  const [draft, setDraft] = useState("");
+  const settled = useDebounced(draft.trim());
+  // The search the page asks for: the tokens, with the typing standing in as
+  // the text until there is a text token.
+  const applied = useMemo(
+    () => (search.text || !settled ? search : { ...search, text: settled }),
+    [search, settled],
+  );
 
-  // The filter bar can no longer be derived from the recipes on screen, since
-  // those are only ever one page of the collection. It is asked with the
-  // list's own filters, so each count is what tapping that pill would leave.
-  const { data: tags } = useLoad(
-    useCallback(() => api.listRecipeTags({ q: query, tags: activeTags }), [query, activeTags]),
+  // Asked with the list's own search, so each count is what picking that
+  // tag would leave.
+  const { data: facets } = useLoad(
+    useCallback(() => api.recipeFacets(toFilters(applied)), [applied]),
   );
 
   const {
@@ -65,66 +147,66 @@ export default function RecipesPage() {
   } = useLoad<Listing>(
     useCallback(async () => {
       const first = await api.listRecipes({
-        q: query,
-        tags: activeTags,
+        ...toFilters(applied),
+        sort,
         page: 1,
         per_page: PER_PAGE,
       });
-      return { ...first, filters: { q: query, tags: activeTags } };
-    }, [query, activeTags]),
+      return { ...first, search: applied, sort };
+    }, [applied, sort]),
   );
+  const saved = useSavedCount(listing);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // A page fetched for one filter must not be appended under another. useLoad
-  // guards its own requests, but "load more" is ours to keep straight. The
-  // parts are joined on a character neither a query nor a tag can hold, so
-  // no two different filters share a key; it is written as an escape
-  // because a raw NUL in the source makes git treat this file as binary.
-  const filters = [query, ...activeTags].join("\u0000");
-  const currentFilters = useRef(filters);
+  // A page fetched for one search must not be appended under another.
+  // useLoad guards its own requests, but "load more" is ours to keep straight.
+  const key = requestKey(applied, sort);
+  const currentKey = useRef(key);
   useEffect(() => {
-    currentFilters.current = filters;
-  }, [filters]);
+    currentKey.current = key;
+  }, [key]);
 
   useEffect(() => {
-    const next = new URLSearchParams(searchParams);
-    if (query) next.set("q", query);
-    else next.delete("q");
-    next.delete("tag");
-    for (const tag of activeTags) next.append("tag", tag);
+    const next = writeParams(applied, sort, new URLSearchParams(searchParams));
     // Navigating only on a real change matters: setSearchParams is a new
     // function after each navigation, so an unconditional call here would
     // re-trigger this effect forever.
     if (next.toString() === searchParams.toString()) return;
     // Replaced rather than pushed, so Back leaves the page instead of
-    // stepping back through every letter the user typed.
+    // stepping back through every token and letter.
     setSearchParams(next, { replace: true });
-  }, [query, activeTags, searchParams, setSearchParams]);
+  }, [applied, sort, searchParams, setSearchParams]);
 
-  function toggleTag(name: string) {
-    setActiveTags((selected) =>
-      selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name],
-    );
+  /** A search set from outside the box: what was typed is part of it now. */
+  function replaceSearch(next: Search) {
+    setSearch(next);
+    setDraft("");
+  }
+
+  function openRecipe(id: number) {
+    // The box's tokens are the search; the typing was finding this recipe.
+    remember(search);
+    navigate(`/recipes/${id}`);
   }
 
   async function loadMore() {
     if (!listing) return;
-    const wanted = currentFilters.current;
+    const wanted = currentKey.current;
     setLoadingMore(true);
     try {
       const more = await api.listRecipes({
-        q: query,
-        tags: activeTags,
+        ...toFilters(listing.search),
+        sort: listing.sort,
         page: listing.page + 1,
         per_page: PER_PAGE,
       });
-      if (currentFilters.current !== wanted) return;
+      if (currentKey.current !== wanted) return;
       // `more` carries the newer total too: the collection may have changed
-      // since the first page was fetched. The filters are unchanged - that is
+      // since the first page was fetched. The search is unchanged - that is
       // what the guard above just established.
       setListing((loaded) =>
         loaded
-          ? { ...more, filters: loaded.filters, items: [...loaded.items, ...more.items] }
+          ? { ...more, search: loaded.search, sort: loaded.sort, items: [...loaded.items, ...more.items] }
           : loaded,
       );
     } catch {
@@ -134,41 +216,71 @@ export default function RecipesPage() {
     }
   }
 
-  // Everything below describes the results on screen, so it reads the filters
-  // they answer rather than the ones the user is part-way through typing.
-  const applied = listing?.filters;
-  const filtering = Boolean(applied?.q || applied?.tags.length);
+  // Everything below describes the results on screen, so it reads the search
+  // they answer rather than the one the user is part-way through building.
+  const answered = listing && named(listing.search, facets?.ingredients);
   const shown = listing?.items.length ?? 0;
   const total = listing?.total ?? 0;
+  const emptyBox = listing !== null && total === 0 && isEmpty(listing.search);
   // A failed refresh leaves results worth keeping, so the page empties itself
   // only when the failure left it with nothing at all.
   const blank = error !== null && listing === null;
+  // Sales are unknown with pricing off or no store; there is nothing then to
+  // sort by. A bookmark asking for it lists A-Z, which is how the server
+  // orders a box with nothing on sale.
+  const saleSortable = facets ? facets.on_sale !== null : sort === "sale";
+  const sorts = SORTS.filter(([value]) => value !== "sale" || saleSortable);
 
   return (
     <>
-      <PageHead
-        title="Recipes"
-        sub={
-          !listing
-            ? ""
-            : filtering
-              ? `${total} ${total === 1 ? "match" : "matches"}`
-              : `${total} saved`
-        }
-      >
+      <PageHead title="Recipes" sub={saved === null ? "" : `${saved} saved`}>
         <Toolbar>
-          <input
-            className="searchbar"
-            placeholder="Search recipes or ingredients…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-          />
           <LinkButton to="/recipes/search">🔍 Find online</LinkButton>
           <LinkButton to="/recipes/new" variant="primary">
             + New recipe
           </LinkButton>
         </Toolbar>
       </PageHead>
+
+      <div className="recipes-controls">
+        <RecipeSearchBox
+          search={named(search, facets?.ingredients)}
+          onChange={setSearch}
+          draft={draft}
+          onDraft={setDraft}
+          onOpenRecipe={openRecipe}
+        />
+        <label className="recipes-sort">
+          Sort
+          <select
+            value={saleSortable || sort !== "sale" ? sort : "title"}
+            onChange={(e) => setSort(e.target.value as RecipeSort)}
+          >
+            {sorts.map(([value, name]) => (
+              <option key={value} value={value}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!blank && !emptyBox && facets && (
+          <QuickRow
+            tags={facets.tags.filter((tag) => !search.tags.includes(tag.name))}
+            onSale={facets.on_sale}
+            saleSelected={search.onSale}
+            onPickTag={(name) =>
+              setSearch((s) => (s.tags.includes(name) ? s : { ...s, tags: [...s.tags, name] }))
+            }
+            onPickSale={() => setSearch((s) => ({ ...s, onSale: true }))}
+          />
+        )}
+        {answered && !emptyBox && (
+          <p className="recipes-result">
+            {recipeCount(total)}
+            {!isEmpty(answered) && ` · ${describe(answered)}`}
+          </p>
+        )}
+      </div>
 
       {error && (
         <LoadFailure
@@ -179,22 +291,9 @@ export default function RecipesPage() {
         />
       )}
 
-      {!blank && tags && (
-        <TagFilter
-          tags={tags}
-          selected={activeTags}
-          onToggle={toggleTag}
-          onClear={() => setActiveTags([])}
-        />
-      )}
-
-      {!blank && <SuggestionPanels />}
-
-      {!blank && <NeedsALook />}
-
       {!blank && !listing && loading && <p className="list-status">Loading recipes…</p>}
 
-      {!blank && listing && listing.items.length === 0 && !filtering && (
+      {!blank && emptyBox && (
         <EmptyState glyph="🍳" title="Your recipe box is empty">
           <p>Search for a dish to fill one in for you, or write your own.</p>
           <Toolbar center>
@@ -206,13 +305,23 @@ export default function RecipesPage() {
         </EmptyState>
       )}
 
-      {!blank && listing && listing.items.length > 0 && (
-        // Results are dimmed rather than cleared while the next filter loads,
+      {!blank && answered && shown > 0 && (
+        // Results are dimmed rather than cleared while the next search loads,
         // so the page does not flash empty on every keystroke.
         <div className={`recipe-grid${loading ? " stale" : ""}`}>
           {listing.items.map((r) => (
-            <Link to={`/recipes/${r.id}`} key={r.id} className="recipe-card">
-              <RecipePhoto recipe={r} />
+            <Link
+              to={`/recipes/${r.id}`}
+              key={r.id}
+              className="recipe-card"
+              onClick={() => remember(answered)}
+            >
+              <div className="photo-wrap">
+                <RecipePhoto recipe={r} />
+                {r.sale_percent !== null && (
+                  <span className="sale-ribbon">{r.sale_percent}% off</span>
+                )}
+              </div>
               <div className="body">
                 <h3>{r.title}</h3>
                 <TagChips tags={r.tags} />
@@ -237,226 +346,9 @@ export default function RecipesPage() {
         </div>
       )}
 
-      {!blank && listing && listing.items.length === 0 && filtering && (
-        <EmptyState glyph="🔍" title="No matches">
-          <p>
-            No recipes match
-            {applied?.q ? ` “${applied.q}”` : ""}
-            {applied?.tags.length
-              ? ` with ${applied.tags.length === 1 ? "tag" : "tags"} ${quotedList(applied.tags)}`
-              : ""}
-            .
-          </p>
-        </EmptyState>
+      {!blank && answered && total === 0 && !isEmpty(answered) && (
+        <NoMatches search={answered} onChange={replaceSearch} />
       )}
     </>
-  );
-}
-
-/**
- * The tag pills. Tapping several narrows the list to recipes carrying all of
- * them, and each pill counts what tapping it would leave.
- *
- * A pill that would leave nothing is dimmed and cannot be tapped, rather than
- * hidden, so the bar keeps its shape as the filters change. A selected pill is
- * never dimmed, whatever its count: it is the way back out of the filter. For
- * the same reason a selected tag the box no longer has - a link from before it
- * was renamed - still gets a pill, at the end, so it can be taken off.
- *
- * On a phone the bar is one row that scrolls sideways (see styles.css), and
- * the edges fade where there are more pills past them.
- */
-function TagFilter({
-  tags,
-  selected,
-  onToggle,
-  onClear,
-}: {
-  tags: TagCount[];
-  selected: string[];
-  onToggle: (name: string) => void;
-  onClear: () => void;
-}) {
-  const gone = selected.filter((name) => !tags.some((t) => t.name === name));
-  const pills = [...tags, ...gone.map((name) => ({ name, count: 0 }))];
-  const { ref, edges, measure } = useScrollEdges(pills.length);
-  if (pills.length === 0) return null;
-
-  return (
-    <div
-      className={`tag-filter-wrap${edges.left ? " fade-left" : ""}${
-        edges.right ? " fade-right" : ""
-      }`}
-    >
-      <div
-        className="tag-filter"
-        role="group"
-        aria-label="Filter by tag"
-        ref={ref}
-        onScroll={measure}
-      >
-        <button
-          className={`tag-pill${selected.length === 0 ? " active" : ""}`}
-          aria-pressed={selected.length === 0}
-          onClick={onClear}
-        >
-          All
-        </button>
-        {pills.map((tag) => {
-          const on = selected.includes(tag.name);
-          return (
-            <button
-              key={tag.name}
-              className={`tag-pill${on ? " active" : ""}`}
-              aria-pressed={on}
-              disabled={!on && tag.count === 0}
-              // The visible count is a bare number; spell it out for a reader.
-              aria-label={`${tag.name}, ${tag.count} ${tag.count === 1 ? "recipe" : "recipes"}`}
-              onClick={() => onToggle(tag.name)}
-            >
-              {tag.name}
-              <span className="count">{tag.count}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-const money = (n: number) => `$${n.toFixed(2)}`;
-
-const recipeCount = (n: number) => `${n} recipe${n === 1 ? "" : "s"}`;
-
-/**
- * Reasons to cook something this week.
- *
- * Three folds, each present only when it has something to say, and every one
- * folded away because the answer is usually "nothing much" and none of them
- * may push the recipes themselves down the page. Absent entirely for a
- * household without a Kroger account, except the pantry fold, which needs no
- * price at all.
- *
- * The offers used to be a list of discounted ingredients on the grocery page,
- * where they answered a question nobody there was asking. What a discount is
- * good for is deciding what to cook, so it lives here, phrased as recipes.
- */
-function SuggestionPanels() {
-  const { data } = useLoad(useCallback(() => api.suggestions(), []));
-  if (!data) return null;
-  const { on_sale, cheap, median_per_serving, pantry } = data;
-  return (
-    <>
-      {on_sale.length > 0 && (
-        <details className="offers-section">
-          <summary>
-            On sale this week <span className="count">{recipeCount(on_sale.length)}</span>
-          </summary>
-          {on_sale.map((entry) => (
-            <div key={entry.recipe.id} className="offer">
-              <div className="offer-recipe">
-                <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
-                <span className="offer-coverage">
-                  {entry.on_sale.length} of {entry.ingredient_count} ingredient
-                  {entry.ingredient_count === 1 ? "" : "s"} on offer
-                </span>
-              </div>
-              <ul className="offer-items">
-                {entry.on_sale.map((sale) => (
-                  <li key={sale.key}>
-                    <span className="name">{sale.name}</span>
-                    <span className="item-price on-sale">
-                      <span className="amount">
-                        <s>{money(sale.price.regular)}</s>{" "}
-                        {money(sale.price.promo ?? sale.price.regular)}
-                      </span>
-                      <span className="product">
-                        {sale.price.description}
-                        {sale.price.size && (
-                          <>
-                            {" · "}
-                            <span className="product-size">{sale.price.size}</span>
-                          </>
-                        )}
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </details>
-      )}
-
-      {cheap.length > 0 && median_per_serving !== null && (
-        // Below the median across the box, never against a price history.
-        // The median is on the heading so "cheap" has a number attached.
-        <details className="offers-section">
-          <summary>
-            Under {money(median_per_serving)} a serving{" "}
-            <span className="count">{recipeCount(cheap.length)}</span>
-          </summary>
-          {cheap.map((entry) => (
-            <div key={entry.recipe.id} className="offer">
-              <div className="offer-recipe">
-                <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
-                <span className="offer-coverage">
-                  {entry.priced} of {entry.total_lines} ingredient
-                  {entry.total_lines === 1 ? "" : "s"} priced
-                </span>
-              </div>
-              <span className="offer-figure">{money(entry.per_serving)} a serving</span>
-            </div>
-          ))}
-        </details>
-      )}
-
-      {pantry.length > 0 && (
-        <details className="offers-section">
-          <summary>
-            Mostly in your pantry <span className="count">{recipeCount(pantry.length)}</span>
-          </summary>
-          {pantry.map((entry) => (
-            <div key={entry.recipe.id} className="offer">
-              <div className="offer-recipe">
-                <Link to={`/recipes/${entry.recipe.id}`}>{entry.recipe.title}</Link>
-              </div>
-              <span className="offer-figure">
-                {entry.in_pantry} of {entry.total_lines} ingredient
-                {entry.total_lines === 1 ? "" : "s"} in stock
-              </span>
-            </div>
-          ))}
-        </details>
-      )}
-    </>
-  );
-}
-
-/**
- * Recipes with rows that will price, shop or count wrongly.
- *
- * The reasons the grocery list and the nutrition breakdown show, gathered by
- * recipe so the fixes can be made in one sitting. Within a recipe the lines
- * are listed under what they hold up - the price, the nutrition, or both -
- * since the fixes differ, and each links to where its fix is. Folded like the
- * suggestions, and absent when there is nothing to say - which is the state
- * to aim for.
- */
-function NeedsALook() {
-  const { data } = useLoad(useCallback(() => api.recipesAttention(), []));
-  if (!data || data.length === 0) return null;
-  return (
-    <details className="offers-section attention-section">
-      <summary>
-        Needs a look <span className="count">{recipeCount(data.length)}</span>
-      </summary>
-      <p className="attention-more">
-        <Link className="inline-link" to="/ingredients?view=look">
-          See it ingredient by ingredient
-        </Link>
-      </p>
-      <RecipeAttentionList entries={data} />
-    </details>
   );
 }

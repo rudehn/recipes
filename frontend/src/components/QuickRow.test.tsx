@@ -62,6 +62,16 @@ describe("QuickRow", () => {
     }
   });
 
+  it("draws no divider when there are no tags before it", () => {
+    // Every tag picked or leading nowhere: a divider at the row's start would
+    // separate nothing from On sale.
+    const { container } = render(
+      <QuickRow tags={[{ name: "soup", count: 0 }]} onSale={2} saleSelected={false} onPickTag={vi.fn()} onPickSale={vi.fn()} />,
+    );
+    expect(container.querySelector(".quick-divider")).toBeNull();
+    expect(shown()).toEqual(["On sale2", "All tags ▾"]);
+  });
+
   it("lists every tag alphabetically under All tags and picks one", async () => {
     const { onPickTag } = setup();
     const toggle = screen.getByRole("button", { name: /All tags/ });

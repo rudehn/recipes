@@ -1,9 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { HttpError, mockBackend, type MockRequest, type RouteHandler } from "../test/backend";
+import { HttpError, mockBackend, type MockRequest, type RouteHandler, type Routes } from "../test/backend";
 import { page, recipe, recipeSummary, tagCount } from "../test/fixtures";
-import { renderApp, type AppRender } from "../test/render";
+import { renderApp } from "../test/render";
 
 const curry = recipeSummary({
   id: 1,
@@ -18,62 +18,73 @@ const bread = recipeSummary({
   tags: ["baking"],
 });
 
-const TAGS = [tagCount("baking"), tagCount("dinner"), tagCount("quick")];
+/** What the quick row is built from, with pricing off unless a test says otherwise. */
+const FACETS = {
+  tags: [tagCount("dinner"), tagCount("quick"), tagCount("baking")],
+  on_sale: null,
+  ingredients: [],
+};
+
+const NO_SUGGESTIONS = { ingredients: [], tags: [], recipes: [] };
 
 /**
- * The page asks the server for both a page of recipes and the tag list, so
- * every test needs both routes answered.
+ * The page asks for a page of recipes and for the quick row's facets, and
+ * the search box asks for recent searches and suggestions, so every test
+ * needs those answered.
  */
-function recipesBackend(recipes: RouteHandler | object, tags: unknown = TAGS) {
+function recipesBackend(
+  recipes: RouteHandler | object,
+  facets: unknown = FACETS,
+  routes: Routes = {},
+) {
   return mockBackend({
-    "GET /api/recipes/tags": tags,
+    "GET /api/recipes/facets": facets,
     "GET /api/recipes": recipes,
-    "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
-    "GET /api/recipes/attention": [],
+    "GET /api/recipes/suggest": NO_SUGGESTIONS,
+    "GET /api/recipes/searches": [],
+    "POST /api/recipes/searches": undefined,
+    ...routes,
   });
 }
-
-const NOTHING_TO_SUGGEST = { on_sale: [], cheap: [], median_per_serving: null, pantry: [] };
-
-const SUGAR_ON_SALE = {
-  key: "granulated-sugar",
-  name: "sugar",
-  price: {
-    product_id: "0002",
-    description: "Kroger® Granulated Sugar",
-    size: "4 lb",
-    regular: 3.99,
-    promo: 2.99,
-    aisle: "AISLE 18",
-    in_stock: true,
-    estimated: null,
-  },
-};
 
 function cardTitles(): string[] {
   return screen.queryAllByRole("heading", { level: 3 }).map((h) => h.textContent ?? "");
 }
 
-/** Tag pills by accessible name, which carries the count the pill shows. */
-function pillLabels(): string[] {
-  return screen
-    .getAllByRole("button")
-    .filter((b) => b.className.includes("tag-pill"))
-    .map((b) => b.getAttribute("aria-label") ?? b.textContent ?? "");
+/**
+ * The page's own requests for the grid, leaving out the one-recipe asks
+ * that count the box and the removals the empty state offers.
+ */
+function listRequests(backend: { requestsTo(p: string): MockRequest[] }): MockRequest[] {
+  return backend
+    .requestsTo("GET /api/recipes")
+    .filter((r) => r.searchParams.get("per_page") !== "1");
 }
 
 function lastListRequest(backend: { requestsTo(p: string): MockRequest[] }): MockRequest {
-  const requests = backend.requestsTo("GET /api/recipes");
+  const requests = listRequests(backend);
   return requests[requests.length - 1];
 }
 
-function lastTagsRequest(backend: { requestsTo(p: string): MockRequest[] }): MockRequest {
-  const requests = backend.requestsTo("GET /api/recipes/tags");
-  return requests[requests.length - 1];
+/**
+ * Requests for one recipe. The ":id" pattern also matches the literal paths
+ * beside it (facets, suggest, searches), so they are told apart by path.
+ */
+function recipeRequests(backend: { requestsTo(p: string): MockRequest[] }, id: number) {
+  return backend.requestsTo("GET /api/recipes/:id").filter((r) => r.path === `/api/recipes/${id}`);
 }
 
-function pill(name: string | RegExp): HTMLElement {
-  return screen.getByRole("button", { name: typeof name === "string" ? new RegExp(`^${name}`) : name });
+function searchBox(): HTMLElement {
+  return screen.getByRole("combobox", { name: "Search recipes" });
+}
+
+function sortMenu(): HTMLSelectElement {
+  return screen.getByRole("combobox", { name: "Sort" });
+}
+
+/** The line between the controls and the grid that says what is listed. */
+function resultLine(): string {
+  return document.querySelector(".recipes-result")?.textContent ?? "";
 }
 
 /** The tag chips a card shows, in order; spares wait out of sight to be measured. */
@@ -92,6 +103,7 @@ describe("RecipesPage", () => {
     expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
     expect(cardTitles()).toEqual(["Weeknight chicken curry", "Banana bread"]);
     expect(screen.getByText("2 saved")).toBeInTheDocument();
+    expect(resultLine()).toBe("2 recipes");
   });
 
   it("counts every match, not the recipes on screen", async () => {
@@ -101,6 +113,38 @@ describe("RecipesPage", () => {
 
     expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
     expect(screen.getByText("87 saved")).toBeInTheDocument();
+    expect(resultLine()).toBe("87 recipes");
+  });
+
+  it("starts the recipes right under the search controls", async () => {
+    // The folds that used to stand between the search and the recipes are
+    // gone, and nothing asks for what they showed.
+    const backend = recipesBackend(page([curry, bread]), FACETS, {
+      "GET /api/recipes/attention": [],
+    });
+    renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
+
+    expect(screen.queryByText(/on sale this week/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/needs a look/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Under /)).not.toBeInTheDocument();
+    expect(screen.queryByText(/in your pantry/i)).not.toBeInTheDocument();
+    expect(backend.requestsTo("GET /api/recipes/attention")).toHaveLength(0);
+    expect(document.querySelector(".recipes-controls")!.nextElementSibling).toHaveClass(
+      "recipe-grid",
+    );
+  });
+
+  it("counts the whole box in the header while a search is applied", async () => {
+    // The result line counts the matches; the header keeps saying how many
+    // recipes there are, even when the page opens filtered.
+    recipesBackend((req) =>
+      req.searchParams.get("tag") ? page([curry]) : page([curry], { total: 33 }),
+    );
+    renderApp("/recipes?tag=dinner");
+
+    expect(await screen.findByText("33 saved")).toBeInTheDocument();
+    expect(resultLine()).toBe("1 recipe · dinner");
   });
 
   it("shows only a description's first paragraph on its card", async () => {
@@ -125,7 +169,7 @@ describe("RecipesPage", () => {
   });
 
   it("offers both ways in when the recipe box is empty", async () => {
-    recipesBackend(page([]), []);
+    recipesBackend(page([]), { ...FACETS, tags: [] });
     renderApp("/recipes");
 
     expect(await screen.findByText("Your recipe box is empty")).toBeInTheDocument();
@@ -151,11 +195,12 @@ describe("RecipesPage", () => {
     const { user } = renderApp("/recipes");
     await screen.findByText("Banana bread");
 
-    await user.type(screen.getByPlaceholderText(/search recipes/i), "coconut");
+    await user.type(searchBox(), "coconut");
 
     await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
     expect(lastListRequest(backend).searchParams.get("q")).toBe("coconut");
-    expect(screen.getByText("1 match")).toBeInTheDocument();
+    expect(resultLine()).toBe("1 recipe · “coconut”");
+    expect(screen.getByText("2 saved")).toBeInTheDocument();
   });
 
   it("debounces typing instead of asking on every keystroke", async () => {
@@ -163,34 +208,34 @@ describe("RecipesPage", () => {
     const { user } = renderApp("/recipes");
     await screen.findByText("Weeknight chicken curry");
 
-    await user.type(screen.getByPlaceholderText(/search recipes/i), "curry");
+    await user.type(searchBox(), "curry");
 
-    await waitFor(() =>
-      expect(lastListRequest(backend).searchParams.get("q")).toBe("curry"),
-    );
+    await waitFor(() => expect(lastListRequest(backend).searchParams.get("q")).toBe("curry"));
     // One request for the initial load and one for the settled query; a
     // request per letter would be six.
     expect(backend.requestsTo("GET /api/recipes").length).toBeLessThan(6);
   });
 
-  it("filters by tag, and clears the filter when the tag is clicked again", async () => {
+  it("filters by a tag picked from the quick row", async () => {
     const backend = recipesBackend((req) =>
-      req.searchParams.get("tag") === "baking" ? page([bread]) : page([curry, bread]),
+      req.searchParams.get("tag") === "dinner" ? page([curry]) : page([curry, bread]),
     );
     const { user } = renderApp("/recipes");
-    await screen.findByText("Weeknight chicken curry");
+    await screen.findByText("Banana bread");
 
-    await user.click(screen.getByRole("button", { name: /^baking/ }));
-    await waitFor(() => expect(cardTitles()).toEqual(["Banana bread"]));
+    await user.click(screen.getByRole("button", { name: /^dinner/ }));
 
-    await user.click(screen.getByRole("button", { name: /^baking/ }));
-    await waitFor(() =>
-      expect(cardTitles()).toEqual(["Weeknight chicken curry", "Banana bread"]),
-    );
-    expect(lastListRequest(backend).searchParams.get("tag")).toBe(null);
+    await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
+    expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner"]);
+    // Picked, it lives in the box, and the row asks what would narrow it further.
+    expect(screen.getByRole("button", { name: "Remove dinner" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^dinner/ })).not.toBeInTheDocument();
+    const facets = backend.requestsTo("GET /api/recipes/facets");
+    expect(facets[facets.length - 1].searchParams.getAll("tag")).toEqual(["dinner"]);
+    expect(resultLine()).toBe("1 recipe · dinner");
   });
 
-  it("sends the search and the tag filter together", async () => {
+  it("sends the typing and a picked tag together", async () => {
     const backend = recipesBackend((req) =>
       req.searchParams.get("q") || req.searchParams.get("tag")
         ? page([])
@@ -200,22 +245,20 @@ describe("RecipesPage", () => {
     await screen.findByText("Weeknight chicken curry");
 
     await user.click(screen.getByRole("button", { name: /^baking/ }));
-    await user.type(screen.getByPlaceholderText(/search recipes/i), "chicken");
+    await user.type(searchBox(), "chicken");
 
     await waitFor(() => {
       const request = lastListRequest(backend);
       expect(request.searchParams.get("q")).toBe("chicken");
       expect(request.searchParams.get("tag")).toBe("baking");
     });
-    expect(
-      screen.getByText(/No recipes match “chicken” with tag “baking”/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("No recipes match baking · “chicken”.")).toBeInTheDocument();
   });
 
   it("keeps the count with the results it counts while a search is in flight", async () => {
-    // Otherwise the header pairs the query the user just typed with the total
-    // from before it and announces "31 matches" for a search nothing has
-    // counted yet.
+    // Otherwise the line pairs the query the user just typed with the total
+    // from before it and announces "31 recipes · zuppa" for a search nothing
+    // has counted yet.
     let answer: (value: unknown) => void = () => {};
     const backend = recipesBackend((req) =>
       req.searchParams.get("q")
@@ -225,149 +268,284 @@ describe("RecipesPage", () => {
     const { user } = renderApp("/recipes");
     await screen.findByText("31 saved");
 
-    await user.type(screen.getByPlaceholderText(/search recipes/i), "zuppa");
+    await user.type(searchBox(), "zuppa");
     await waitFor(() => expect(backend.requestsTo("GET /api/recipes")).toHaveLength(2));
 
-    expect(screen.getByText("31 saved")).toBeInTheDocument();
-    expect(screen.queryByText("31 matches")).not.toBeInTheDocument();
+    expect(resultLine()).toBe("31 recipes");
 
     answer(page([curry], { total: 1 }));
-    expect(await screen.findByText("1 match")).toBeInTheDocument();
+    await waitFor(() => expect(resultLine()).toBe("1 recipe · “zuppa”"));
+    expect(screen.getByText("31 saved")).toBeInTheDocument();
   });
 
-  it("builds the tag bar from every tag, not just the loaded page", async () => {
-    // Page one here carries no tags at all. The bar is still the whole set,
-    // because it comes from its own endpoint.
-    recipesBackend(page([recipeSummary({ id: 9, title: "Plain toast", tags: [] })]));
-    renderApp("/recipes");
-    await screen.findByText("Plain toast");
+  it("adds On sale from the quick row and sorts by biggest sale", async () => {
+    const backend = recipesBackend(
+      (req) => (req.searchParams.get("on_sale") === "true" ? page([curry]) : page([curry, bread])),
+      { ...FACETS, on_sale: 1 },
+    );
+    const { user } = renderApp("/recipes");
+    await screen.findByText("Banana bread");
 
-    expect(pillLabels()).toEqual([
-      "All",
-      "baking, 1 recipe",
-      "dinner, 1 recipe",
-      "quick, 1 recipe",
+    await user.click(screen.getByRole("button", { name: /^On sale/ }));
+
+    await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
+    expect(lastListRequest(backend).searchParams.get("on_sale")).toBe("true");
+    expect(screen.getByRole("button", { name: "Remove on sale" })).toBeInTheDocument();
+    expect(resultLine()).toBe("1 recipe · on sale");
+    // Picking On sale filters; it leaves the order alone.
+    expect(sortMenu()).toHaveValue("title");
+    expect(lastListRequest(backend).searchParams.get("sort")).toBe("title");
+
+    await user.selectOptions(sortMenu(), "Biggest sale");
+
+    await waitFor(() => expect(lastListRequest(backend).searchParams.get("sort")).toBe("sale"));
+    expect(lastListRequest(backend).searchParams.get("on_sale")).toBe("true");
+    expect(lastListRequest(backend).searchParams.get("page")).toBe("1");
+  });
+
+  it("offers the four sorts, in order", async () => {
+    const backend = recipesBackend(page([curry]), { ...FACETS, on_sale: 0 });
+    const { user } = renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
+
+    expect(within(sortMenu()).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "A-Z",
+      "Recently added",
+      "Recently cooked",
+      "Biggest sale",
     ]);
+
+    await user.selectOptions(sortMenu(), "Recently cooked");
+    await waitFor(() => expect(lastListRequest(backend).searchParams.get("sort")).toBe("cooked"));
   });
 
-  describe("filtering by several tags", () => {
-    it("narrows to the recipes carrying every tag selected", async () => {
+  it("hides Biggest sale when pricing is off", async () => {
+    recipesBackend(page([curry]), { ...FACETS, on_sale: null });
+    renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
+
+    expect(within(sortMenu()).getAllByRole("option").map((o) => o.textContent)).toEqual([
+      "A-Z",
+      "Recently added",
+      "Recently cooked",
+    ]);
+    expect(screen.queryByRole("button", { name: /^On sale/ })).not.toBeInTheDocument();
+  });
+
+  it("opens with the sort the URL names", async () => {
+    const backend = recipesBackend(page([curry]));
+    renderApp("/recipes?sort=newest");
+    await screen.findByText("Weeknight chicken curry");
+
+    expect(sortMenu()).toHaveValue("newest");
+    expect(lastListRequest(backend).searchParams.get("sort")).toBe("newest");
+  });
+
+  it("shows a sale ribbon on a recipe on sale and nothing on the rest", async () => {
+    recipesBackend(page([{ ...curry, sale_percent: 24 }, bread]), { ...FACETS, on_sale: 1 });
+    renderApp("/recipes");
+
+    const onSale = (await screen.findByRole("heading", { name: curry.title })).closest("a")!;
+    const ribbon = within(onSale).getByText("24% off");
+    expect(ribbon).toHaveClass("sale-ribbon");
+    expect(ribbon.closest(".photo-wrap")).not.toBeNull();
+
+    const notOnSale = screen.getByRole("heading", { name: bread.title }).closest("a")!;
+    expect(notOnSale.querySelector(".sale-ribbon")).toBeNull();
+    // A card never carries a price.
+    expect(onSale).not.toHaveTextContent("$");
+  });
+
+  it("opens an old bookmark with its search in the box", async () => {
+    const backend = recipesBackend(page([curry]));
+    renderApp("/recipes?q=curry&tag=dinner");
+
+    expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
+    const request = lastListRequest(backend);
+    expect(request.searchParams.get("q")).toBe("curry");
+    expect(request.searchParams.getAll("tag")).toEqual(["dinner"]);
+    expect(screen.getByRole("button", { name: "Remove dinner" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove “curry”" })).toBeInTheDocument();
+    expect(searchBox()).toHaveValue("");
+    expect(resultLine()).toBe("1 recipe · dinner · “curry”");
+  });
+
+  it("names ingredient tokens from the facets", async () => {
+    // The URL carries only the key; the server knows what the owner calls it.
+    const backend = recipesBackend(page([curry]), {
+      ...FACETS,
+      ingredients: [{ key: "chicken-thigh", name: "chicken thighs" }],
+    });
+    renderApp("/recipes?ing=chicken-thigh");
+
+    expect(await screen.findByRole("button", { name: "Remove chicken thighs" })).toBeInTheDocument();
+    expect(lastListRequest(backend).searchParams.getAll("ingredient")).toEqual(["chicken-thigh"]);
+    await waitFor(() => expect(resultLine()).toBe("1 recipe · 🥕 chicken thighs"));
+  });
+
+  describe("search history", () => {
+    it("records the search when a recipe is opened from it", async () => {
+      const backend = recipesBackend(page([curry]), FACETS, { "GET /api/recipes/:id": recipe({ id: 1 }) });
+      const { user } = renderApp("/recipes?tag=dinner&sale=1");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(screen.getByRole("heading", { name: curry.title }));
+
+      await waitFor(() => expect(backend.requestsTo("POST /api/recipes/searches")).toHaveLength(1));
+      expect(backend.requestsTo("POST /api/recipes/searches")[0].body).toEqual({
+        text: "",
+        tags: ["dinner"],
+        ingredients: [],
+        on_sale: true,
+      });
+      await waitFor(() => expect(recipeRequests(backend, 1)).toHaveLength(1));
+    });
+
+    it("records the typing the results answer, as the search's text", async () => {
+      const backend = recipesBackend(
+        (req) => (req.searchParams.get("q") ? page([curry]) : page([curry, bread])),
+        FACETS,
+        { "GET /api/recipes/:id": recipe({ id: 1 }) },
+      );
+      const { user } = renderApp("/recipes");
+      await screen.findByText("Banana bread");
+      await user.type(searchBox(), "curry");
+      await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
+
+      await user.click(screen.getByRole("heading", { name: curry.title }));
+
+      await waitFor(() => expect(backend.requestsTo("POST /api/recipes/searches")).toHaveLength(1));
+      expect(backend.requestsTo("POST /api/recipes/searches")[0].body).toEqual({
+        text: "curry",
+        tags: [],
+        ingredients: [],
+        on_sale: false,
+      });
+    });
+
+    it("records the box's tokens when a recipe is opened from its suggestions", async () => {
+      const backend = recipesBackend(page([curry, bread]), FACETS, {
+        "GET /api/recipes/suggest": { ...NO_SUGGESTIONS, recipes: [{ id: 2, title: "Banana bread" }] },
+        "GET /api/recipes/:id": recipe({ id: 2, title: "Banana bread" }),
+      });
+      const { user } = renderApp("/recipes?tag=baking");
+      await screen.findByText("Banana bread");
+
+      await user.type(searchBox(), "bana");
+      await user.click(await screen.findByRole("option", { name: /Banana bread/ }));
+
+      await waitFor(() => expect(recipeRequests(backend, 2)).toHaveLength(1));
+      // The typing was finding the recipe, not searching: only the tokens count.
+      expect(backend.requestsTo("POST /api/recipes/searches").map((r) => r.body)).toEqual([
+        { text: "", tags: ["baking"], ingredients: [], on_sale: false },
+      ]);
+    });
+
+    it("does not record anything when no search is applied", async () => {
+      const backend = recipesBackend(page([curry]), FACETS, { "GET /api/recipes/:id": recipe({ id: 1 }) });
+      const { user } = renderApp("/recipes");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(screen.getByRole("heading", { name: curry.title }));
+
+      await waitFor(() => expect(recipeRequests(backend, 1)).toHaveLength(1));
+      expect(backend.requestsTo("POST /api/recipes/searches")).toHaveLength(0);
+    });
+
+    it("still opens the recipe when the search could not be recorded", async () => {
+      const backend = recipesBackend(page([curry]), FACETS, {
+        "POST /api/recipes/searches": new HttpError(500, "History is down"),
+        "GET /api/recipes/:id": recipe({ id: 1, title: "Weeknight chicken curry" }),
+      });
+      const { user } = renderApp("/recipes?tag=dinner");
+      await screen.findByText("Weeknight chicken curry");
+
+      await user.click(screen.getByRole("heading", { name: curry.title }));
+
+      expect(await screen.findByRole("heading", { level: 1, name: curry.title })).toBeInTheDocument();
+      expect(backend.requestsTo("POST /api/recipes/searches")).toHaveLength(1);
+      expect(screen.queryByText("History is down")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("when nothing matches", () => {
+    it("offers the removal that brings results back", async () => {
+      // Dinner and on sale together match nothing; on sale alone matches
+      // nothing either, but dinner alone matches one.
       const backend = recipesBackend((req) => {
-        const tags = req.searchParams.getAll("tag");
-        if (tags.includes("dinner") && tags.includes("quick")) return page([curry]);
-        if (tags.includes("dinner")) return page([curry, bread]);
+        const dinner = req.searchParams.get("tag") === "dinner";
+        const sale = req.searchParams.get("on_sale") === "true";
+        if (dinner && sale) return page([]);
+        if (sale) return page([], { total: 0 });
+        if (dinner) return page([curry]);
         return page([curry, bread]);
       });
-      const { user } = renderApp("/recipes");
-      await screen.findByText("Weeknight chicken curry");
+      const { user } = renderApp("/recipes?tag=dinner&sale=1");
 
-      await user.click(pill("dinner"));
-      await user.click(pill("quick"));
+      expect(await screen.findByText("No recipes match dinner · on sale.")).toBeInTheDocument();
+      const remove = await screen.findByRole("button", { name: "Remove “on sale” to see 1" });
+
+      await user.click(remove);
 
       await waitFor(() => expect(cardTitles()).toEqual(["Weeknight chicken curry"]));
-      expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner", "quick"]);
-      expect(pill("dinner")).toHaveAttribute("aria-pressed", "true");
-      expect(pill("quick")).toHaveAttribute("aria-pressed", "true");
-      expect(pill("baking")).toHaveAttribute("aria-pressed", "false");
+      expect(lastListRequest(backend).searchParams.get("on_sale")).toBe(null);
+      expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner"]);
+      expect(screen.queryByRole("button", { name: "Remove on sale" })).not.toBeInTheDocument();
     });
 
-    it("drops one tag of several when it is tapped again", async () => {
-      const backend = recipesBackend(page([curry]));
-      const { user } = renderApp("/recipes?tag=dinner&tag=quick");
-      await screen.findByText("Weeknight chicken curry");
-
-      await user.click(pill("dinner"));
-
-      await waitFor(() =>
-        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["quick"]),
-      );
-      expect(pill("dinner")).toHaveAttribute("aria-pressed", "false");
-    });
-
-    it("clears every selected tag with All", async () => {
-      const backend = recipesBackend(page([curry]));
-      const { user } = renderApp("/recipes?tag=dinner&tag=quick");
-      await screen.findByText("Weeknight chicken curry");
-      expect(pill("All")).toHaveAttribute("aria-pressed", "false");
-
-      await user.click(pill("All"));
-
-      await waitFor(() =>
-        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual([]),
-      );
-      expect(pill("All")).toHaveAttribute("aria-pressed", "true");
-      expect(pill("dinner")).toHaveAttribute("aria-pressed", "false");
-    });
-
-    it("opens with every tag the URL names applied", async () => {
-      const backend = recipesBackend(page([curry]));
-      renderApp("/recipes?tag=dinner&tag=quick");
-
-      expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
-      expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual(["dinner", "quick"]);
-      expect(pill("dinner")).toHaveClass("active");
-      expect(pill("quick")).toHaveClass("active");
-    });
-
-    it("counts each tag within the search and the tags already selected", async () => {
-      // A count is what tapping the pill would leave, so it has to be asked
-      // of the same filters the list is showing.
-      const backend = recipesBackend(page([curry]));
-      const { user } = renderApp("/recipes");
-      await screen.findByText("Weeknight chicken curry");
-
-      await user.click(pill("dinner"));
-      await user.type(screen.getByPlaceholderText(/search recipes/i), "curry");
-
-      await waitFor(() => {
-        const request = lastTagsRequest(backend);
-        expect(request.searchParams.get("q")).toBe("curry");
-        expect(request.searchParams.getAll("tag")).toEqual(["dinner"]);
+    it("offers to drop a tag no recipe carries any more", async () => {
+      // An old search, opened from history or a bookmark, naming a tag that
+      // has since been renamed away.
+      recipesBackend((req) => {
+        const tags = req.searchParams.getAll("tag");
+        if (tags.includes("gone")) return page([]);
+        return tags.includes("dinner") ? page([curry]) : page([curry, bread]);
       });
+      renderApp("/recipes?tag=dinner&tag=gone");
+
+      expect(await screen.findByText("No recipes match dinner · gone.")).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: "Remove “gone” to see 1" }),
+      ).toBeInTheDocument();
     });
 
-    it("dims a tag that would leave nothing, but never a selected one", async () => {
-      recipesBackend(page([]), (req: MockRequest) =>
-        req.searchParams.getAll("tag").includes("dinner")
-          ? [tagCount("baking", 0), tagCount("dinner", 0), tagCount("quick", 0)]
-          : [tagCount("baking", 1), tagCount("dinner", 1), tagCount("quick", 1)],
-      );
-      const { user } = renderApp("/recipes?q=zuppa");
-      await screen.findByText("No matches");
-
-      await user.click(pill("dinner"));
-
-      await waitFor(() => expect(pill("baking")).toBeDisabled());
-      expect(pill("quick")).toBeDisabled();
-      // Selected and leading nowhere, it still has to be tappable: it is the
-      // way back out.
-      expect(pill("dinner")).toBeEnabled();
-      expect(pill("dinner")).toHaveAccessibleName("dinner, 0 recipes");
-    });
-
-    it("keeps a selected tag the box no longer has, so it can be taken off", async () => {
-      // A link from before the tag was renamed would otherwise filter by
-      // something the bar has no pill for.
-      const backend = recipesBackend(page([]));
-      const { user } = renderApp("/recipes?tag=gone");
-      await screen.findByText("No matches");
-
-      expect(pill("gone")).toHaveAttribute("aria-pressed", "true");
-      await user.click(pill("gone"));
-
-      await waitFor(() =>
-        expect(lastListRequest(backend).searchParams.getAll("tag")).toEqual([]),
-      );
-      expect(screen.queryByRole("button", { name: /^gone/ })).not.toBeInTheDocument();
-    });
-
-    it("names every selected tag when nothing matches them all", async () => {
-      recipesBackend(page([]));
-      renderApp("/recipes?tag=dinner&tag=quick&tag=baking");
+    it("offers the first removal that helps, in the box's order", async () => {
+      // Dropping dinner leaves two on sale, dropping on sale leaves one
+      // dinner: both help, and the box's first token is the one offered.
+      recipesBackend((req) => {
+        const dinner = req.searchParams.get("tag") === "dinner";
+        const sale = req.searchParams.get("on_sale") === "true";
+        if (dinner && sale) return page([]);
+        if (sale) return page([curry, bread]);
+        return page([curry]);
+      });
+      renderApp("/recipes?tag=dinner&sale=1");
 
       expect(
-        await screen.findByText("No recipes match with tags “dinner”, “quick” and “baking”."),
+        await screen.findByRole("button", { name: "Remove “dinner” to see 2" }),
       ).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Remove “on sale”/ })).not.toBeInTheDocument();
+    });
+
+    it("offers Clear when no single removal brings anything back", async () => {
+      const backend = recipesBackend((req) =>
+        req.searchParams.get("q") || req.searchParams.get("tag")
+          ? page([])
+          : page([curry, bread]),
+      );
+      const { user } = renderApp("/recipes?q=zuppa&tag=dinner");
+      expect(await screen.findByText("No recipes match dinner · “zuppa”.")).toBeInTheDocument();
+
+      const clear = await screen.findByRole("button", { name: "Clear the search" });
+      expect(screen.queryByRole("button", { name: /to see/ })).not.toBeInTheDocument();
+      await user.click(clear);
+
+      await waitFor(() =>
+        expect(cardTitles()).toEqual(["Weeknight chicken curry", "Banana bread"]),
+      );
+      const request = lastListRequest(backend);
+      expect(request.searchParams.get("q")).toBe(null);
+      expect(request.searchParams.getAll("tag")).toEqual([]);
     });
   });
 
@@ -421,6 +599,24 @@ describe("RecipesPage", () => {
     expect(lastListRequest(backend).searchParams.get("page")).toBe("2");
   });
 
+  it("asks for the next page in the same order and with the same search", async () => {
+    const backend = recipesBackend((req) =>
+      req.searchParams.get("page") === "2"
+        ? page([bread], { total: 2, page: 2 })
+        : page([curry], { total: 2, page: 1 }),
+    );
+    const { user } = renderApp("/recipes?tag=dinner&sort=newest");
+    await screen.findByText("Weeknight chicken curry");
+
+    await user.click(screen.getByRole("button", { name: /load more/i }));
+
+    await screen.findByText("Banana bread");
+    const request = lastListRequest(backend);
+    expect(request.searchParams.get("page")).toBe("2");
+    expect(request.searchParams.get("sort")).toBe("newest");
+    expect(request.searchParams.getAll("tag")).toEqual(["dinner"]);
+  });
+
   it("drops the load-more button once everything is on screen", async () => {
     recipesBackend(page([curry, bread]));
     renderApp("/recipes");
@@ -443,22 +639,33 @@ describe("RecipesPage", () => {
     await user.click(screen.getByRole("button", { name: /load more/i }));
     await screen.findByText("Banana bread");
 
-    await user.type(screen.getByPlaceholderText(/search recipes/i), "bread");
+    await user.type(searchBox(), "bread");
 
     await waitFor(() => expect(cardTitles()).toEqual(["Banana bread"]));
     expect(lastListRequest(backend).searchParams.get("page")).toBe("1");
   });
 
-  it("opens with the filters named in the URL applied", async () => {
-    const backend = recipesBackend(page([curry]));
-    renderApp("/recipes?q=curry&tag=quick");
+  it("does not append a page fetched for a search that has since changed", async () => {
+    // "Load more" answering after the search moved on belongs to the old
+    // results, and must not be stacked under the new ones.
+    let answer: (value: unknown) => void = () => {};
+    recipesBackend((req) => {
+      if (req.searchParams.get("page") === "2") return new Promise((resolve) => (answer = resolve));
+      if (req.searchParams.get("tag")) return page([bread], { total: 1 });
+      return page([curry], { total: 2 });
+    });
+    const { user } = renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
 
-    expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
-    const request = lastListRequest(backend);
-    expect(request.searchParams.get("q")).toBe("curry");
-    expect(request.searchParams.get("tag")).toBe("quick");
-    expect(screen.getByPlaceholderText(/search recipes/i)).toHaveValue("curry");
-    expect(screen.getByRole("button", { name: /^quick/ })).toHaveClass("active");
+    await user.click(screen.getByRole("button", { name: /load more/i }));
+    await user.click(screen.getByRole("button", { name: /^baking/ }));
+    await waitFor(() => expect(cardTitles()).toEqual(["Banana bread"]));
+    answer(page([recipeSummary({ id: 7, title: "Old page two" })], { total: 2, page: 2 }));
+    // Nothing on screen changes when the guard holds, so there is nothing to
+    // wait for but the answer itself landing.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(cardTitles()).toEqual(["Banana bread"]);
   });
 
   it("reports a failed load instead of claiming the recipe box is empty", async () => {
@@ -487,283 +694,12 @@ describe("RecipesPage", () => {
     expect(backend.requestsTo("GET /api/recipes")).toHaveLength(2);
   });
 
-  it("still lists recipes when the tag bar fails to load", async () => {
-    recipesBackend(page([curry]), new HttpError(500, "No tags for you"));
+  it("still lists recipes when the quick row fails to load", async () => {
+    recipesBackend(page([curry]), new HttpError(500, "No facets for you"));
     renderApp("/recipes");
 
     expect(await screen.findByText("Weeknight chicken curry")).toBeInTheDocument();
     expect(screen.queryByText(/Couldn't load/)).not.toBeInTheDocument();
-  });
-
-  describe("suggestions", () => {
-    it("lists the recipes with an ingredient on offer, most on offer first", async () => {
-      mockBackend({
-        "GET /api/recipes/tags": TAGS,
-        "GET /api/recipes": page([curry, bread]),
-        "GET /api/recipes/suggestions": {
-          ...NOTHING_TO_SUGGEST,
-          on_sale: [{ recipe: bread, on_sale: [SUGAR_ON_SALE], ingredient_count: 3 }],
-        },
-      });
-      const { user } = renderApp("/recipes");
-
-      await user.click(await screen.findByText(/on sale this week/i));
-
-      const offer = screen.getByText("1 of 3 ingredients on offer").closest(".offer")!;
-      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
-        "href",
-        "/recipes/2",
-      );
-      expect(within(offer as HTMLElement).getByText("sugar")).toBeInTheDocument();
-      expect(within(offer as HTMLElement).getByText("$3.99").tagName).toBe("S");
-      expect(within(offer as HTMLElement).getByText(/\$2\.99/)).toBeInTheDocument();
-    });
-
-    it("names the recipes under the median cost per serving, with the number", async () => {
-      // "Cheap" with a figure attached: below the median across the box,
-      // never against a price history.
-      mockBackend({
-        "GET /api/recipes/tags": TAGS,
-        "GET /api/recipes": page([curry, bread]),
-        "GET /api/recipes/suggestions": {
-          ...NOTHING_TO_SUGGEST,
-          cheap: [{ recipe: bread, per_serving: 0.42, priced: 5, total_lines: 6 }],
-          median_per_serving: 2.1,
-        },
-      });
-      const { user } = renderApp("/recipes");
-
-      await user.click(await screen.findByText(/under \$2\.10 a serving/i));
-
-      const offer = screen.getByText("$0.42 a serving").closest(".offer")!;
-      expect(within(offer as HTMLElement).getByRole("link", { name: "Banana bread" })).toBeInTheDocument();
-      expect(within(offer as HTMLElement).getByText("5 of 6 ingredients priced")).toBeInTheDocument();
-    });
-
-    it("names the recipes the pantry mostly covers", async () => {
-      mockBackend({
-        "GET /api/recipes/tags": TAGS,
-        "GET /api/recipes": page([curry, bread]),
-        "GET /api/recipes/suggestions": {
-          ...NOTHING_TO_SUGGEST,
-          pantry: [{ recipe: curry, in_pantry: 3, total_lines: 4 }],
-        },
-      });
-      const { user } = renderApp("/recipes");
-
-      await user.click(await screen.findByText(/mostly in your pantry/i));
-
-      expect(screen.getByText("3 of 4 ingredients in stock")).toBeInTheDocument();
-    });
-
-    it("stays out of the way when there is nothing to suggest", async () => {
-      recipesBackend(page([curry]));
-      renderApp("/recipes");
-
-      await screen.findByText("Weeknight chicken curry");
-      expect(screen.queryByText(/on sale this week/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/a serving/i)).not.toBeInTheDocument();
-      expect(screen.queryByText(/in your pantry/i)).not.toBeInTheDocument();
-    });
-  });
-
-  describe("needs a look", () => {
-    const AVOCADO = {
-      ingredient_id: 9,
-      name: "Optional: 1 diced ripe avocado",
-      issue: "amount_in_name",
-      affects: ["price", "nutrition"],
-    };
-    const PAPRICA_UNMATCHED = {
-      ingredient_id: 10,
-      name: "paprica",
-      issue: "no_match",
-      affects: ["price"],
-    };
-    const PAPRICA_NO_FOOD = {
-      ingredient_id: 10,
-      name: "paprica",
-      issue: "no_food",
-      affects: ["nutrition"],
-    };
-    const BEANS = {
-      ingredient_id: 11,
-      name: "can black beans",
-      issue: "unweighable",
-      affects: ["nutrition"],
-    };
-
-    function needingALook(attention: unknown) {
-      return mockBackend({
-        "GET /api/recipes/tags": TAGS,
-        "GET /api/recipes": page([curry, bread]),
-        "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
-        "GET /api/recipes/attention": attention,
-      });
-    }
-
-    it("links from Needs a look to the same view, ingredient by ingredient", async () => {
-      needingALook([{ recipe: curry, issues: [], no_servings: true }]);
-      renderApp("/recipes");
-
-      const link = await screen.findByRole("link", { name: "See it ingredient by ingredient" });
-      // Drawn as a link: the global reset leaves a bare one looking like text.
-      expect(link).toHaveClass("inline-link");
-      expect(link).toHaveAttribute("href", "/ingredients?view=look");
-    });
-
-    /** The fold's entry for one recipe, opened. */
-    async function openEntry(user: AppRender["user"], title: string): Promise<HTMLElement> {
-      await user.click(await screen.findByText(/needs a look/i));
-      return screen.getByRole("link", { name: title }).closest<HTMLElement>(".attention-recipe")!;
-    }
-
-    /**
-     * An entry as it reads: each list of lines under what they hold up, and
-     * each line's row and reason, in order.
-     */
-    function groups(entry: HTMLElement): [string, string[][]][] {
-      return within(entry)
-        .getAllByRole("list")
-        .map((list) => [
-          // The heading that names the list, for a screen reader as for the eye.
-          document.getElementById(list.getAttribute("aria-labelledby")!)?.textContent ?? "",
-          within(list)
-            .getAllByRole("listitem")
-            .map((li) => [
-              within(li).getByRole("link").textContent ?? "",
-              li.querySelector(".issue-tag")?.textContent ?? "",
-            ]),
-        ]);
-    }
-
-    it("says what each row holds up, and sums it up for the recipe", async () => {
-      needingALook([{ recipe: bread, issues: [AVOCADO, PAPRICA_UNMATCHED, BEANS], no_servings: false }]);
-      const { user } = renderApp("/recipes");
-
-      const entry = await openEntry(user, "Banana bread");
-
-      expect(within(entry).getByRole("link", { name: "Banana bread" })).toHaveAttribute(
-        "href",
-        "/recipes/2",
-      );
-      expect(within(entry).getByText("2 for nutrition · 2 for price")).toBeInTheDocument();
-      expect(groups(entry)).toEqual([
-        ["Price and nutrition", [["Optional: 1 diced ripe avocado", "amount is in the name"]]],
-        ["Nutrition", [["can black beans", "can't weigh the amount"]]],
-        ["Price", [["paprica", "no match"]]],
-      ]);
-    });
-
-    it("lists a row under each when price and nutrition are held up for their own reasons", async () => {
-      needingALook([
-        { recipe: bread, issues: [PAPRICA_UNMATCHED, PAPRICA_NO_FOOD], no_servings: false },
-      ]);
-      const { user } = renderApp("/recipes");
-
-      const entry = await openEntry(user, "Banana bread");
-
-      expect(within(entry).getByText("1 for nutrition · 1 for price")).toBeInTheDocument();
-      expect(groups(entry)).toEqual([
-        ["Nutrition", [["paprica", "no food chosen"]]],
-        ["Price", [["paprica", "no match"]]],
-      ]);
-    });
-
-    it("links a price line to its row and a nutrition line to its place in the breakdown", async () => {
-      needingALook([
-        { recipe: bread, issues: [AVOCADO, PAPRICA_UNMATCHED, PAPRICA_NO_FOOD], no_servings: false },
-      ]);
-      const { user } = renderApp("/recipes");
-
-      const entry = await openEntry(user, "Banana bread");
-      const link = (list: string, name: string) =>
-        within(within(entry).getByRole("list", { name: list })).getByRole("link", { name });
-
-      // A reason the recipe line has wrong is fixed on the line, whatever it
-      // also holds up.
-      expect(link("Price and nutrition", "Optional: 1 diced ripe avocado")).toHaveAttribute(
-        "href",
-        "/recipes/2?ingredient=9",
-      );
-      expect(link("Price", "paprica")).toHaveAttribute("href", "/recipes/2?ingredient=10");
-      expect(link("Nutrition", "paprica")).toHaveAttribute("href", "/recipes/2?nutrition=10");
-    });
-
-    it("sends a recipe with no serving count to its edit form", async () => {
-      needingALook([{ recipe: bread, issues: [BEANS], no_servings: true }]);
-      const { user } = renderApp("/recipes");
-
-      const entry = await openEntry(user, "Banana bread");
-
-      expect(within(entry).getByText("2 for nutrition")).toBeInTheDocument();
-      expect(groups(entry)).toEqual([
-        [
-          "Nutrition",
-          [
-            ["Whole recipe", "no serving count"],
-            ["can black beans", "can't weigh the amount"],
-          ],
-        ],
-      ]);
-      expect(within(entry).getByRole("link", { name: "Whole recipe" })).toHaveAttribute(
-        "href",
-        "/recipes/2/edit",
-      );
-    });
-
-    it("lands a nutrition line on the breakdown, open at that ingredient", async () => {
-      const cake = recipe({
-        id: 2,
-        title: "Banana bread",
-        servings: 12,
-        ingredients: [{ id: 10, name: "paprica", quantity: 1, unit: "tbsp" }],
-      });
-      mockBackend({
-        "GET /api/recipes/tags": TAGS,
-        "GET /api/recipes": page([curry, bread]),
-        "GET /api/recipes/suggestions": NOTHING_TO_SUGGEST,
-        "GET /api/recipes/attention": [
-          { recipe: bread, issues: [PAPRICA_NO_FOOD], no_servings: false },
-        ],
-        "GET /api/recipes/:id/nutrition": {
-          servings: 12,
-          per_serving: null,
-          counted: 0,
-          total_lines: 1,
-          lines: [
-            {
-              ingredient_id: 10,
-              name: "paprica",
-              key: "paprica",
-              measured: true,
-              skipped: false,
-              food: null,
-              hand_picked: false,
-              grams: null,
-              nutrients: null,
-              issue: "no_food",
-            },
-          ],
-        },
-        "GET /api/recipes/:id": cake,
-      });
-      const { user } = renderApp("/recipes");
-
-      const entry = await openEntry(user, "Banana bread");
-      await user.click(within(entry).getByRole("link", { name: "paprica" }));
-
-      const row = await screen.findByText("paprica", { selector: ".nutrition-lines .name" });
-      expect(document.querySelector("#nutrition")).toHaveAttribute("open");
-      expect(row.closest("li")).toHaveClass("highlighted");
-    });
-
-    it("is absent when every recipe is in order", async () => {
-      recipesBackend(page([curry]));
-      renderApp("/recipes");
-
-      await screen.findByText("Weeknight chicken curry");
-      expect(screen.queryByText(/needs a look/i)).not.toBeInTheDocument();
-    });
+    expect(screen.queryByText("No facets for you")).not.toBeInTheDocument();
   });
 });
