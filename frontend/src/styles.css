@@ -1944,8 +1944,12 @@ button.cook-duration:hover {
   color: var(--ink);
 }
 
+/* One width for every glyph - a carrot is wider than a # - so the names in
+   the Ingredient and Tag groups start in one column. */
 .search-drop-icon {
   flex: none;
+  width: 1.25em;
+  text-align: center;
   color: var(--muted);
 }
 
