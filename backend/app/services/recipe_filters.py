@@ -11,7 +11,8 @@ from collections import defaultdict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import Ingredient
+from ..models import Ingredient, PantryItem
+from .canonical import best_display
 from .identity import Identity
 
 
@@ -41,3 +42,16 @@ def intersect(*sets: set[int] | None) -> set[int] | None:
         if ids is not None:
             result = set(ids) if result is None else result & ids
     return result
+
+
+async def ingredient_names(session: AsyncSession) -> dict[str, str]:
+    """A readable name per canonical key, from the things that use it."""
+    identity = await Identity.of(session)
+    variants: dict[str, list[str]] = {}
+    ingredients = (await session.execute(select(Ingredient.name))).scalars().all()
+    pantry = (await session.execute(select(PantryItem.name))).scalars().all()
+    for name in [*ingredients, *pantry]:
+        key = identity.key(name)
+        if key:
+            variants.setdefault(key, []).append(name)
+    return {key: best_display(names) for key, names in variants.items()}

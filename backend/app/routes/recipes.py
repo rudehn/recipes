@@ -13,8 +13,9 @@ from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
 from ..models import Ingredient, MealPlanEntry, Recipe, RecipeTag
 from ..schemas import (
-    MAX_TAG_LENGTH,
+    MAX_TAG_FILTERS,
     ImageFromUrl,
+    RecentSearch,
     RecipeAttention,
     RecipeCost,
     RecipeIn,
@@ -22,9 +23,12 @@ from ..schemas import (
     RecipeOut,
     RecipePage,
     RecipeSummary,
+    SearchIn,
     Suggestions,
     TagCount,
+    TagName,
 )
+from ..services import search_history
 from ..services.attention import recipes_needing_a_look
 from ..services.images import (
     ImageTooLarge,
@@ -44,12 +48,6 @@ DEFAULT_PER_PAGE = 24
 MAX_PER_PAGE = 100
 
 RecipeSort = Literal["title", "newest", "cooked", "sale"]
-
-# A tag filter names tags no longer than a tag can be, and no more of them
-# than anyone narrowing a recipe box would tap. Each one is a subquery, so an
-# unbounded list would be an unbounded query.
-TagName = Annotated[str, StringConstraints(max_length=MAX_TAG_LENGTH)]
-MAX_TAG_FILTERS = 20
 
 # An ingredient filter is a key (or a name, which is reduced to one), bounded
 # like the rest: each one is read against every recipe's ingredients.
@@ -225,6 +223,33 @@ async def suggestions(session: AsyncSession = Depends(get_session)):
     merely being read costs one batched lookup at most.
     """
     return await costing.suggestions(session)
+
+
+@router.post("/searches", status_code=204)
+async def record_search(search: SearchIn, session: AsyncSession = Depends(get_session)):
+    """Remember that a recipe was opened from this search.
+
+    Declared above /{recipe_id} so that path does not swallow "searches".
+    """
+    await search_history.record(session, search)
+
+
+@router.get("/searches", response_model=list[RecentSearch])
+async def recent_searches(
+    limit: int = Query(default=5, ge=1, le=8),
+    session: AsyncSession = Depends(get_session),
+):
+    """The distinct searches of the last 60 days, newest first."""
+    return await search_history.recent(session, limit)
+
+
+@router.delete("/searches", status_code=204)
+async def forget_search(
+    signature: str = Query(max_length=1000),
+    session: AsyncSession = Depends(get_session),
+):
+    """Forget a search, every time it was made."""
+    await search_history.forget(session, signature)
 
 
 @router.get("/attention", response_model=list[RecipeAttention])

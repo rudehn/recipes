@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
@@ -338,3 +339,26 @@ class IngredientMergeDismissal(Base):
     key_a: Mapped[str] = mapped_column(String(300), primary_key=True)
     key_b: Mapped[str] = mapped_column(String(300), primary_key=True)
     dismissed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RecipeSearch(Base):
+    """One time a recipe was opened from a search on the Recipes page.
+
+    An event log, so the same search made twice is two rows: recent searches
+    are the distinct `signature`s, newest first, and a tag's popularity is
+    how many rows hold it. `ingredients` are identity keys, resolved through
+    merges again when read. Rows past the history window are pruned when a
+    new one is written.
+    """
+
+    __tablename__ = "recipe_searches"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    signature: Mapped[str] = mapped_column(String(1000), index=True)
+    text: Mapped[str] = mapped_column(String(100))
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    ingredients: Mapped[list[str]] = mapped_column(JSON, default=list)
+    on_sale: Mapped[bool] = mapped_column(Boolean, default=False)
+    searched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )

@@ -1,7 +1,15 @@
 from datetime import date, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from .services.recipe_source import without_tracking
 
@@ -11,6 +19,11 @@ Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 # a longer one, and the importer drops a longer suggestion; one number, so
 # none of them can admit a tag another would not.
 MAX_TAG_LENGTH = 50
+# A tag filter names tags no longer than a tag can be, and no more of them
+# than anyone narrowing a recipe box would tap. Each one is a subquery, so an
+# unbounded list would be an unbounded query.
+TagName = Annotated[str, StringConstraints(max_length=MAX_TAG_LENGTH)]
+MAX_TAG_FILTERS = 20
 
 
 class StoreOut(BaseModel):
@@ -1165,3 +1178,33 @@ class Reread(BaseModel):
     # Whether the website's own line was read, or the line rebuilt from its
     # amount, unit and name because the original was never kept.
     from_source: bool
+
+
+class SearchIn(BaseModel):
+    """A search the Recipes page ran: the box's text and tokens.
+
+    Bounded the way the list's own filters are, since each token is a
+    restriction when the search is replayed.
+    """
+
+    text: str = Field(default="", max_length=100)
+    tags: list[TagName] = Field(default_factory=list, max_length=MAX_TAG_FILTERS)
+    ingredients: list[Annotated[str, StringConstraints(max_length=300)]] = Field(
+        default_factory=list, max_length=MAX_TAG_FILTERS
+    )
+    on_sale: bool = False
+
+
+class IngredientName(BaseModel):
+    key: str
+    name: str
+
+
+class RecentSearch(BaseModel):
+    """A remembered search, ready to put back in the box."""
+
+    signature: str
+    text: str
+    tags: list[str]
+    ingredients: list[IngredientName]
+    on_sale: bool

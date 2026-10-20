@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import Ingredient, IngredientProductMatch, PantryItem, Recipe
+from ...models import IngredientProductMatch, Recipe
 from ...schemas import (
     GroceryItem,
     GroceryList,
@@ -38,8 +38,8 @@ from ...schemas import (
     SaleItem,
 )
 from .. import settings as settings_service
-from ..canonical import best_display
 from ..identity import Identity
+from ..recipe_filters import ingredient_names
 from . import matching, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -160,7 +160,7 @@ async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
     if not discounted:
         return []
 
-    names = await _ingredient_names(session)
+    names = await ingredient_names(session)
     identity = await Identity.of(session)
     recipes = (await session.execute(select(Recipe))).scalars().unique().all()
 
@@ -186,19 +186,6 @@ async def recipes_on_sale(session: AsyncSession) -> list[RecipeOnSale]:
         )
     found.sort(key=lambda r: (-len(r.on_sale) / r.ingredient_count, r.recipe.title.casefold()))
     return found
-
-
-async def _ingredient_names(session: AsyncSession) -> dict[str, str]:
-    """A readable name per canonical key, from the things that use it."""
-    identity = await Identity.of(session)
-    variants: dict[str, list[str]] = {}
-    ingredients = (await session.execute(select(Ingredient.name))).scalars().all()
-    pantry = (await session.execute(select(PantryItem.name))).scalars().all()
-    for name in [*ingredients, *pantry]:
-        key = identity.key(name)
-        if key:
-            variants.setdefault(key, []).append(name)
-    return {key: best_display(names) for key, names in variants.items()}
 
 
 def to_buy(grocery_list: GroceryList) -> list[GroceryItem]:
