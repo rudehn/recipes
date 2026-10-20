@@ -899,6 +899,27 @@ async def test_the_on_sale_filter_keeps_only_recipes_on_sale(client, catalog):
     assert body["total"] == 1
 
 
+async def test_the_ingredient_filter_and_the_on_sale_filter_both_apply(client, catalog):
+    """Flour heavy uses sugar but is only 5.9% off, so it is in the sugar
+    list and out of the sugar list on sale; flour-only Plain bread is on
+    neither."""
+    await seed(["flour", "sugar"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    await make_recipe("Flour heavy", [("sugar", 1, "cup"), ("flour", 8, "cup")])
+    await make_recipe("Plain bread", [("flour", 1, "cup")])
+
+    using_sugar = {r["title"] for r in (await listing(client, ingredient=["sugar"]))["items"]}
+    on_sale = await listing(client, ingredient=["sugar"], on_sale=True)
+    both = {r["title"] for r in on_sale["items"]}
+
+    assert {"Sugar cookies", "Flour heavy"} <= using_sugar
+    assert "Plain bread" not in using_sugar
+    assert "Sugar cookies" in both
+    assert "Flour heavy" not in both
+    assert "Plain bread" not in both
+
+
 async def test_biggest_sale_sorts_by_percent_then_title(client, catalog):
     """Sugar alone is 25%. Adding a cup of flour ($0.14 at regular) dilutes
     the 9 cents off $0.49 to 17.8%, so 17. Test bake has saffron, so it is

@@ -302,9 +302,23 @@ async def test_an_ingredient_filter_follows_a_merge(client):
 
 
 async def test_recently_cooked_puts_the_latest_past_plan_first(client):
+    """Titles are chosen so that cooked order differs from A-Z.
+
+    Zucchini was planned twice (the later plan counts), Beans three days ago,
+    Mango today (today counts as cooked), Apple only tomorrow and Cake never:
+    the last two rank together, A-Z.
+    """
     today = date.today()
-    recipes = {t: (await make_recipe(client, t))["id"] for t in "ABCD"}
-    for title, days in (("A", -1), ("B", -3), ("C", 1)):
+    recipes = {t: (await make_recipe(client, t))["id"] for t in
+               ("Zucchini", "Beans", "Mango", "Apple", "Cake")}
+    plans = (
+        ("Zucchini", -9),
+        ("Zucchini", -1),
+        ("Beans", -3),
+        ("Mango", 0),
+        ("Apple", 1),
+    )
+    for title, days in plans:
         resp = await client.post(
             "/api/meal-plan",
             json={
@@ -315,4 +329,4 @@ async def test_recently_cooked_puts_the_latest_past_plan_first(client):
         )
         assert resp.status_code == 201, resp.text
 
-    assert await titles(client, sort="cooked") == ["A", "B", "C", "D"]
+    assert await titles(client, sort="cooked") == ["Mango", "Zucchini", "Beans", "Apple", "Cake"]
