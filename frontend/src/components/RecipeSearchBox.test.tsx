@@ -278,6 +278,38 @@ describe("RecipeSearchBox", () => {
     expect(box).toHaveValue("");
   });
 
+  it("keeps an ingredient token in place when its name arrives, and apart from a namesake", () => {
+    // The page names an ingredient from its key until the facets answer;
+    // the token is the same token either way. Two ingredients can share a
+    // name, and each is still its own token.
+    mockBackend({});
+    const props = { onChange: vi.fn(), draft: "", onDraft: vi.fn(), onOpenRecipe: vi.fn() };
+    const searchWith = (ingredients: { key: string; name: string }[]): Search => ({
+      ...EMPTY_SEARCH,
+      ingredients,
+    });
+    const { rerender } = render(
+      <RecipeSearchBox {...props} search={searchWith([{ key: "chicken-thigh", name: "chicken thigh" }])} />,
+    );
+    const before = screen.getByRole("button", { name: "Remove chicken thigh" }).closest(".chip");
+
+    rerender(
+      <RecipeSearchBox {...props} search={searchWith([{ key: "chicken-thigh", name: "chicken thighs" }])} />,
+    );
+    expect(screen.getByRole("button", { name: "Remove chicken thighs" }).closest(".chip")).toBe(before);
+
+    rerender(
+      <RecipeSearchBox
+        {...props}
+        search={searchWith([
+          { key: "scallion", name: "green onion" },
+          { key: "green-onion", name: "green onion" },
+        ])}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Remove green onion" })).toHaveLength(2);
+  });
+
   it("closes the dropdown on Escape", async () => {
     const { user, box } = setup();
     await user.click(box);

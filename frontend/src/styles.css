@@ -3072,10 +3072,6 @@ body.has-install-hint .page {
   max-width: 100%;
 }
 
-/* "4 sticks / 16 oz" is one thing, so the line breaks before it rather than
-   leaving "oz" alone on a line of its own. */
-.item-price .product-size { white-space: nowrap; }
-
 .grocery-item.checked { opacity: 0.55; }
 
 .grocery-item.checked .name { text-decoration: line-through; }
@@ -4234,10 +4230,9 @@ body.has-install-hint .page {
   .page-head { gap: var(--space-8); margin-bottom: var(--space-16); }
 
   /* A page's actions take a line of their own rather than trailing off the
-     end of the heading's: the search field wants the width, and two buttons
-     splitting what is left is a row you can hit. */
+     end of the heading's: two buttons splitting the width is a row you can
+     hit. */
   .page-head .toolbar { flex: 0 0 100%; }
-  .page-head .toolbar .searchbar { flex: 1 0 100%; }
   .page-head .toolbar .btn { flex: 1; justify-content: center; }
 
   .searchbar { min-width: 0; }

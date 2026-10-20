@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import {
@@ -158,13 +158,11 @@ export default function RecipesPage() {
   const saved = useSavedCount(listing);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // A page fetched for one search must not be appended under another.
-  // useLoad guards its own requests, but "load more" is ours to keep straight.
-  const key = requestKey(applied, sort);
-  const currentKey = useRef(key);
-  useEffect(() => {
-    currentKey.current = key;
-  }, [key]);
+  // Sales are unknown with pricing off or no store, and there is nothing then
+  // to sort by. A bookmark asking for it is put back to A-Z once the facets
+  // say so, so the menu, the URL and the request agree.
+  if (facets && facets.on_sale === null && sort === "sale") setSort("title");
+  const saleSortable = facets ? facets.on_sale !== null : sort === "sale";
 
   useEffect(() => {
     const next = writeParams(applied, sort, new URLSearchParams(searchParams));
@@ -191,21 +189,24 @@ export default function RecipesPage() {
 
   async function loadMore() {
     if (!listing) return;
-    const wanted = currentKey.current;
+    // The next page of what is on screen, which is not always what is being
+    // asked for: a new search may be in flight. useLoad guards its own
+    // requests, but "load more" is ours to keep straight, so the page lands
+    // only on the results it continues.
+    const wanted = requestKey(listing.search, listing.sort);
+    const after = listing.page;
     setLoadingMore(true);
     try {
       const more = await api.listRecipes({
         ...toFilters(listing.search),
         sort: listing.sort,
-        page: listing.page + 1,
+        page: after + 1,
         per_page: PER_PAGE,
       });
-      if (currentKey.current !== wanted) return;
       // `more` carries the newer total too: the collection may have changed
-      // since the first page was fetched. The search is unchanged - that is
-      // what the guard above just established.
+      // since the first page was fetched.
       setListing((loaded) =>
-        loaded
+        loaded && loaded.page === after && requestKey(loaded.search, loaded.sort) === wanted
           ? { ...more, search: loaded.search, sort: loaded.sort, items: [...loaded.items, ...more.items] }
           : loaded,
       );
@@ -216,19 +217,25 @@ export default function RecipesPage() {
     }
   }
 
+  // Made once per change rather than per render: QuickRow measures itself
+  // again whenever its tags change, and the box asks again when its search does.
+  const boxSearch = useMemo(() => named(search, facets?.ingredients), [search, facets]);
+  const quickTags = useMemo(
+    () => (facets ? facets.tags.filter((tag) => !search.tags.includes(tag.name)) : []),
+    [facets, search.tags],
+  );
   // Everything below describes the results on screen, so it reads the search
   // they answer rather than the one the user is part-way through building.
-  const answered = listing && named(listing.search, facets?.ingredients);
+  const answered = useMemo(
+    () => listing && named(listing.search, facets?.ingredients),
+    [listing, facets],
+  );
   const shown = listing?.items.length ?? 0;
   const total = listing?.total ?? 0;
   const emptyBox = listing !== null && total === 0 && isEmpty(listing.search);
   // A failed refresh leaves results worth keeping, so the page empties itself
   // only when the failure left it with nothing at all.
   const blank = error !== null && listing === null;
-  // Sales are unknown with pricing off or no store; there is nothing then to
-  // sort by. A bookmark asking for it lists A-Z, which is how the server
-  // orders a box with nothing on sale.
-  const saleSortable = facets ? facets.on_sale !== null : sort === "sale";
   const sorts = SORTS.filter(([value]) => value !== "sale" || saleSortable);
 
   return (
@@ -244,7 +251,7 @@ export default function RecipesPage() {
 
       <div className="recipes-controls">
         <RecipeSearchBox
-          search={named(search, facets?.ingredients)}
+          search={boxSearch}
           onChange={setSearch}
           draft={draft}
           onDraft={setDraft}
@@ -253,7 +260,7 @@ export default function RecipesPage() {
         <label className="recipes-sort">
           Sort
           <select
-            value={saleSortable || sort !== "sale" ? sort : "title"}
+            value={sort}
             onChange={(e) => setSort(e.target.value as RecipeSort)}
           >
             {sorts.map(([value, name]) => (
@@ -265,7 +272,7 @@ export default function RecipesPage() {
         </label>
         {!blank && !emptyBox && facets && (
           <QuickRow
-            tags={facets.tags.filter((tag) => !search.tags.includes(tag.name))}
+            tags={quickTags}
             onSale={facets.on_sale}
             saleSelected={search.onSale}
             onPickTag={(name) =>
@@ -305,7 +312,7 @@ export default function RecipesPage() {
         </EmptyState>
       )}
 
-      {!blank && answered && shown > 0 && (
+      {!blank && listing && answered && shown > 0 && (
         // Results are dimmed rather than cleared while the next search loads,
         // so the page does not flash empty on every keystroke.
         <div className={`recipe-grid${loading ? " stale" : ""}`}>
@@ -337,7 +344,9 @@ export default function RecipesPage() {
 
       {!blank && shown > 0 && shown < total && (
         <div className="load-more">
-          <Button onClick={loadMore} disabled={loadingMore}>
+          {/* Not while the next search loads: the page it would add belongs
+              to the results about to be replaced. */}
+          <Button onClick={loadMore} disabled={loadingMore || loading}>
             {loadingMore ? "Loading…" : "Load more"}
           </Button>
           <span className="sub">

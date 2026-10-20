@@ -355,7 +355,9 @@ export function RecipeSearchBox({
       >
         {tokens.map((t) => (
           <Chip
-            key={`${t.kind}:${tokenLabel(t)}`}
+            // An ingredient by its key: its name can arrive late, and two
+            // ingredients can share one.
+            key={t.kind === "ingredient" ? `ingredient:${t.key}` : `${t.kind}:${tokenLabel(t)}`}
             tone={t.kind === "sale" ? "accent" : "green"}
             className="recipe-search-token"
             title={tokenLabel(t)}

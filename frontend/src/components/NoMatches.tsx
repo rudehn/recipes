@@ -52,19 +52,26 @@ export function NoMatches({
   onChange: (search: Search) => void;
 }) {
   const filtersKey = JSON.stringify(toFilters(search));
-  const { data: removal, loading } = useLoad(
+  const { data } = useLoad(
     // Asked again only when what is searched for changes, not when an
     // ingredient's name arrives: the removal is kept by its place in the box,
     // so it is named from the search as it is now.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    useCallback(() => firstRemoval(search), [filtersKey]),
+    useCallback(
+      async () => ({ key: filtersKey, removal: await firstRemoval(search) }),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [filtersKey],
+    ),
   );
+  // Until the answer for this search arrives, the last one is about another
+  // search, and its place in the box and its count would be wrong here.
+  const answered = data?.key === filtersKey;
+  const removal = answered ? data.removal : null;
   const token = removal ? tokensOf(search)[removal.at] : undefined;
 
   return (
     <EmptyState glyph="🔍" title="No matches">
       <p>No recipes match {describe(search)}.</p>
-      {!loading && (
+      {answered && (
         <Toolbar center>
           {removal && token ? (
             <Button onClick={() => onChange(without(search, token))}>

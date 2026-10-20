@@ -651,7 +651,7 @@ describe("RecipesPage", () => {
     let answer: (value: unknown) => void = () => {};
     recipesBackend((req) => {
       if (req.searchParams.get("page") === "2") return new Promise((resolve) => (answer = resolve));
-      if (req.searchParams.get("tag")) return page([bread], { total: 1 });
+      if (req.searchParams.get("tag")) return page([bread], { total: 3 });
       return page([curry], { total: 2 });
     });
     const { user } = renderApp("/recipes");
@@ -661,11 +661,42 @@ describe("RecipesPage", () => {
     await user.click(screen.getByRole("button", { name: /^baking/ }));
     await waitFor(() => expect(cardTitles()).toEqual(["Banana bread"]));
     answer(page([recipeSummary({ id: 7, title: "Old page two" })], { total: 2, page: 2 }));
-    // Nothing on screen changes when the guard holds, so there is nothing to
-    // wait for but the answer itself landing.
-    await new Promise((resolve) => setTimeout(resolve, 50));
 
+    // The button is back once the stalled page has been dealt with.
+    expect(await screen.findByRole("button", { name: "Load more" })).toBeEnabled();
     expect(cardTitles()).toEqual(["Banana bread"]);
+    expect(screen.getByText("Showing 1 of 3")).toBeInTheDocument();
+  });
+
+  it("offers no next page while a new search is loading", async () => {
+    // The page it would fetch continues the results about to be replaced.
+    let answer: (value: unknown) => void = () => {};
+    const backend = recipesBackend((req) => {
+      if (req.searchParams.get("tag")) return new Promise((resolve) => (answer = resolve));
+      return page([curry], { total: 2 });
+    });
+    const { user } = renderApp("/recipes");
+    await screen.findByText("Weeknight chicken curry");
+
+    await user.click(screen.getByRole("button", { name: /^baking/ }));
+    await waitFor(() => expect(listRequests(backend)).toHaveLength(2));
+
+    expect(screen.getByRole("button", { name: "Load more" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Load more" }));
+    answer(page([bread], { total: 3 }));
+
+    await waitFor(() => expect(cardTitles()).toEqual(["Banana bread"]));
+    expect(screen.getByRole("button", { name: "Load more" })).toBeEnabled();
+    expect(listRequests(backend).filter((r) => r.searchParams.get("page") === "2")).toHaveLength(0);
+  });
+
+  it("puts a Biggest sale bookmark back to A-Z when pricing is off", async () => {
+    const backend = recipesBackend(page([curry]), { ...FACETS, on_sale: null });
+    renderApp("/recipes?sort=sale");
+    await screen.findByText("Weeknight chicken curry");
+
+    await waitFor(() => expect(lastListRequest(backend).searchParams.get("sort")).toBe("title"));
+    expect(sortMenu()).toHaveValue("title");
   });
 
   it("reports a failed load instead of claiming the recipe box is empty", async () => {
