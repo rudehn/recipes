@@ -335,7 +335,7 @@ describe("RecipesPage", () => {
     await waitFor(() => expect(lastListRequest(backend).searchParams.get("sort")).toBe("cooked"));
   });
 
-  it("hides Biggest sale when pricing is off", async () => {
+  it("hides Biggest sale and On sale without sale data (pricing off or Kroger down)", async () => {
     recipesBackend(page([curry]), { ...FACETS, on_sale: null });
     renderApp("/recipes");
     await screen.findByText("Weeknight chicken curry");
@@ -706,7 +706,7 @@ describe("RecipesPage", () => {
     expect(listRequests(backend).filter((r) => r.searchParams.get("page") === "2")).toHaveLength(0);
   });
 
-  it("puts a Biggest sale bookmark back to A-Z when pricing is off", async () => {
+  it("puts a Biggest sale bookmark back to A-Z without sale data", async () => {
     const backend = recipesBackend(page([curry]), { ...FACETS, on_sale: null });
     renderApp("/recipes?sort=sale");
     await screen.findByText("Weeknight chicken curry");

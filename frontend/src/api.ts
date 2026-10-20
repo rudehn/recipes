@@ -122,9 +122,10 @@ export interface IngredientName {
 
 /**
  * What a recipe search could add. Tag counts are what choosing that tag would
- * leave. `on_sale` is how many of the matches are on sale, null when sales are
- * unavailable (pricing off, no store, Kroger unreachable). `ingredients` names
- * the ingredient filters already applied.
+ * leave. `on_sale` is how many of the matches are on sale: null when there is
+ * no sale data (pricing off, no store, Kroger unreachable or too slow), while 0
+ * is sale data saying none of them are. `ingredients` names the ingredient
+ * filters already applied.
  */
 export interface RecipeFacets {
   tags: TagCount[];

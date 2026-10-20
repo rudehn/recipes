@@ -56,6 +56,11 @@ PRICED_COVERAGE = 0.8
 # a reason to cook something.
 SALE_THRESHOLD = 0.15
 
+# How long listing recipes waits on Kroger for the prices its sale figures
+# need. Finding a recipe must not hang on a grocery store's API, and sale
+# data is a garnish: past this the list is answered without it.
+SALE_LOOKUP_SECONDS = 1.5
+
 
 def _line_cost(
     ingredient_key: str,
@@ -89,10 +94,10 @@ def _line_cost(
     return price, True
 
 
-async def _products_for(
+async def _picks_for(
     session: AsyncSession, recipes: list[Recipe], location_id: str, resolve: bool
-) -> dict[str, Product]:
-    """The product each ingredient across `recipes` means, by canonical key.
+) -> dict[str, str]:
+    """The product id each ingredient across `recipes` means, by canonical key.
 
     `resolve` says whether unseen ingredients may be searched for. A single
     recipe's page may: it is a handful of searches, once. Ranking the whole
@@ -108,13 +113,23 @@ async def _products_for(
         picked = await matching.picks(session, keys, location_id)
     else:
         picked = await matching.stored_picks(session, keys, location_id)
-    wanted = sorted({p.product_id for p in picked.values() if p.product_id})
-    found = await products.by_ids(wanted, location_id) if wanted else {}
-    return {
-        key: product
-        for key, pick in picked.items()
-        if pick.product_id and (product := found.get(pick.product_id)) is not None
-    }
+    return {key: pick.product_id for key, pick in picked.items() if pick.product_id}
+
+
+def _by_key(ids: dict[str, str], found: dict[str, Product]) -> dict[str, Product]:
+    return {key: product for key, pid in ids.items() if (product := found.get(pid)) is not None}
+
+
+async def _products_for(
+    session: AsyncSession, recipes: list[Recipe], location_id: str, resolve: bool
+) -> dict[str, Product]:
+    """The product each ingredient across `recipes` means, by canonical key.
+
+    See `_picks_for` for what `resolve` allows.
+    """
+    ids = await _picks_for(session, recipes, location_id, resolve)
+    wanted = sorted(set(ids.values()))
+    return _by_key(ids, await products.by_ids(wanted, location_id) if wanted else {})
 
 
 def _cost_recipe(
@@ -241,17 +256,7 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
     )
 
 
-async def pricing_store(session: AsyncSession):
-    """The store prices come from, or None when there are no prices to show.
-
-    Pricing off and no store chosen are the two reasons sale data does not
-    exist at all, as distinct from existing and being empty.
-    """
-    store = await settings_service.selected_store(session)
-    return store if enabled() else None
-
-
-async def sale_percentages(session: AsyncSession) -> dict[int, int]:
+async def sale_percentages(session: AsyncSession) -> dict[int, int] | None:
     """Whole percent off, for each recipe whose ingredients are on offer.
 
     A recipe is on sale when the offers take at least `SALE_THRESHOLD` off
@@ -261,20 +266,27 @@ async def sale_percentages(session: AsyncSession) -> dict[int, int]:
     nothing about a recipe whose other half is unknown. The percent is
     rounded down, so a ribbon never promises more than the shelf gives.
 
-    Nothing is searched for - products come from stored picks - and any
-    reason there is no sale data (pricing off, no store, Kroger down) is
-    an empty answer, so the recipe list still loads.
+    Nothing is searched for - products come from stored picks - and the
+    prices are asked for promptly or not at all, since this runs on every
+    request that lists recipes. None says there is no sale data (pricing
+    off, no store, Kroger down or slow), which is not the same as nothing
+    being on sale; either way the recipe list still loads.
     """
-    store = await pricing_store(session)
-    if store is None:
-        return {}
+    store = await settings_service.selected_store(session)
+    if not enabled() or store is None:
+        return None
     box = (await session.execute(select(Recipe))).scalars().unique().all()
     recipes = [r for r in box if r.ingredients]
-    try:
-        found = await _products_for(session, recipes, store.location_id, resolve=False)
-    except KrogerError as exc:
-        log.warning("Could not find recipes on sale: %s", exc)
-        return {}
+    ids = await _picks_for(session, recipes, store.location_id, resolve=False)
+    wanted = sorted(set(ids.values()))
+    prices = (
+        await products.by_ids_promptly(wanted, store.location_id, SALE_LOOKUP_SECONDS)
+        if wanted
+        else {}
+    )
+    if prices is None:
+        return None
+    found = _by_key(ids, prices)
 
     identity = await Identity.of(session)
     sales: dict[int, int] = {}

@@ -84,6 +84,8 @@ class FakeCatalog:
         # ingredients are meant to go out together.
         self.in_flight = 0
         self.peak_in_flight = 0
+        # How long each answer takes, for tests about requests that overlap.
+        self.delay = 0.0
 
     async def respond(self, params: dict | None) -> httpx.Response:
         if self.error:
@@ -94,7 +96,7 @@ class FakeCatalog:
         self.in_flight += 1
         self.peak_in_flight = max(self.peak_in_flight, self.in_flight)
         # Yield, so concurrent requests overlap the way real ones would.
-        await asyncio.sleep(0)
+        await asyncio.sleep(self.delay)
         self.in_flight -= 1
         request = httpx.Request("GET", kroger.API_BASE + "/v1/products")
 
@@ -856,7 +858,8 @@ async def test_facets_and_suggestions_answer_without_sale_data_when_kroger_is_do
     sweet = await client.get("/api/recipes/suggest", params={"text": "swe"})
 
     assert facets.status_code == 200, facets.text
-    assert facets.json()["on_sale"] == 0
+    # No sale data, not "none on sale": the page shows no On sale chip.
+    assert facets.json()["on_sale"] is None
     assert facets.json()["tags"] == [{"name": "sweet", "count": 1}]
     assert suggested.status_code == 200, suggested.text
     assert [i["name"] for i in suggested.json()["ingredients"]] == ["sugar"]
@@ -883,3 +886,137 @@ async def test_facets_count_the_recipes_on_sale_within_the_filters(client, catal
     # Sugar cookies and the fixture's Test bake are on sale; bread is not.
     assert everything.json()["on_sale"] == 2
     assert narrowed.json()["on_sale"] == 0
+
+
+# ------------------------------------------- sale data never holds the list ---
+
+
+async def cold_prices(client) -> None:
+    """Picks made and Sugar cookies on offer, with no price remembered yet."""
+    await seed(["sugar"])
+    await fetch(client)
+    await make_recipe("Sugar cookies", [("sugar", 1, "cup")])
+    products.forget_prices()
+
+
+async def test_the_list_answers_without_sale_data_while_kroger_hangs(
+    client, catalog, monkeypatch
+):
+    """A Kroger that never answers costs the list a bounded wait, not its
+    own ten second timeout. The lookup is not abandoned: when it does answer,
+    the next list has its prices."""
+    await cold_prices(client)
+    release = asyncio.Event()
+    lookups: list[asyncio.Task] = []
+    real_by_ids = products.by_ids
+
+    async def hanging(product_ids, location_id):
+        lookups.append(asyncio.current_task())
+        await release.wait()
+        return await real_by_ids(product_ids, location_id)
+
+    monkeypatch.setattr(products, "by_ids", hanging)
+
+    body = await asyncio.wait_for(listing(client), timeout=3)
+    facets = await asyncio.wait_for(client.get("/api/recipes/facets"), timeout=3)
+
+    assert {r["title"]: r["sale_percent"] for r in body["items"]} == {
+        "Sugar cookies": None,
+        "Test bake": None,
+    }
+    assert facets.json()["on_sale"] is None
+    # The facets did not start a second lookup, or wait on the first again.
+    assert len(lookups) == 1
+
+    release.set()
+    await lookups[0]
+
+    assert await sale_percents(client) == {"Sugar cookies": 25, "Test bake": 25}
+
+
+async def test_requests_made_together_share_one_kroger_lookup(client, catalog):
+    """The page asks for the list and the facets at once; on a cold memory
+    they would otherwise fetch the same products twice."""
+    await cold_prices(client)
+    catalog.delay = 0.05
+    before = catalog.calls
+
+    listed, facets = await asyncio.gather(listing(client), client.get("/api/recipes/facets"))
+
+    assert listed["items"][0]["sale_percent"] == 25
+    assert facets.json()["on_sale"] == 2
+    assert catalog.calls - before == 1
+
+
+async def test_a_product_kroger_no_longer_carries_is_not_asked_for_every_list(
+    client, catalog
+):
+    """A pick whose product Kroger stopped returning is remembered as absent
+    for as long as a price is, rather than asked about on every request."""
+    await cold_prices(client)
+    await make_recipe("Gone", [("vanilla", 1, "tsp")])
+    async with session_factory() as session:
+        session.add(
+            IngredientProductMatch(
+                canonical_key="vanilla",
+                location_id=LOCATION,
+                product_id="0099",
+                user_confirmed=True,
+                matcher_version=matching.MATCHER_VERSION,
+            )
+        )
+        await session.commit()
+    await listing(client)
+    before = catalog.calls
+
+    await listing(client)
+    await listing(client, page=2)
+
+    assert catalog.calls == before
+
+
+async def test_an_outage_is_remembered_for_a_while(client, catalog, monkeypatch):
+    """A failed lookup is not retried on every request: the page fires
+    several at once, and each would wait on Kroger again. Once the memory has
+    passed, the next request asks again."""
+    await cold_prices(client)
+    attempts = 0
+
+    async def down(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        raise kroger.KrogerError("down")
+
+    monkeypatch.setattr(products, "by_ids", down)
+
+    await listing(client)
+    await client.get("/api/recipes/facets")
+    assert attempts == 1
+
+    monkeypatch.setattr(products, "UNREACHABLE_SECONDS", 0)
+    await listing(client)
+    assert attempts == 2
+
+
+async def test_suggestions_ask_kroger_nothing_unless_on_sale_is_picked(client, catalog):
+    """Without the On sale token the suggestions never use sale data, so
+    computing it would only be a wait."""
+    await cold_prices(client)
+    before = catalog.calls
+
+    resp = await client.get("/api/recipes/suggest", params={"text": "sug"})
+
+    assert resp.status_code == 200
+    assert catalog.calls == before
+
+
+async def test_a_new_pick_changes_the_sale_at_once(client, catalog):
+    """Nothing about a recipe's sale is remembered beyond its products'
+    prices, so picking another product shows on the next list."""
+    await cold_prices(client)
+    assert (await sale_percents(client))["Sugar cookies"] == 25
+
+    async with session_factory() as session:
+        await matching.confirm(session, "sugar", LOCATION, "0001")
+
+    assert (await sale_percents(client))["Sugar cookies"] is None

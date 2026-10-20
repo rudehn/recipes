@@ -135,17 +135,26 @@ def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> 
 
 
 async def _restricted(
-    session: AsyncSession, q: str, tags: list[str], ingredients: list[str], on_sale: bool
-) -> tuple[Select, dict[int, int]]:
+    session: AsyncSession,
+    q: str,
+    tags: list[str],
+    ingredients: list[str],
+    on_sale: bool,
+    *,
+    sales_wanted: bool = True,
+) -> tuple[Select, dict[int, int] | None]:
     """Recipes matching every filter, and the sale percentages found on the way.
 
     The list, the facets and the suggestions all answer to this, so a count
     the page shows can never disagree with the recipes a click on it lists.
+    Sales are None when there is no sale data, and are only worked out when
+    the caller uses them or the On sale filter needs them: they cost a
+    lookup of every recipe's prices. Without sale data nothing is on sale.
     """
-    sales = await costing.sale_percentages(session)
+    sales = await costing.sale_percentages(session) if sales_wanted or on_sale else None
     # Both restrictions apply together: on sale AND using every ingredient.
     only = intersect(
-        set(sales) if on_sale else None,
+        set(sales or ()) if on_sale else None,
         await recipes_using(session, ingredients) if ingredients else None,
     )
     return _filtered_recipes(q.strip(), _tag_filter(tags), only), sales
@@ -163,6 +172,7 @@ async def list_recipes(
     session: AsyncSession = Depends(get_session),
 ):
     filtered, sales = await _restricted(session, q, tag, ingredient, on_sale)
+    sales = sales or {}
     total = await session.scalar(select(func.count()).select_from(filtered.subquery()))
 
     order = _SORTS[sort]
@@ -258,10 +268,10 @@ async def facets(
     frequency = await search_history.tag_frequency(session)
     tags = sorted(counts, key=lambda name: (-frequency[name], -counts[name], name))
 
-    # Nothing to count without prices; with them but with Kroger down the
-    # count is honestly zero.
+    # Without sale data there is nothing to count, which the page shows as no
+    # On sale chip; zero is sale data saying none of these are on sale.
     on_sale_count = None
-    if await costing.pricing_store(session) is not None:
+    if sales is not None:
         on_sale_count = await session.scalar(
             select(func.count()).select_from(filtered.where(Recipe.id.in_(set(sales))).subquery())
         )
@@ -298,7 +308,7 @@ async def suggest(
     needle = text.strip().casefold()
     if not needle:
         return {"ingredients": [], "tags": [], "recipes": []}
-    filtered, _ = await _restricted(session, q, tag, ingredient, on_sale)
+    filtered, _ = await _restricted(session, q, tag, ingredient, on_sale, sales_wanted=False)
 
     counts = await _tag_counts(session, filtered)
     picked_tags = set(_tag_filter(tag))
