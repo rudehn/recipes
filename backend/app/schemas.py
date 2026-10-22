@@ -1003,9 +1003,17 @@ class ImageFromUrl(BaseModel):
     url: HttpUrl
 
 
-class CopyWeekRequest(BaseModel):
-    from_start: date
-    to_start: date
+class PickIn(BaseModel):
+    week_start: date
+    recipe_id: int
+
+
+class PickOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    week_start: date
+    recipe: RecipeSummary
 
 
 # Which side of a merge keeps a thing both sides have: the name being merged

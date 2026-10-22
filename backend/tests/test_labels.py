@@ -293,13 +293,3 @@ async def test_a_change_to_a_repeat_needs_something_to_change(client):
     unknown = await change_day(client, rid, "2026-10-28", label_ids=[999])
     assert unknown.status_code == 422
     assert (await change_from(client, rid, "2026-10-28", weekdays=None)).status_code == 422
-
-
-async def test_copying_a_week_keeps_the_labels(client):
-    recipe = (await make_recipe(client, "Oats", []))["id"]
-    dad = await label(client, "Dad")
-    await plan_with(client, "2026-10-26", recipe, [dad])
-    resp = await client.post(
-        "/api/meal-plan/copy-week", json={"from_start": "2026-10-26", "to_start": "2026-11-02"}
-    )
-    assert [names(m) for m in resp.json()] == [["Dad"]]

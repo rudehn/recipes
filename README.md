@@ -20,7 +20,7 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   Typing suggests ingredients, tags and recipes, each counting how many recipes it would leave, and clicking into the empty box offers your recent searches, the same on every device.
   Under the box, one row holds the tags you search for most, On sale and All tags; four sorts put the box A-Z, newest first, most recently cooked or biggest sale first.
   An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.
-* Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day, or copy last week's plan in one tap.
+* Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day.
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.
 * Ingredients: one page per ingredient, with the recipes that use it, whether it is a staple, the product it is priced with and the food it counts as, each changeable where it is shown.

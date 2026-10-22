@@ -995,11 +995,6 @@ export const api = {
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),
-  copyWeek: (from_start: string, to_start: string) =>
-    request<PlannedMeal[]>("/api/meal-plan/copy-week", {
-      method: "POST",
-      body: JSON.stringify({ from_start, to_start }),
-    }),
 
   listPantry: () => request<PantryItem[]>("/api/pantry"),
   addPantryItem: (name: string, in_stock: boolean) =>

@@ -1,19 +1,20 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_session
-from ..models import MealPlanEntry, MealRepeat, Recipe
+from ..models import MealPlanEntry, MealRepeat, PlanPick, Recipe
 from ..schemas import (
-    CopyWeekRequest,
     MealPlanEntryIn,
     MealPlanEntryUpdate,
     MoveRepeatDay,
+    PickIn,
+    PickOut,
     PlanCost,
     PlannedMealOut,
     RepeatDayChange,
@@ -46,6 +47,53 @@ async def plan_cost(start: date, end: date, session: AsyncSession = Depends(get_
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
     return await costing.plan_cost(session, start, end)
+
+
+@router.get("/picks", response_model=list[PickOut])
+async def list_picks(week: date, session: AsyncSession = Depends(get_session)):
+    """The recipes picked for a week, in the order they were added."""
+    _require_monday(week)
+    result = await session.execute(
+        select(PlanPick).where(PlanPick.week_start == week).order_by(PlanPick.id)
+    )
+    return result.scalars().all()
+
+
+@router.post("/picks", response_model=PickOut, status_code=201)
+async def add_pick(
+    data: PickIn, response: Response, session: AsyncSession = Depends(get_session)
+):
+    """Pick a recipe for a week; picking it again returns the pick it has."""
+    _require_monday(data.week_start)
+    if await session.get(Recipe, data.recipe_id) is None:
+        raise HTTPException(status_code=404, detail="Recipe not found")
+    existing = await session.scalar(
+        select(PlanPick).where(
+            PlanPick.week_start == data.week_start, PlanPick.recipe_id == data.recipe_id
+        )
+    )
+    if existing is not None:
+        response.status_code = 200
+        return existing
+    pick = PlanPick(week_start=data.week_start, recipe_id=data.recipe_id)
+    session.add(pick)
+    await session.commit()
+    await session.refresh(pick)
+    return pick
+
+
+@router.delete("/picks/{pick_id}", status_code=204)
+async def delete_pick(pick_id: int, session: AsyncSession = Depends(get_session)):
+    pick = await session.get(PlanPick, pick_id)
+    if pick is None:
+        raise HTTPException(status_code=404, detail="Pick not found")
+    await session.delete(pick)
+    await session.commit()
+
+
+def _require_monday(week: date) -> None:
+    if week.weekday() != 0:
+        raise HTTPException(status_code=422, detail="A week starts on a Monday.")
 
 
 @router.post("", response_model=PlannedMealOut, status_code=201)
@@ -205,61 +253,6 @@ def _repeat_errors() -> Iterator[None]:
         raise HTTPException(status_code=422, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-
-
-@router.post("/copy-week", response_model=list[PlannedMealOut])
-async def copy_week(
-    data: CopyWeekRequest, session: AsyncSession = Depends(get_session)
-):
-    """Copies one week's entries onto another, skipping meals already planned
-    (so re-copying never duplicates)."""
-    offset = data.to_start - data.from_start
-    source_end = data.from_start + timedelta(days=6)
-    source = (
-        (
-            await session.execute(
-                select(MealPlanEntry).where(
-                    MealPlanEntry.plan_date >= data.from_start,
-                    MealPlanEntry.plan_date <= source_end,
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    existing = (
-        (
-            await session.execute(
-                select(MealPlanEntry).where(
-                    MealPlanEntry.plan_date >= data.to_start,
-                    MealPlanEntry.plan_date <= data.to_start + timedelta(days=6),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    taken = {(e.plan_date, e.meal, e.recipe_id) for e in existing}
-
-    created: list[MealPlanEntry] = []
-    for entry in source:
-        target = (entry.plan_date + offset, entry.meal, entry.recipe_id)
-        if target in taken:
-            continue
-        taken.add(target)
-        copy = MealPlanEntry(
-            plan_date=target[0],
-            meal=entry.meal,
-            recipe_id=entry.recipe_id,
-            servings=entry.servings,
-            labels=list(entry.labels),
-        )
-        session.add(copy)
-        created.append(copy)
-    await session.commit()
-    for copy in created:
-        await session.refresh(copy)
-    return [plan.from_entry(copy) for copy in created]
 
 
 @router.delete("/{entry_id}", status_code=204)

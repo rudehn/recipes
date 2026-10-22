@@ -83,13 +83,3 @@ async def test_patch_entry_servings(client):
     assert (
         await client.patch("/api/meal-plan/999", json={"servings": 2})
     ).status_code == 404
-
-
-async def test_copy_week_preserves_servings(client):
-    curry = await make_recipe(client, "Curry", 4, CURRY_INGREDIENTS)
-    await plan(client, "2026-07-20", "dinner", curry["id"], servings=8)
-    resp = await client.post(
-        "/api/meal-plan/copy-week",
-        json={"from_start": "2026-07-20", "to_start": "2026-07-27"},
-    )
-    assert resp.json()[0]["servings"] == 8

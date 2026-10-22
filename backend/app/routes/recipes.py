@@ -16,6 +16,7 @@ from ..models import (
     MealPlanEntry,
     MealRepeat,
     MealRepeatSkip,
+    PlanPick,
     Recipe,
     RecipeTag,
 )
@@ -532,6 +533,7 @@ async def delete_recipe(recipe_id: int, session: AsyncSession = Depends(get_sess
         delete(MealRepeatSkip).where(MealRepeatSkip.repeat_id.in_(repeat_ids))
     )
     await session.execute(delete(MealRepeat).where(MealRepeat.recipe_id == recipe_id))
+    await session.execute(delete(PlanPick).where(PlanPick.recipe_id == recipe_id))
     await session.delete(recipe)
     await session.commit()
 

@@ -335,41 +335,12 @@ describe("PlannerPage", () => {
     });
   });
 
-  describe("copying last week", () => {
-    it("copies from the week before the one being viewed", async () => {
-      const backend = mockBackend({
-        "GET /api/meal-plan": [],
-        "POST /api/meal-plan/copy-week": [plannedMeal()],
-      });
-      const { user } = renderApp("/planner");
-      await screen.findByText("Jul 27 – Aug 2, 2026");
+  it("no longer has a Copy last week button", async () => {
+    mockBackend({ "GET /api/meal-plan": [] });
+    renderApp("/planner");
+    await screen.findByText("Jul 27 – Aug 2, 2026");
 
-      await user.click(screen.getByRole("button", { name: /Copy last week/ }));
-
-      await waitFor(() =>
-        expect(backend.requestsTo("POST /api/meal-plan/copy-week")).toHaveLength(1),
-      );
-      expect(backend.requestsTo("POST /api/meal-plan/copy-week")[0].body).toEqual({
-        from_start: "2026-07-20",
-        to_start: "2026-07-27",
-      });
-    });
-
-    it("says so when the previous week had nothing left to copy", async () => {
-      const alert = vi.spyOn(window, "alert").mockImplementation(() => {});
-      mockBackend({
-        "GET /api/meal-plan": [],
-        "POST /api/meal-plan/copy-week": [],
-      });
-      const { user } = renderApp("/planner");
-      await screen.findByText("Jul 27 – Aug 2, 2026");
-
-      await user.click(screen.getByRole("button", { name: /Copy last week/ }));
-
-      await waitFor(() =>
-        expect(alert).toHaveBeenCalledWith("Nothing new to copy from last week."),
-      );
-    });
+    expect(screen.queryByRole("button", { name: /Copy last week/ })).not.toBeInTheDocument();
   });
 
   it("reports a failed load instead of showing an empty week", async () => {

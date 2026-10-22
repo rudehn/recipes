@@ -230,6 +230,23 @@ class MealPlanEntry(Base):
     )
 
 
+class PlanPick(Base):
+    """A recipe set aside for a week, to be placed on a day later.
+
+    Keyed by the week's Monday and never carried over to the next week.
+    """
+
+    __tablename__ = "plan_picks"
+    __table_args__ = (UniqueConstraint("week_start", "recipe_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_start: Mapped[date] = mapped_column(Date, index=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    recipe: Mapped[Recipe] = relationship(lazy="selectin")
+
+
 class MealRepeat(Base):
     """A meal planned for the same weekdays of every week, from a day on.
 

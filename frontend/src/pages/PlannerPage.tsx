@@ -116,18 +116,6 @@ export default function PlannerPage() {
     if (await action.run(() => api.deleteMealPlanEntry(entryId))) reload();
   }
 
-  async function copyLastWeek() {
-    let created: PlannedMeal[] = [];
-    const copied = await action.run(async () => {
-      created = await api.copyWeek(toISODate(addDays(weekStart, -7)), toISODate(weekStart));
-    });
-    if (!copied) return;
-    if (created.length === 0) {
-      window.alert("Nothing new to copy from last week.");
-    }
-    reload();
-  }
-
   /*
    * Seven columns of meals need about 1100px before each meal's title has
    * room for its words, and a phone has a third of that: the grid was 988px
@@ -163,9 +151,6 @@ export default function PlannerPage() {
               Next →
             </Button>
           </div>
-          <Button size="small" onClick={copyLastWeek}>
-            ⧉ Copy last week
-          </Button>
           <LinkButton
             variant="primary"
             size="small"
