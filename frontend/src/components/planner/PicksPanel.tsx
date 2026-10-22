@@ -27,6 +27,24 @@ function Thumb({ recipe }: { recipe: RecipeSummary }) {
 }
 
 /**
+ * What a row's button shows: the recipe's photo and title, and the days it is
+ * planned on. One element filling the whole button, since Firefox starts no
+ * drag of the row from a press on the button's own box, only from something
+ * inside it.
+ */
+function PickFace({ recipe, days = [] }: { recipe: RecipeSummary; days?: string[] }) {
+  return (
+    <span className="pick-face">
+      <Thumb recipe={recipe} />
+      <span className="pick-text">
+        <span className="pick-title">{recipe.title}</span>
+        {days.length > 0 && <span className="pick-days">{days.join(", ")}</span>}
+      </span>
+    </span>
+  );
+}
+
+/**
  * The week's picks, beside the plan: the recipes chosen for the week, found
  * with the Recipes page's search and placed from here onto the cells.
  *
@@ -145,8 +163,7 @@ export function PicksPanel({
                   aria-pressed={choosing(r)}
                   onClick={() => press(r)}
                 >
-                  <Thumb recipe={r} />
-                  <span className="pick-title">{r.title}</span>
+                  <PickFace recipe={r} />
                 </button>
                 {picked.has(r.id) ? (
                   <span
@@ -197,11 +214,7 @@ export function PicksPanel({
                 aria-pressed={choosing(p.recipe)}
                 onClick={() => press(p.recipe)}
               >
-                <Thumb recipe={p.recipe} />
-                <span className="pick-text">
-                  <span className="pick-title">{p.recipe.title}</span>
-                  {days.length > 0 && <span className="pick-days">{days.join(", ")}</span>}
-                </span>
+                <PickFace recipe={p.recipe} days={days} />
               </button>
               <button
                 type="button"

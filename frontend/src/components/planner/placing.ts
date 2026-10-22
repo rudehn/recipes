@@ -88,6 +88,14 @@ export function cellDrop(
 }
 
 /**
+ * How long a drag must have been quiet before a pointer event is taken as its
+ * end. A browser sends a drag's own events at least every 350ms (give or take
+ * 200ms) while it lasts, and no pointer events; one that sent a stray pointer
+ * event as a drag started would otherwise end the drag before its drop.
+ */
+export const DRAG_QUIET_MS = 1000;
+
+/**
  * The type every drag of the planner's own carries, which tells it from a
  * file or text dragged in from elsewhere: those carry only their own types.
  */

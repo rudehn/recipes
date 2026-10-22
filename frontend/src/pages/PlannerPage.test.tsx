@@ -5,7 +5,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal, RecipeSummary } from "../api";
-import { PLACING_TYPE } from "../components/planner/placing";
+import { DRAG_QUIET_MS, PLACING_TYPE } from "../components/planner/placing";
 import { SETTLE_MS } from "../components/planner/usePlannedServings";
 import { PHONE, PICKS_PANEL, WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
@@ -936,13 +936,23 @@ describe("PlannerPage", () => {
       it("moves and copies a meal to a day and meal chosen in its sheet", async () => {
         setViewportWidth(375);
         const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+        const oneOff = plannedMeal({
+          entry_id: 3,
+          plan_date: "2026-07-30",
+          recipe: curry,
+          labels: [dad],
+        });
+        let moved = false;
         const backend = mockBackend({
           "GET /api/labels": labelRows,
-          "GET /api/meal-plan": [
-            plannedMeal({ entry_id: 3, plan_date: "2026-07-30", recipe: curry, labels: [dad] }),
+          "GET /api/meal-plan": () => [
+            moved ? { ...oneOff, plan_date: "2026-08-01", meal: "lunch" } : oneOff,
             { ...repeatDay("2026-07-28"), servings: 2 },
           ],
-          "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3 }),
+          "PATCH /api/meal-plan/:id": () => {
+            moved = true;
+            return plannedMeal({ entry_id: 3 });
+          },
           "POST /api/meal-plan": plannedMeal({ recipe: curry }),
           "POST /api/meal-plan/repeats/:id/days/:day/move": plannedMeal({ recipe: curry }),
         });
@@ -967,7 +977,11 @@ describe("PlannerPage", () => {
         expect(within(dialog).getByRole("button", { name: "Move" })).toBeDisabled();
         await user.click(within(day()).getByRole("button", { name: "Saturday, Aug 1" }));
         await user.click(within(meal()).getByRole("button", { name: "Lunch" }));
-        scrolled.mockClear();
+        // What each day scrolled to held as it was scrolled to.
+        const scrolledTo: string[] = [];
+        scrolled.mockImplementation(function (this: Element) {
+          scrolledTo.push(this.textContent ?? "");
+        });
         await user.click(within(dialog).getByRole("button", { name: "Move" }));
 
         await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
@@ -977,7 +991,7 @@ describe("PlannerPage", () => {
         });
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
         // Its new day is brought into view, as a placed pick's is.
-        await waitFor(() => expect(scrolled.mock.contexts.at(-1)).toHaveTextContent(/^Sat\s*Aug 1/));
+        await waitFor(() => expect(scrolledTo.at(-1)).toMatch(/^Sat\s*Aug 1/));
 
         // A repeated day copies as a one-off with its own servings and labels;
         // Back leaves the sheet as it was.
@@ -2766,7 +2780,8 @@ describe("PlannerPage", () => {
 
     it("ends a drag whose row went away while it was dragged, at the pointer's next move", async () => {
       // A browser may never tell a row no longer in the page that its drag
-      // ended, so no dragend here: the pointer moving again is the backstop.
+      // ended, so no dragend here: the pointer moving again, once the drag's
+      // own events have stopped, is the backstop.
       const backend = mockBackend({
         "GET /api/meal-plan": [],
         "GET /api/meal-plan/picks": [],
@@ -2781,12 +2796,22 @@ describe("PlannerPage", () => {
       const row = draggable(await within(results).findByText("Banana bread"));
       const body = document.querySelector(".planner-body")!;
 
-      fireEvent.dragStart(row, { dataTransfer: dataTransfer() });
+      const dt = dataTransfer();
+      fireEvent.dragStart(row, { dataTransfer: dt });
       // Keys only, so the pointer stays where it was: the box still has focus.
       await user.keyboard("{Backspace>6/}curry");
       await waitFor(() => expect(row).not.toBeInTheDocument());
       expect(body).toHaveClass("dragging");
 
+      // A pointer event while the drag's own events still come is not its
+      // end: a browser may send one as a drag starts.
+      vi.setSystemTime(NOW.getTime() + DRAG_QUIET_MS);
+      fireEvent.dragOver(cell("dinner", 0), { dataTransfer: dt });
+      fireEvent.pointerMove(body);
+      expect(body).toHaveClass("dragging");
+
+      // Once they have stopped, it is.
+      vi.setSystemTime(NOW.getTime() + 2 * DRAG_QUIET_MS + 1);
       fireEvent.pointerMove(body);
 
       expect(body).not.toHaveClass("dragging");

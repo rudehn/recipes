@@ -2862,20 +2862,29 @@ body.has-install-hint .page {
   border-radius: var(--radius-xs);
 }
 
-/* The row itself is the button that starts placing the recipe. */
+/* The row itself is the button that starts placing the recipe. Its face
+   fills it, padding and all: Firefox starts no drag of the row from a press
+   on a button's own box, only from something inside it. */
 .pick-choose {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: var(--space-8);
-  padding: var(--space-4);
+  padding: 0;
   border-radius: var(--radius-xs);
   text-align: left;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   color: var(--ink);
   transition: background var(--transition), opacity var(--transition);
+}
+
+.pick-face {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4);
 }
 
 .pick-choose:hover { background: var(--surface-2); }
