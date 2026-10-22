@@ -1,52 +1,24 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useMemo, useState } from "react";
 
-import { api, type DayCost, type EntryCost, type Meal, type PlannedMeal } from "../api";
+import { api, type Meal } from "../api";
 import { LoadFailure } from "../components/LoadError";
+import { DayAgenda } from "../components/planner/DayAgenda";
+import { WeekGrid } from "../components/planner/WeekGrid";
+import { byCell, money, type Costs } from "../components/planner/plan";
+import { usePlannedServings } from "../components/planner/usePlannedServings";
 import { RecipePickerModal } from "../components/RecipeBits";
 import { Banner, Button, LinkButton, PageHead } from "../components/ui";
 import { WEEK_GRID, below } from "../layout";
-import { type Action, useAction } from "../useAction";
+import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 import { useMediaQuery } from "../useMediaQuery";
-import {
-  addDays,
-  formatDate,
-  formatDay,
-  formatRange,
-  isToday,
-  startOfWeek,
-  toISODate,
-} from "../dates";
-
-const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
-
-/** The meals of one day's one meal slot, keyed the way byCell holds them. */
-type Cells = Map<string, PlannedMeal[]>;
-
-/** What either layout can do to an entry already in a cell. */
-interface EntryActions {
-  onRemove: (entryId: number) => void;
-  onChangeServings: (meal: PlannedMeal, delta: number) => void;
-}
-
-/** A figure and how much of it is priced, which a day and a meal both carry. */
-type Costed = Pick<DayCost, "total" | "priced" | "total_lines">;
-
-/** What each day and each planned meal costs, for the layouts to look up. */
-interface Costs {
-  days: Map<string, DayCost>;
-  entries: Map<string, EntryCost>;
-}
-
-const money = (n: number) => `$${n.toFixed(2)}`;
-
-/** Whether a figure has anything priced in it to show. */
-const priced = (cost: Costed | undefined): cost is Costed => cost !== undefined && cost.priced > 0;
+import { addDays, formatRange, startOfWeek, toISODate } from "../dates";
 
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(null);
+  const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(
+    null,
+  );
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -81,20 +53,16 @@ export default function PlannerPage() {
     action.run,
     // The saved entry in place of the loaded one, which also asks for the
     // cost again: the meal's figure follows its new count.
-    (saved) => setEntries((prev) => prev?.map((e) => (e.key === saved.key ? saved : e)) ?? prev),
+    (saved) =>
+      setEntries(
+        (prev) => prev?.map((e) => (e.key === saved.key ? saved : e)) ?? prev,
+      ),
     // An earlier count in the burst may have landed, so the week is asked
     // for again rather than assumed to be what was loaded.
     reload,
   );
 
-  const byCell = useMemo(() => {
-    const map: Cells = new Map();
-    for (const e of shown(entries ?? [])) {
-      const key = `${e.plan_date}|${e.meal}`;
-      map.set(key, [...(map.get(key) ?? []), e]);
-    }
-    return map;
-  }, [entries, shown]);
+  const cells = useMemo(() => byCell(shown(entries ?? [])), [entries, shown]);
 
   const costs = useMemo<Costs>(
     () => ({
@@ -106,7 +74,11 @@ export default function PlannerPage() {
 
   async function addEntry(recipeId: number) {
     if (!picker) return;
-    if (await action.run(() => api.addMealPlanEntry(picker.date, picker.meal, recipeId))) {
+    if (
+      await action.run(() =>
+        api.addMealPlanEntry(picker.date, picker.meal, recipeId),
+      )
+    ) {
       setPicker(null);
       reload();
     }
@@ -140,7 +112,10 @@ export default function PlannerPage() {
             >
               ← Prev
             </Button>
-            <Button size="small" onClick={() => setWeekStart(startOfWeek(new Date()))}>
+            <Button
+              size="small"
+              onClick={() => setWeekStart(startOfWeek(new Date()))}
+            >
               Today
             </Button>
             <Button
@@ -201,7 +176,7 @@ export default function PlannerPage() {
         (agenda ? (
           <DayAgenda
             days={days}
-            byCell={byCell}
+            byCell={cells}
             costs={costs}
             onAdd={setPicker}
             onRemove={removeEntry}
@@ -210,7 +185,7 @@ export default function PlannerPage() {
         ) : (
           <WeekGrid
             days={days}
-            byCell={byCell}
+            byCell={cells}
             costs={costs}
             onAdd={setPicker}
             onRemove={removeEntry}
@@ -227,280 +202,4 @@ export default function PlannerPage() {
       )}
     </>
   );
-}
-
-interface LayoutProps extends EntryActions {
-  days: Date[];
-  byCell: Cells;
-  costs: Costs;
-  /** Opens the picker on the day and meal that asked for it. */
-  onAdd: (cell: { date: string; meal: Meal }) => void;
-}
-
-/**
- * The week as a grid: a row per meal, a column per day.
- *
- * Row-major, because that is the order a CSS grid fills itself in - the meal
- * label, then its seven days, then the next meal.
- */
-function WeekGrid({ days, byCell, costs, onAdd, onRemove, onChangeServings }: LayoutProps) {
-  return (
-    <div className="week-grid">
-      <div className="corner" />
-      {days.map((d) => {
-        const cost = costs.days.get(toISODate(d));
-        return (
-          <div key={d.toISOString()} className={`day-head${isToday(d) ? " today" : ""}`}>
-            <div className="dow">{formatDay(d)}</div>
-            <div className="date">{formatDate(d)}</div>
-            {priced(cost) && <PlanFigure cost={cost} />}
-          </div>
-        );
-      })}
-
-      {/* A fragment, not a wrapper: the cells are the grid's own children, and
-          anything between them would be the thing placed in a track instead. */}
-      {MEALS.map((meal) => (
-        <Fragment key={meal}>
-          <div className="meal-label">{meal}</div>
-          {days.map((d) => {
-            const iso = toISODate(d);
-            return (
-              <PlanCell
-                key={iso}
-                className={`plan-cell${isToday(d) ? " today" : ""}`}
-                entries={byCell.get(`${iso}|${meal}`) ?? []}
-                costs={costs.entries}
-                onAdd={() => onAdd({ date: iso, meal })}
-                onRemove={onRemove}
-                onChangeServings={onChangeServings}
-              />
-            );
-          })}
-        </Fragment>
-      ))}
-    </div>
-  );
-}
-
-/**
- * The same week as a stack of days, each listing its four meals.
- *
- * Day-major, which is how a week is read on a phone: you scroll to Thursday
- * and see all of Thursday, rather than scrolling sideways to Thursday four
- * separate times to collect its meals one row at a time.
- */
-function DayAgenda({ days, byCell, costs, onAdd, onRemove, onChangeServings }: LayoutProps) {
-  return (
-    <div className="day-agenda">
-      {days.map((d) => {
-        const iso = toISODate(d);
-        const today = isToday(d);
-        const cost = costs.days.get(iso);
-        return (
-          <section key={iso} className={`agenda-day${today ? " today" : ""}`}>
-            <h2 className="day-head">
-              <span className="dow">{formatDay(d)}</span>
-              <span className="date">{formatDate(d)}</span>
-              {today && <span className="today-tag">Today</span>}
-              {priced(cost) && <PlanFigure cost={cost} />}
-            </h2>
-            {MEALS.map((meal) => (
-              <div key={meal} className="agenda-meal">
-                <div className="meal-label">{meal}</div>
-                <PlanCell
-                  className="plan-cell"
-                  entries={byCell.get(`${iso}|${meal}`) ?? []}
-                  costs={costs.entries}
-                  onAdd={() => onAdd({ date: iso, meal })}
-                  onRemove={onRemove}
-                  onChangeServings={onChangeServings}
-                />
-              </div>
-            ))}
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-/** One day's one meal: what is planned for it, and the way to plan more. */
-function PlanCell({
-  className,
-  entries,
-  costs,
-  onAdd,
-  onRemove,
-  onChangeServings,
-}: {
-  className: string;
-  entries: PlannedMeal[];
-  costs: Map<string, EntryCost>;
-  onAdd: () => void;
-} & EntryActions) {
-  return (
-    <div className={className}>
-      {entries.map((e) => {
-        const servings = e.servings ?? e.recipe.servings;
-        const cost = costs.get(e.key);
-        return (
-          <div key={e.key} className="plan-entry">
-            <div className="plan-entry-main">
-              <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
-              <button
-                className="remove"
-                aria-label={`Remove ${e.recipe.title}`}
-                onClick={() => e.entry_id !== null && onRemove(e.entry_id)}
-              >
-                ✕
-              </button>
-            </div>
-            {/* The servings and what they cost, the line under the title. A
-                recipe that says nothing of servings has no stepper here, and
-                still has a cost. */}
-            {(servings != null || priced(cost)) && (
-              <div className="plan-entry-meta">
-                {servings != null && (
-                  <div className="serv">
-                    <button aria-label="Fewer servings" onClick={() => onChangeServings(e, -1)}>
-                      −
-                    </button>
-                    <span
-                      className={e.servings != null ? "overridden" : ""}
-                      title={`${servings} serving${servings === 1 ? "" : "s"}`}
-                    >
-                      ×{servings}
-                    </span>
-                    <button aria-label="More servings" onClick={() => onChangeServings(e, 1)}>
-                      +
-                    </button>
-                  </div>
-                )}
-                {priced(cost) && <PlanFigure cost={cost} />}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      <button className="plan-add" onClick={onAdd}>
-        + Add
-      </button>
-    </div>
-  );
-}
-
-/**
- * What a day or a meal costs to cook, as far as it is known.
- *
- * Shown plain when every ingredient is priced, and as "$6.20+" when only some
- * are: the figure is then a floor, and a bare number would read as the whole.
- * The plus is shorthand a screen reader cannot speak, so the words travel in
- * the title and the accessible name. The role is what lets that name be read
- * at all; a label on a plain span is one assistive tech may skip.
- */
-function PlanFigure({ cost }: { cost: Costed }) {
-  const floor = cost.priced < cost.total_lines;
-  const label =
-    `${floor ? "at least " : ""}${money(cost.total)}, ` +
-    `${cost.priced} of ${cost.total_lines} ingredient${cost.total_lines === 1 ? "" : "s"} priced`;
-  return (
-    <span className="plan-cost" role="img" aria-label={label} title={label}>
-      {money(cost.total)}
-      {floor && "+"}
-    </span>
-  );
-}
-
-/**
- * A count as it is stored. The recipe's own count is null, so a later edit to
- * the recipe flows through to the meals planned from it.
- */
-const asStored = (meal: PlannedMeal, count: number) =>
-  count === meal.recipe.servings ? null : count;
-
-/**
- * Planned servings, stepped a tap at a time and saved one write at a time.
- *
- * A tap used to count from the servings the page last loaded, save, and
- * reload. Two taps inside one round trip both counted from four, so a meal
- * tapped up twice landed on five rather than six. Here a tap counts from the
- * tap before it and shows at once, before the server has answered.
- *
- * Only one write per meal is out at a time, carrying the newest count when it
- * leaves, and a tap made meanwhile is sent when it lands. So an older count
- * can never land after a newer one, and a burst of taps costs two writes
- * rather than one each.
- */
-function usePlannedServings(
-  run: Action["run"],
-  onSaved: (saved: PlannedMeal) => void,
-  onFailed: () => void,
-) {
-  // The count each meal has been stepped to and not yet saved. The ref is
-  // what the next tap counts from, so taps between two renders still add up;
-  // the state is the same map, for drawing.
-  const stepped = useRef(new Map<string, number>());
-  const [counts, setCounts] = useState<ReadonlyMap<string, number>>(() => new Map());
-  const saving = useRef(new Set<string>());
-
-  // The page's newest callbacks, since a write can outlive the render that
-  // sent it: one that fails after moving to another week reloads that week.
-  const callbacks = useRef({ onSaved, onFailed });
-  useEffect(() => {
-    callbacks.current = { onSaved, onFailed };
-  });
-
-  function set(key: string, count: number | undefined) {
-    const next = new Map(stepped.current);
-    if (count === undefined) next.delete(key);
-    else next.set(key, count);
-    stepped.current = next;
-    setCounts(next);
-  }
-
-  async function save(meal: PlannedMeal, entryId: number) {
-    const key = meal.key;
-    saving.current.add(key);
-    const result: { saved?: PlannedMeal } = {};
-    let sent: number | undefined;
-    let ok = true;
-    // Looked at again after every write: a tap made while it was out goes next.
-    while (ok && stepped.current.get(key) !== sent) {
-      const count = stepped.current.get(key)!;
-      sent = count;
-      ok = await run(async () => {
-        result.saved = await api.updateMealPlanServings(entryId, asStored(meal, count));
-      });
-    }
-    saving.current.delete(key);
-    // In the same tick as the callback, so the count never flickers back to
-    // the loaded one between the two.
-    set(key, undefined);
-    if (ok && result.saved) callbacks.current.onSaved(result.saved);
-    else callbacks.current.onFailed();
-  }
-
-  function step(meal: PlannedMeal, delta: number) {
-    // Only a stored row has servings of its own to write.
-    if (meal.entry_id === null) return;
-    const base = stepped.current.get(meal.key) ?? meal.servings ?? meal.recipe.servings;
-    if (base == null) return;
-    set(meal.key, Math.max(1, base + delta));
-    if (!saving.current.has(meal.key)) void save(meal, meal.entry_id);
-  }
-
-  /** The meals with every count still being saved shown as it will be. */
-  const shown = useCallback(
-    (meals: PlannedMeal[]) =>
-      counts.size === 0
-        ? meals
-        : meals.map((e) => {
-            const count = counts.get(e.key);
-            return count === undefined ? e : { ...e, servings: asStored(e, count) };
-          }),
-    [counts],
-  );
-
-  return { shown, step };
 }

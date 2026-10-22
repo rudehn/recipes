@@ -544,6 +544,30 @@ describe("PlannerPage", () => {
       expect(document.querySelectorAll(".agenda-day")).toHaveLength(7);
     });
 
+    it("opens the phone's week at today", async () => {
+      setViewportWidth(375);
+      const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+      mockBackend({ "GET /api/meal-plan": [] });
+      renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      expect(scrolled).toHaveBeenCalledWith({ block: "start" });
+      expect(scrolled.mock.contexts[0]).toHaveTextContent("Wed");
+    });
+
+    it("opens another week at its Monday", async () => {
+      setViewportWidth(375);
+      const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+      mockBackend({ "GET /api/meal-plan": [] });
+      const { user } = renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+      scrolled.mockClear();
+
+      await user.click(screen.getByRole("button", { name: "Next week" }));
+      await screen.findByText("Aug 3 – Aug 9, 2026");
+      expect(scrolled).not.toHaveBeenCalled();
+    });
+
     /* The grid is what a tablet in portrait gets, and the width it needs is
        the width WEEK_GRID names. */
     it("keeps the grid at exactly the width it fits in", async () => {
