@@ -939,8 +939,12 @@ describe("PlannerPage", () => {
           "GET /api/meal-plan": [dadMeal, kidsMeal, plainMeal],
         });
         renderApp("/planner?label=1&unlabelled=0");
+        // The chips wait on the labels request, which may land after the week.
+        expect(await screen.findByRole("button", { name: "Dad" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
         await screen.findByText("Dad curry");
-        expect(screen.getByRole("button", { name: "Dad" })).toHaveAttribute("aria-pressed", "true");
         expect(screen.getByRole("checkbox", { name: "Include unlabelled meals" })).not.toBeChecked();
         expect(screen.queryByText("Plain rice")).not.toBeInTheDocument();
       });
@@ -951,9 +955,36 @@ describe("PlannerPage", () => {
           "GET /api/meal-plan": [dadMeal, kidsMeal],
         });
         renderApp("/planner?label=99");
+        expect(await screen.findByRole("button", { name: "Everything" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
         expect(await screen.findByText("Kids pasta")).toBeVisible();
         expect(screen.getByText("Dad curry")).toBeVisible();
-        expect(screen.getByRole("button", { name: "Everything" })).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("honours the URL's filter while the labels are still loading", async () => {
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => (release = resolve));
+        const backend = mockBackend({
+          "GET /api/labels": async () => {
+            await held;
+            return labelRows;
+          },
+          "GET /api/meal-plan": [dadMeal, kidsMeal],
+          "GET /api/recipes": page([recipeSummary({ id: 5, title: "Weeknight chicken curry" })]),
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner?label=1");
+        expect(await screen.findByText("Dad curry")).toBeVisible();
+        expect(screen.queryByText("Kids pasta")).not.toBeInTheDocument();
+
+        await user.click(within(cell("lunch", 4)).getByRole("button", { name: "+ Add" }));
+        await user.click(await screen.findByRole("button", { name: /Weeknight chicken curry/ }));
+        await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+        expect(backend.requestsTo("POST /api/meal-plan")[0].body).toMatchObject({ label_ids: [1] });
+        release();
+        await screen.findByRole("button", { name: "Dad" });
       });
 
       it("labels a meal added while a label is selected, and not otherwise", async () => {

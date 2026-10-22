@@ -76,10 +76,12 @@ export default function PlannerPage() {
   // The filter lives in the URL, so a reload or a shared link keeps it. A
   // label that has since been deleted is Everything, not an empty week.
   const [searchParams, setSearchParams] = useSearchParams();
-  const requested = filterFromParams(searchParams);
-  const filter: LabelFilter = labels?.some((l) => l.id === requested.label)
-    ? requested
-    : EVERYTHING;
+  // Until the labels are known the URL's choice stands, so a reload does not
+  // flash the whole week, nor add a meal without its label.
+  const filter = useMemo<LabelFilter>(() => {
+    const requested = filterFromParams(searchParams);
+    return labels && !labels.some((l) => l.id === requested.label) ? EVERYTHING : requested;
+  }, [searchParams, labels]);
   const setFilter = (f: LabelFilter) =>
     setSearchParams((p) => writeFilter(f, new URLSearchParams(p)), { replace: true });
 
@@ -105,8 +107,7 @@ export default function PlannerPage() {
       cells: byCell(visible.map((v) => v.meal)),
       dimmed: new Set(visible.filter((v) => v.dimmed).map((v) => v.meal.key)),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entries, shown, filter.label, filter.unlabelled]);
+  }, [entries, shown, filter]);
 
   const costs = useMemo<Costs>(
     () => ({
