@@ -19,17 +19,29 @@ export function DayAgenda({
   onAdd,
   onRemove,
   onChangeServings,
-}: LayoutProps) {
+  loadedWeek,
+}: LayoutProps & {
+  /** The Monday (ISO) of the week whose meals were last loaded, if any. */
+  loadedWeek: string | null;
+}) {
   // Set on today's card when the shown week has one.
   const todayCard = useRef<HTMLElement>(null);
   const weekOf = toISODate(days[0]);
+  const scrolledFor = useRef<string | null>(null);
   // A phone's week opens at today, not at Monday: the days before it are
   // done with, and scrolling past them to find what is next is the chore.
-  // Another week has no today, so it opens at its top. Keyed on the week
-  // rather than on mount, so the Today button brings you back the same way.
+  // Another week has no today, so it opens at its top.
+  //
+  // Once per week, and only after that week's meals are in: the days above
+  // today grow as they fill, and a scroll made while they were empty would be
+  // pushed off today. Keyed on the week rather than on mount, so the Today
+  // button brings you back the same way; a reload of the same week, or a
+  // servings step, does not scroll again.
   useEffect(() => {
+    if (loadedWeek !== weekOf || scrolledFor.current === weekOf) return;
+    scrolledFor.current = weekOf;
     todayCard.current?.scrollIntoView({ block: "start" });
-  }, [weekOf]);
+  }, [weekOf, loadedWeek]);
 
   return (
     <div className="day-agenda">

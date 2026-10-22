@@ -568,6 +568,54 @@ describe("PlannerPage", () => {
       expect(scrolled).not.toHaveBeenCalled();
     });
 
+    it("scrolls to today once the week's meals are in, and not on a reload", async () => {
+      setViewportWidth(375);
+      const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+      let release: () => void = () => {};
+      const backend = mockBackend({
+        "GET /api/meal-plan": () =>
+          new Promise((resolve) => {
+            release = () =>
+              resolve([plannedMeal({ entry_id: 3, plan_date: "2026-07-27", servings: 2 })]);
+          }),
+        "PATCH /api/meal-plan/:id": () => new HttpError(500),
+      });
+      const { user } = renderApp("/planner");
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(1));
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+      expect(scrolled).not.toHaveBeenCalled();
+
+      release();
+      await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+      expect(scrolled.mock.contexts[0]).toHaveTextContent("Wed");
+      expect(document.querySelector(".plan-entry")).not.toBeNull();
+
+      // A failed servings write asks for the same week again.
+      await user.click(screen.getAllByRole("button", { name: "More servings" })[0]);
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
+      release();
+      await screen.findByText("Server Error");
+      expect(scrolled).toHaveBeenCalledTimes(1);
+    });
+
+    it("scrolls to today again when Today brings back the current week", async () => {
+      setViewportWidth(375);
+      const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+      mockBackend({ "GET /api/meal-plan": [] });
+      const { user } = renderApp("/planner");
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+      await waitFor(() => expect(scrolled).toHaveBeenCalled());
+
+      await user.click(screen.getByRole("button", { name: "Next week" }));
+      await screen.findByText("Aug 3 – Aug 9, 2026");
+      scrolled.mockClear();
+      await user.click(screen.getByRole("button", { name: "Today" }));
+      await screen.findByText("Jul 27 – Aug 2, 2026");
+
+      await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+      expect(scrolled.mock.contexts[0]).toHaveTextContent("Wed");
+    });
+
     /* The grid is what a tablet in portrait gets, and the width it needs is
        the width WEEK_GRID names. */
     it("keeps the grid at exactly the width it fits in", async () => {

@@ -26,16 +26,24 @@ export default function PlannerPage() {
   );
   const weekEnd = days[6];
 
+  // The week the entries were last loaded for: the entries themselves stay
+  // up from the week before while the next one is asked for.
+  const [loadedWeek, setLoadedWeek] = useState<string | null>(null);
+
   const {
     data: entries,
     setData: setEntries,
     error,
     reload,
   } = useLoad(
-    useCallback(
-      () => api.listMealPlan(toISODate(weekStart), toISODate(weekEnd)),
-      [weekStart, weekEnd],
-    ),
+    useCallback(async () => {
+      const meals = await api.listMealPlan(
+        toISODate(weekStart),
+        toISODate(weekEnd),
+      );
+      setLoadedWeek(toISODate(weekStart));
+      return meals;
+    }, [weekStart, weekEnd]),
   );
   // Asked once the entries are in, and again whenever they change, since
   // adding a meal changes the answer. Null for a household without pricing,
@@ -175,6 +183,7 @@ export default function PlannerPage() {
       {!(error && entries === null) &&
         (agenda ? (
           <DayAgenda
+            loadedWeek={loadedWeek}
             days={days}
             byCell={cells}
             costs={costs}
