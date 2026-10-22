@@ -223,6 +223,11 @@ export interface Label {
   name: string;
 }
 
+/** A label with the number of planned meals it is on. */
+export interface LabelUsage extends Label {
+  meals: number;
+}
+
 export interface PlannedMeal {
   // Names the meal for as long as it is shown; "e<id>" for a stored row,
   // "r<repeat id>-<date>" for a repeat's day with no row of its own.
@@ -983,18 +988,35 @@ export const api = {
 
   listMealPlan: (start: string, end: string) =>
     request<PlannedMeal[]>(`/api/meal-plan?start=${start}&end=${end}`),
-  addMealPlanEntry: (plan_date: string, meal: Meal, recipe_id: number) =>
+  addMealPlanEntry: (entry: {
+    plan_date: string;
+    meal: Meal;
+    recipe_id: number;
+    servings?: number | null;
+    label_ids?: number[];
+  }) =>
     request<PlannedMeal>("/api/meal-plan", {
       method: "POST",
-      body: JSON.stringify({ plan_date, meal, recipe_id }),
+      body: JSON.stringify(entry),
     }),
-  updateMealPlanServings: (id: number, servings: number | null) =>
+  /** Changes only what the patch names; a null count is the recipe's own. */
+  updateMealPlanEntry: (
+    id: number,
+    patch: { servings?: number | null; label_ids?: number[]; plan_date?: string; meal?: Meal },
+  ) =>
     request<PlannedMeal>(`/api/meal-plan/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ servings }),
+      body: JSON.stringify(patch),
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),
+
+  listLabels: () => request<LabelUsage[]>("/api/labels"),
+  createLabel: (name: string) =>
+    request<Label>("/api/labels", { method: "POST", body: JSON.stringify({ name }) }),
+  renameLabel: (id: number, name: string) =>
+    request<Label>(`/api/labels/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  deleteLabel: (id: number) => request<void>(`/api/labels/${id}`, { method: "DELETE" }),
 
   listPantry: () => request<PantryItem[]>("/api/pantry"),
   addPantryItem: (name: string, in_stock: boolean) =>

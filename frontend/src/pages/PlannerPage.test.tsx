@@ -199,8 +199,9 @@ describe("PlannerPage", () => {
     const { user } = renderApp("/planner");
 
     await user.click(
-      await screen.findByRole("button", { name: "Remove Weeknight chicken curry" }),
+      await screen.findByRole("button", { name: "Actions for Weeknight chicken curry" }),
     );
+    await user.click(screen.getByRole("menuitem", { name: "Remove" }));
 
     await waitFor(() =>
       expect(backend.requestsTo("DELETE /api/meal-plan/:id")).toHaveLength(1),
@@ -395,7 +396,8 @@ describe("PlannerPage", () => {
     const { user } = renderApp("/planner");
     await screen.findByText("Weeknight chicken curry");
 
-    await user.click(within(cell("dinner", 0)).getByRole("button", { name: /remove/i }));
+    await user.click(within(cell("dinner", 0)).getByRole("button", { name: /actions for/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove" }));
 
     expect(await screen.findByText("Server is restarting")).toBeInTheDocument();
     expect(screen.getByText("Weeknight chicken curry")).toBeInTheDocument();
@@ -414,7 +416,8 @@ describe("PlannerPage", () => {
     const { user } = renderApp("/planner");
     await screen.findByText("Weeknight chicken curry");
 
-    await user.click(within(cell("dinner", 0)).getByRole("button", { name: /remove/i }));
+    await user.click(within(cell("dinner", 0)).getByRole("button", { name: /actions for/i }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove" }));
 
     expect(await screen.findByText(/Showing the last version that loaded/)).toBeInTheDocument();
     expect(document.querySelectorAll(".plan-cell")).toHaveLength(28);
@@ -854,6 +857,111 @@ describe("PlannerPage", () => {
       expect(
         within(meal).getByRole("img", { name: "at least $6.20, 9 of 11 ingredients priced" }),
       ).toBeInTheDocument();
+    });
+  });
+  describe("labels", () => {
+    const dad = { id: 1, name: "Dad" };
+    const kids = { id: 2, name: "Kids" };
+    const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry" });
+
+    it("shows a meal's labels after its title, and nothing for an unlabelled meal", async () => {
+      mockBackend({
+        "GET /api/labels": [],
+        "GET /api/meal-plan": [
+          plannedMeal({ plan_date: "2026-07-27", recipe: curry, labels: [dad, kids] }),
+          plannedMeal({
+            plan_date: "2026-07-28",
+            recipe: recipeSummary({ id: 6, title: "Plain rice" }),
+          }),
+        ],
+      });
+      renderApp("/planner");
+      await screen.findByText("Plain rice");
+
+      const labelled = cell("dinner", 0);
+      expect(within(labelled).getAllByRole("listitem").map((l) => l.textContent)).toEqual([
+        "Dad",
+        "Kids",
+      ]);
+      expect(within(cell("dinner", 1)).queryByRole("list")).not.toBeInTheDocument();
+    });
+
+    it("labels a one-off meal once the checklist closes", async () => {
+      const backend = mockBackend({
+        "GET /api/labels": [
+          { ...dad, meals: 0 },
+          { ...kids, meals: 0 },
+        ],
+        "GET /api/meal-plan": [
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-27", recipe: curry }),
+        ],
+        "PATCH /api/meal-plan/:id": (req: MockRequest) => ({
+          ...plannedMeal({ entry_id: 3, plan_date: "2026-07-27", recipe: curry }),
+          labels: [dad, kids],
+          ...(req.body as object),
+        }),
+      });
+      const { user } = renderApp("/planner");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Weeknight chicken curry" }));
+      await user.click(screen.getByRole("menuitem", { name: "Labels…" }));
+      await user.click(await screen.findByRole("checkbox", { name: "Dad" }));
+      await user.click(screen.getByRole("checkbox", { name: "Kids" }));
+      expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
+      await user.keyboard("{Escape}");
+
+      await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+      const patch = backend.requestsTo("PATCH /api/meal-plan/:id")[0];
+      expect(patch.path).toBe("/api/meal-plan/3");
+      expect(patch.body).toEqual({ label_ids: [1, 2] });
+      expect(await within(cell("dinner", 0)).findByText("Kids")).toBeInTheDocument();
+    });
+
+    it("makes a new label from the checklist and ticks it", async () => {
+      const backend = mockBackend({
+        "GET /api/labels": [{ ...dad, meals: 0 }],
+        "POST /api/labels": { id: 9, name: "Guests" },
+        "GET /api/meal-plan": [
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-27", recipe: curry }),
+        ],
+        "PATCH /api/meal-plan/:id": () => ({
+          ...plannedMeal({ entry_id: 3, plan_date: "2026-07-27", recipe: curry }),
+          labels: [{ id: 9, name: "Guests" }],
+        }),
+      });
+      const { user } = renderApp("/planner");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Weeknight chicken curry" }));
+      await user.click(screen.getByRole("menuitem", { name: "Labels…" }));
+      await user.type(await screen.findByRole("textbox", { name: "New label" }), "Guests{Enter}");
+
+      expect(await screen.findByRole("checkbox", { name: "Guests" })).toBeChecked();
+      expect(backend.requestsTo("POST /api/labels")[0].body).toEqual({ name: "Guests" });
+
+      await user.click(screen.getByRole("button", { name: "Done" }));
+      await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+      expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({ label_ids: [9] });
+    });
+
+    it("leaves Labels out of the menu of a repeated meal", async () => {
+      mockBackend({
+        "GET /api/labels": [],
+        "GET /api/meal-plan": [
+          plannedMeal({
+            entry_id: null,
+            key: "r1-2026-07-27",
+            plan_date: "2026-07-27",
+            recipe: curry,
+            repeat: { id: 1, weekdays: [0], starts_on: "2026-07-20", ends_on: null },
+          }),
+        ],
+      });
+      const { user } = renderApp("/planner");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Weeknight chicken curry" }));
+
+      expect(screen.getByRole("menuitem", { name: "Remove" })).toBeInTheDocument();
+      expect(screen.queryByRole("menuitem", { name: "Labels…" })).not.toBeInTheDocument();
     });
   });
 });

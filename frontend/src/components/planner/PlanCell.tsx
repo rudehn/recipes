@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
 
-import type { EntryCost, PlannedMeal } from "../../api";
+import type { EntryCost, Label, PlannedMeal } from "../../api";
+import { LabelPills } from "./LabelPills";
+import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
 import { priced, type EntryActions } from "./plan";
 
@@ -9,13 +11,17 @@ export function PlanCell({
   className,
   entries,
   costs,
+  labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onSetLabels,
+  onCreateLabel,
 }: {
   className: string;
   entries: PlannedMeal[];
   costs: Map<string, EntryCost>;
+  labels: Label[];
   onAdd: () => void;
 } & EntryActions) {
   return (
@@ -27,14 +33,15 @@ export function PlanCell({
           <div key={e.key} className="plan-entry">
             <div className="plan-entry-main">
               <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
-              <button
-                className="remove"
-                aria-label={`Remove ${e.recipe.title}`}
-                onClick={() => e.entry_id !== null && onRemove(e.entry_id)}
-              >
-                ✕
-              </button>
+              <MealMenu
+                meal={e}
+                labels={labels}
+                onCreateLabel={onCreateLabel}
+                onSetLabels={onSetLabels}
+                onRemove={onRemove}
+              />
             </div>
+            <LabelPills labels={e.labels} />
             {/* The servings and what they cost, the line under the title. A
                 recipe that says nothing of servings has no stepper here, and
                 still has a cost. */}

@@ -2353,7 +2353,10 @@ body.has-install-hint .page {
 }
 .plan-entry a:hover { text-decoration: underline; }
 
-.plan-entry .remove {
+/* The "⋯" that opens a meal's menu. Where there is a pointer to hover with it
+   shows only on a hovered or focused meal, like .plan-add; on a touch screen
+   there is nothing to hover, so it is always there. */
+.plan-entry .menu-btn {
   color: var(--green-muted);
   font-size: var(--text-base);
   line-height: 1;
@@ -2361,7 +2364,139 @@ body.has-install-hint .page {
   border-radius: var(--radius-2xs);
 }
 
-.plan-entry .remove:hover { background: var(--green-wash); color: var(--green-ink); }
+.plan-entry .menu-btn:hover,
+.plan-entry .menu-btn[aria-expanded="true"] {
+  background: var(--green-wash);
+  color: var(--green-ink);
+}
+
+@media (hover: hover) {
+  .plan-entry .menu-btn { opacity: 0; }
+
+  .plan-entry:hover .menu-btn,
+  .plan-entry .menu-btn:focus-visible,
+  .plan-entry .menu-btn[aria-expanded="true"] { opacity: 1; }
+}
+
+/* Fixed to the window, placed by MealMenu: the week grid scrolls, and a
+   popover hung from inside it would be clipped by its edge. */
+.meal-popover {
+  position: fixed;
+  z-index: var(--z-hint);
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  padding: var(--space-6);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.meal-popover [role="menuitem"] {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-xs);
+}
+
+.meal-popover [role="menuitem"]:hover,
+.meal-popover [role="menuitem"]:focus-visible { background: var(--surface-2); }
+
+.meal-popover [role="menuitem"].danger { color: var(--danger); }
+
+.meal-popover [role="menuitem"].danger:hover,
+.meal-popover [role="menuitem"].danger:focus-visible { background: var(--danger-soft); }
+
+.label-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.label-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.label-checklist li label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  padding: var(--space-4) var(--space-6);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.label-checklist li label:hover { background: var(--surface-2); }
+
+.label-checklist-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+/* A meal's labels, small pills under its title. */
+.label-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.label-pills li {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--green-ink);
+  background: var(--green-wash);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-6);
+  overflow-wrap: anywhere;
+}
+
+/* The Labels panel in Settings. */
+.label-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.label-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-8) 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.label-list .name {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.label-list .count {
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.label-rename {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  flex: 1;
+}
+
+.label-rename input { flex: 1; min-width: 0; }
 
 .plan-add {
   margin-top: auto;
@@ -4323,10 +4458,15 @@ body.has-install-hint .page {
 
   .servings-stepper button { width: 32px; height: 32px; }
 
-  .plan-entry .remove {
+  .plan-entry .menu-btn {
     padding: var(--space-8) var(--space-10);
     font-size: var(--text-lg);
+    min-width: var(--tap);
+    min-height: var(--tap);
   }
+
+  .meal-popover [role="menuitem"],
+  .label-checklist li label { min-height: var(--tap); }
 
   /* The recipe's own link is a line of text 18px tall, which is a target only
      a cursor could find. */

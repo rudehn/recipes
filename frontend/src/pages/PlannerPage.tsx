@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from "react";
 
-import { api, type Meal } from "../api";
+import { api, type Meal, type PlannedMeal } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
 import { WeekGrid } from "../components/planner/WeekGrid";
@@ -56,6 +56,11 @@ export default function PlannerPage() {
       [weekStart, weekEnd, entries],
     ),
   );
+  // The labels to choose from. A failed load leaves the checklists empty
+  // rather than the planner unusable.
+  const { data: labels, reload: reloadLabels } = useLoad(
+    useCallback(() => api.listLabels(), []),
+  );
   const action = useAction();
   const { shown, step: changeServings } = usePlannedServings(
     action.run,
@@ -84,7 +89,11 @@ export default function PlannerPage() {
     if (!picker) return;
     if (
       await action.run(() =>
-        api.addMealPlanEntry(picker.date, picker.meal, recipeId),
+        api.addMealPlanEntry({
+          plan_date: picker.date,
+          meal: picker.meal,
+          recipe_id: recipeId,
+        }),
       )
     ) {
       setPicker(null);
@@ -94,6 +103,29 @@ export default function PlannerPage() {
 
   async function removeEntry(entryId: number) {
     if (await action.run(() => api.deleteMealPlanEntry(entryId))) reload();
+  }
+
+  async function setLabels(meal: PlannedMeal, labelIds: number[]) {
+    if (meal.entry_id === null) return;
+    const entryId = meal.entry_id;
+    let saved: PlannedMeal | undefined;
+    const ok = await action.run(async () => {
+      saved = await api.updateMealPlanEntry(entryId, { label_ids: labelIds });
+    });
+    // The saved entry in place of the loaded one, and the counts beside the
+    // labels are asked for again.
+    if (ok && saved) {
+      setEntries((prev) => prev?.map((e) => (e.key === saved!.key ? saved! : e)) ?? prev);
+      reloadLabels();
+    } else {
+      reload();
+    }
+  }
+
+  async function createLabel(name: string) {
+    const label = await api.createLabel(name);
+    reloadLabels();
+    return label;
   }
 
   /*
@@ -187,18 +219,24 @@ export default function PlannerPage() {
             days={days}
             byCell={cells}
             costs={costs}
+            labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}
             onChangeServings={changeServings}
+            onSetLabels={setLabels}
+            onCreateLabel={createLabel}
           />
         ) : (
           <WeekGrid
             days={days}
             byCell={cells}
             costs={costs}
+            labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}
             onChangeServings={changeServings}
+            onSetLabels={setLabels}
+            onCreateLabel={createLabel}
           />
         ))}
 

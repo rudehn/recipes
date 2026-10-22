@@ -63,10 +63,9 @@ export function usePlannedServings(
       const count = stepped.current.get(key)!;
       sent = count;
       ok = await run(async () => {
-        result.saved = await api.updateMealPlanServings(
-          entryId,
-          asStored(meal, count),
-        );
+        result.saved = await api.updateMealPlanEntry(entryId, {
+          servings: asStored(meal, count),
+        });
       });
     }
     saving.current.delete(key);

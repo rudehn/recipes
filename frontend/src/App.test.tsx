@@ -8,7 +8,7 @@
  * that overflow was traded for, and these are the tests that say so.
  */
 
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { PHONE } from "./layout";
@@ -16,9 +16,9 @@ import { mockBackend } from "./test/backend";
 import { renderApp } from "./test/render";
 import { setViewportWidth } from "./test/viewport";
 
-const SECTIONS = ["Recipes", "Planner", "Groceries", "Ingredients"];
+const SECTIONS = ["Recipes", "Planner", "Groceries", "Ingredients", "Settings"];
 
-/** Pricing off, which is the common case and hides the Settings link. */
+/** Pricing off, which is the common case. */
 function plainBackend() {
   return mockBackend({
     "GET /api/pricing/status": { enabled: false, store: null },
@@ -101,15 +101,15 @@ describe("App shell", () => {
       expect(settings).toHaveAttribute("href", "/settings");
     });
 
-    it("hides Settings while pricing is off, as the top bar does", async () => {
+    it("keeps Settings while pricing is off, since labels are managed there", async () => {
       setViewportWidth(375);
       plainBackend();
       renderApp("/recipes");
 
-      await waitFor(() =>
-        expect(within(nav()).getAllByRole("link")).toHaveLength(SECTIONS.length),
+      expect(await within(nav()).findByRole("link", { name: "Settings" })).toHaveAttribute(
+        "href",
+        "/settings",
       );
-      expect(within(nav()).queryByRole("link", { name: "Settings" })).toBeNull();
     });
 
     /**

@@ -16,9 +16,12 @@ export function DayAgenda({
   days,
   byCell,
   costs,
+  labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onSetLabels,
+  onCreateLabel,
   loadedWeek,
 }: LayoutProps & {
   /** The Monday (ISO) of the week whose meals were last loaded, if any. */
@@ -68,9 +71,12 @@ export function DayAgenda({
                   className="plan-cell"
                   entries={byCell.get(cellKey(iso, meal)) ?? []}
                   costs={costs.entries}
+                labels={labels}
                   onAdd={() => onAdd({ date: iso, meal })}
                   onRemove={onRemove}
                   onChangeServings={onChangeServings}
+                onSetLabels={onSetLabels}
+                onCreateLabel={onCreateLabel}
                 />
               </div>
             ))}

@@ -1,7 +1,6 @@
-import { Suspense, lazy, useCallback } from "react";
+import { Suspense, lazy } from "react";
 import { NavLink, Navigate, Outlet, Route, Routes, useParams } from "react-router-dom";
 
-import { api } from "./api";
 import { InstallHint } from "./components/InstallHint";
 import { PHONE, below } from "./layout";
 import CookPage from "./pages/CookPage";
@@ -14,7 +13,6 @@ import RecipeFormPage from "./pages/RecipeFormPage";
 import RecipeSearchPage from "./pages/RecipeSearchPage";
 import RecipesPage from "./pages/RecipesPage";
 import SettingsPage from "./pages/SettingsPage";
-import { useLoad } from "./useLoad";
 import { useMediaQuery } from "./useMediaQuery";
 
 /**
@@ -40,9 +38,9 @@ const SECTIONS = [
   { to: "/planner", label: "Planner", glyph: "📅" },
   { to: "/groceries", label: "Groceries", glyph: "🛒" },
   { to: "/ingredients", label: "Ingredients", glyph: "🥕" },
+  // Always here: the planner's labels are managed on it, pricing or not.
+  { to: "/settings", label: "Settings", glyph: "⚙️" },
 ];
-
-const SETTINGS = { to: "/settings", label: "Settings", glyph: "⚙️" };
 
 function Nav({ className, sections }: { className: string; sections: typeof SECTIONS }) {
   return (
@@ -112,11 +110,6 @@ function IngredientRoute() {
 }
 
 function Shell() {
-  // Pricing is opt-in and often absent, so the nav does not advertise it
-  // until it is actually configured. A failure here just means no link,
-  // which is the same as the far more common case of it being switched off.
-  const { data: pricing } = useLoad(useCallback(() => api.pricingStatus(), []));
-
   /*
    * On a phone the five sections move out of the top bar and into a tab bar
    * along the bottom edge: they measure 387px laid out as a row of pills,
@@ -129,7 +122,6 @@ function Shell() {
    * bottom of the screen.
    */
   const phone = useMediaQuery(below(PHONE));
-  const sections = pricing?.enabled ? [...SECTIONS, SETTINGS] : SECTIONS;
 
   return (
     <div className="shell">
@@ -139,7 +131,7 @@ function Shell() {
             <span className="mark">🍳</span>
             <span className="word">Mise</span>
           </NavLink>
-          {!phone && <Nav className="nav" sections={sections} />}
+          {!phone && <Nav className="nav" sections={SECTIONS} />}
         </div>
       </header>
       <main className="page">
@@ -149,7 +141,7 @@ function Shell() {
           an aside about the app itself, and nothing on the page depends on it.
           Where it appears on screen is the stylesheet's business. */}
       <InstallHint />
-      {phone && <Nav className="tabbar" sections={sections} />}
+      {phone && <Nav className="tabbar" sections={SECTIONS} />}
     </div>
   );
 }

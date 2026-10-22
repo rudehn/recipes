@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
-import { api, type Store } from "../api";
+import { api, type LabelUsage, type Store } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import type { BannerTone } from "../components/ui/Banner";
 import { Banner, Button, EmptyState, Field, PageHead, Panel } from "../components/ui";
@@ -166,12 +166,124 @@ export default function SettingsPage() {
 
       {status?.enabled && <CartPanel />}
 
+      <LabelsPanel />
+
       {action.error && (
         <Banner tone="error" spaced>
           {action.error}
         </Banner>
       )}
     </div>
+  );
+}
+
+const meals = (n: number) => `${n} meal${n === 1 ? "" : "s"}`;
+
+/**
+ * The labels the planner puts on meals: renamed or deleted here, and made
+ * from a meal's checklist in the planner.
+ *
+ * Deleting takes the label off every meal that has it, which nothing on the
+ * screen shows, so the confirmation says how many that is.
+ */
+function LabelsPanel() {
+  const {
+    data: labels,
+    error,
+    reload,
+  } = useLoad(useCallback(() => api.listLabels(), []));
+  const [renaming, setRenaming] = useState<{ id: number; name: string } | null>(null);
+  const action = useAction();
+
+  async function rename(label: LabelUsage) {
+    const name = renaming?.name.trim() ?? "";
+    if (!name || name === label.name) {
+      setRenaming(null);
+      return;
+    }
+    if (await action.run(() => api.renameLabel(label.id, name))) {
+      setRenaming(null);
+      reload();
+    }
+  }
+
+  async function remove(label: LabelUsage) {
+    if (!window.confirm(`Delete “${label.name}”? It is on ${meals(label.meals)}.`)) return;
+    if (await action.run(() => api.deleteLabel(label.id))) reload();
+  }
+
+  return (
+    <Panel title="Labels">
+      <p className="page-note">
+        Markers you put on planned meals, such as who a meal is for. Make one from a
+        meal&rsquo;s ⋯ menu in the planner.
+      </p>
+
+      {error && (
+        <LoadFailure
+          what="your labels"
+          message={error}
+          onRetry={reload}
+          showing={labels !== null}
+        />
+      )}
+
+      {action.error && <Banner tone="error">{action.error}</Banner>}
+
+      {labels?.length === 0 && <p className="list-status">No labels yet.</p>}
+
+      {labels && labels.length > 0 && (
+        <ul className="label-list">
+          {labels.map((l) => (
+            <li key={l.id}>
+              {renaming?.id === l.id ? (
+                <form
+                  className="label-rename"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void rename(l);
+                  }}
+                >
+                  <input
+                    aria-label={`New name for ${l.name}`}
+                    autoFocus
+                    maxLength={40}
+                    value={renaming.name}
+                    onChange={(e) => setRenaming({ id: l.id, name: e.target.value })}
+                    onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+                  />
+                  <Button size="small" variant="primary" type="submit">
+                    Save
+                  </Button>
+                  <Button size="small" onClick={() => setRenaming(null)}>
+                    Cancel
+                  </Button>
+                </form>
+              ) : (
+                <>
+                  <span className="name">{l.name}</span>
+                  <span className="count">{meals(l.meals)}</span>
+                  <Button
+                    size="small"
+                    aria-label={`Rename ${l.name}`}
+                    onClick={() => setRenaming({ id: l.id, name: l.name })}
+                  >
+                    Rename
+                  </Button>
+                  <Button
+                    size="small"
+                    aria-label={`Delete ${l.name}`}
+                    onClick={() => remove(l)}
+                  >
+                    Delete
+                  </Button>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Panel>
   );
 }
 

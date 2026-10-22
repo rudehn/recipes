@@ -9,9 +9,9 @@
  */
 
 import { screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { HttpError, mockBackend } from "../test/backend";
+import { HttpError, mockBackend, type MockRequest } from "../test/backend";
 import { cartStatus } from "../test/fixtures";
 import { renderApp } from "../test/render";
 
@@ -39,23 +39,9 @@ describe("SettingsPage", () => {
     expect(screen.queryByLabelText("ZIP code")).not.toBeInTheDocument();
   });
 
-  it("keeps the settings link out of the nav until pricing is configured", async () => {
+  it("always offers the settings link, since labels are managed there", async () => {
     mockBackend({
       "GET /api/pricing/status": { enabled: false, store: null },
-      "GET /api/recipes": { items: [], total: 0, page: 1, per_page: 24 },
-      "GET /api/recipes/tags": [],
-    });
-
-    renderApp("/recipes");
-
-    await screen.findByRole("link", { name: "Ingredients" });
-    expect(screen.queryByRole("link", { name: "Settings" })).not.toBeInTheDocument();
-  });
-
-  it("offers the settings link once pricing is configured", async () => {
-    mockBackend({
-      "GET /api/cart/status": cartStatus({ configured: false }),
-      "GET /api/pricing/status": { enabled: true, store: null },
       "GET /api/recipes": { items: [], total: 0, page: 1, per_page: 24 },
       "GET /api/recipes/tags": [],
     });
@@ -201,6 +187,88 @@ describe("SettingsPage", () => {
 
       await screen.findByLabelText("ZIP code");
       expect(within(screen.getByRole("main")).queryByRole("link", { name: "Ingredients" })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("labels", () => {
+    const labels = [
+      { id: 1, name: "Dad", meals: 12 },
+      { id: 2, name: "Kids", meals: 1 },
+    ];
+
+    function backendWithLabels(extra = {}) {
+      return mockBackend({
+        "GET /api/pricing/status": { enabled: false, store: null },
+        "GET /api/labels": labels,
+        ...extra,
+      });
+    }
+
+    it("lists each label with the meals it is on", async () => {
+      backendWithLabels();
+      renderApp("/settings");
+
+      const dad = (await screen.findByText("Dad")).closest("li")!;
+      expect(dad).toHaveTextContent("12 meals");
+      expect(screen.getByText("Kids").closest("li")).toHaveTextContent("1 meal");
+    });
+
+    it("renames a label in place", async () => {
+      const backend = backendWithLabels({
+        "PATCH /api/labels/:id": (req: MockRequest) => ({ id: 1, ...(req.body as object) }),
+      });
+      const { user } = renderApp("/settings");
+
+      await user.click(await screen.findByRole("button", { name: "Rename Dad" }));
+      const field = screen.getByRole("textbox", { name: "New name for Dad" });
+      await user.clear(field);
+      await user.type(field, "Daddy{Enter}");
+
+      await waitFor(() => expect(backend.requestsTo("PATCH /api/labels/:id")).toHaveLength(1));
+      const patch = backend.requestsTo("PATCH /api/labels/:id")[0];
+      expect(patch.path).toBe("/api/labels/1");
+      expect(patch.body).toEqual({ name: "Daddy" });
+      await waitFor(() =>
+        expect(screen.queryByRole("textbox", { name: "New name for Dad" })).not.toBeInTheDocument(),
+      );
+    });
+
+    it("says so when a rename is refused", async () => {
+      backendWithLabels({
+        "PATCH /api/labels/:id": new HttpError(409, 'There is already a label called "Kids".'),
+      });
+      const { user } = renderApp("/settings");
+
+      await user.click(await screen.findByRole("button", { name: "Rename Dad" }));
+      const field = screen.getByRole("textbox", { name: "New name for Dad" });
+      await user.clear(field);
+      await user.type(field, "Kids{Enter}");
+
+      expect(await screen.findByText(/There is already a label/)).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "New name for Dad" })).toBeInTheDocument();
+    });
+
+    it("deletes after confirming, saying how many meals it is on", async () => {
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      const backend = backendWithLabels({ "DELETE /api/labels/:id": undefined });
+      const { user } = renderApp("/settings");
+
+      await user.click(await screen.findByRole("button", { name: "Delete Dad" }));
+
+      expect(confirm).toHaveBeenCalledWith("Delete “Dad”? It is on 12 meals.");
+      await waitFor(() => expect(backend.requestsTo("DELETE /api/labels/:id")).toHaveLength(1));
+      expect(backend.requestsTo("DELETE /api/labels/:id")[0].path).toBe("/api/labels/1");
+    });
+
+    it("says one meal in the singular, and keeps the label when the confirm is dismissed", async () => {
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+      const backend = backendWithLabels({ "DELETE /api/labels/:id": undefined });
+      const { user } = renderApp("/settings");
+
+      await user.click(await screen.findByRole("button", { name: "Delete Kids" }));
+
+      expect(confirm).toHaveBeenCalledWith("Delete “Kids”? It is on 1 meal.");
+      expect(backend.requestsTo("DELETE /api/labels/:id")).toHaveLength(0);
     });
   });
 });

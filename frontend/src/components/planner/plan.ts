@@ -1,4 +1,4 @@
-import type { DayCost, EntryCost, Meal, PlannedMeal } from "../../api";
+import type { DayCost, EntryCost, Label, Meal, PlannedMeal } from "../../api";
 import { toISODate } from "../../dates";
 
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -27,6 +27,10 @@ export const isPast = (iso: string, today: Date = new Date()) =>
 export interface EntryActions {
   onRemove: (entryId: number) => void;
   onChangeServings: (meal: PlannedMeal, delta: number) => void;
+  /** Puts exactly these labels on a one-off meal. */
+  onSetLabels: (meal: PlannedMeal, labelIds: number[]) => void;
+  /** Makes a label, answering it, or rejecting with the reason it was refused. */
+  onCreateLabel: (name: string) => Promise<Label>;
 }
 
 /** A figure and how much of it is priced, which a day and a meal both carry. */
@@ -48,6 +52,8 @@ export interface LayoutProps extends EntryActions {
   days: Date[];
   byCell: Cells;
   costs: Costs;
+  /** Every label, for the meals' checklists. */
+  labels: Label[];
   /** Opens the picker on the day and meal that asked for it. */
   onAdd: (cell: { date: string; meal: Meal }) => void;
 }

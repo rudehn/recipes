@@ -15,9 +15,12 @@ export function WeekGrid({
   days,
   byCell,
   costs,
+  labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onSetLabels,
+  onCreateLabel,
 }: LayoutProps) {
   return (
     <div className="week-grid">
@@ -49,9 +52,12 @@ export function WeekGrid({
                 className={`plan-cell${isToday(d) ? " today" : ""}`}
                 entries={byCell.get(cellKey(iso, meal)) ?? []}
                 costs={costs.entries}
+                labels={labels}
                 onAdd={() => onAdd({ date: iso, meal })}
                 onRemove={onRemove}
                 onChangeServings={onChangeServings}
+                onSetLabels={onSetLabels}
+                onCreateLabel={onCreateLabel}
               />
             );
           })}
