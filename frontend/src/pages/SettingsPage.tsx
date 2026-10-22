@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { Fragment, useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import { api, type LabelUsage, type Store } from "../api";
@@ -67,20 +67,10 @@ export default function SettingsPage() {
   }
 
   const store = status?.store ?? null;
-
-  return (
-    <div className="settings-layout">
-      <PageHead title="Settings" />
-
-      {loadError && (
-        <LoadFailure
-          what="your settings"
-          message={loadError}
-          onRetry={reload}
-          showing={status !== null}
-        />
-      )}
-
+  const labelsFirst = status !== null && !status.enabled;
+  const labelsPanel = <LabelsPanel key="labels" />;
+  const pricingPanels = (
+    <Fragment key="pricing">
       {status && !status.enabled && (
         <Panel title="Grocery pricing">
           <EmptyState glyph="🏷️" title="Pricing is switched off">
@@ -165,8 +155,26 @@ export default function SettingsPage() {
       )}
 
       {status?.enabled && <CartPanel />}
+    </Fragment>
+  );
 
-      <LabelsPanel />
+  return (
+    <div className="settings-layout">
+      <PageHead title="Settings" />
+
+      {loadError && (
+        <LoadFailure
+          what="your settings"
+          message={loadError}
+          onRetry={reload}
+          showing={status !== null}
+        />
+      )}
+
+      {/* With pricing off, the labels are the one thing here to change, so
+          they come first. Keyed, so the labels move rather than load again
+          once the status says where they go. */}
+      {labelsFirst ? [labelsPanel, pricingPanels] : [pricingPanels, labelsPanel]}
 
       {action.error && (
         <Banner tone="error" spaced>

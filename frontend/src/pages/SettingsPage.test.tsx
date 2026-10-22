@@ -204,6 +204,31 @@ describe("SettingsPage", () => {
       });
     }
 
+    it("comes first while pricing is off, and after it while it is on", async () => {
+      // With pricing off, the labels are the one thing here to change.
+      backendWithLabels();
+      const { unmount } = renderApp("/settings");
+      await screen.findByText("Pricing is switched off");
+      /** Whether the panel headed `first` comes before the one headed `then`. */
+      const before = (first: string, then: string) =>
+        Boolean(
+          screen
+            .getByRole("heading", { name: first })
+            .compareDocumentPosition(screen.getByRole("heading", { name: then })) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        );
+      expect(before("Labels", "Grocery pricing")).toBe(true);
+      unmount();
+
+      backendWithLabels({
+        "GET /api/pricing/status": { enabled: true, store: null },
+        "GET /api/cart/status": cartStatus({ configured: false }),
+      });
+      renderApp("/settings");
+      await screen.findByLabelText("ZIP code");
+      expect(before("Grocery pricing", "Labels")).toBe(true);
+    });
+
     it("lists each label with the meals it is on", async () => {
       backendWithLabels();
       renderApp("/settings");
