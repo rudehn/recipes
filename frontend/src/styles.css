@@ -2363,7 +2363,11 @@ body.has-install-hint .page {
   background: var(--green-wash);
   color: var(--green-ink);
 }
-.plan-entry a:hover { text-decoration: underline; }
+/* The hover cues here and below are not shown while anything is dragged: a
+   browser keeps the hover where a drag began until the drag ends, so the
+   cell a meal was picked up from would go on offering its link, its menu and
+   its + Add. The cell under the drag is the only cue then. */
+.planner-body:not(.dragging) .plan-entry a:hover { text-decoration: underline; }
 
 /* The "⋯" that opens a meal's menu. Where there is a pointer to hover with it
    shows only on a hovered or focused meal, like .plan-add; on a touch screen
@@ -2385,7 +2389,7 @@ body.has-install-hint .page {
 @media (hover: hover) {
   .plan-entry .menu-btn { opacity: 0; }
 
-  .plan-entry:hover .menu-btn,
+  .planner-body:not(.dragging) .plan-entry:hover .menu-btn,
   .plan-entry .menu-btn:focus-visible,
   .plan-entry .menu-btn[aria-expanded="true"] { opacity: 1; }
 }
@@ -2717,8 +2721,9 @@ body.has-install-hint .page {
 }
 
 /* Not while the pointer is over one of the cell's meal popovers, which is
-   the cell's in the page's tree but drawn well away from it. */
-.plan-cell:hover:not(:has(.meal-popover:hover)) .plan-add,
+   the cell's in the page's tree but drawn well away from it, nor while
+   anything is dragged (see .plan-entry a:hover). */
+.planner-body:not(.dragging) .plan-cell:hover:not(:has(.meal-popover:hover)) .plan-add,
 .plan-add:focus-visible {
   color: var(--accent-ink);
   border-color: var(--accent);
@@ -2986,21 +2991,6 @@ body.has-install-hint .page {
 /* A meal can be picked up from anywhere on its card; its title and buttons
    keep their own pointer. */
 .plan-entry[draggable="true"] { cursor: grab; }
-
-/* A browser keeps the hover where a drag began until the drag ends, so the
-   cell a meal was picked up from would go on offering its + Add, its menu and
-   its link. While anything is dragged, the cell under it is the only cue. */
-.planner-body.dragging .plan-cell:hover .plan-add {
-  color: var(--muted);
-  border-color: var(--line);
-  background: none;
-}
-
-.planner-body.dragging .plan-entry a:hover { text-decoration: none; }
-
-@media (hover: hover) {
-  .planner-body.dragging .plan-entry:hover .menu-btn { opacity: 0; }
-}
 
 /* What is being placed, and the way out of it without a keyboard. Fixed to
    the bottom of the window, so it does not move the plan when it appears. */

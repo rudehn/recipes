@@ -7,7 +7,7 @@ import { HttpError, mockBackend } from "../../test/backend";
 import { page, plannedMeal, recipeSummary } from "../../test/fixtures";
 import { renderInRouter } from "../../test/render";
 import { PicksPanel } from "./PicksPanel";
-import { placedDays, type Placing } from "./placing";
+import { PLACING_TYPE, placedDays, type Placing } from "./placing";
 
 const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry" });
 const bread = recipeSummary({ id: 6, title: "Banana bread" });
@@ -138,7 +138,7 @@ describe("PicksPanel", () => {
     expect(onPlacing).toHaveBeenLastCalledWith(null);
   });
 
-  it("drags a pick or a result whole, giving the browser only its title", async () => {
+  it("drags a pick or a result whole, giving the browser its title and the planner's mark", async () => {
     mockBackend({
       "GET /api/meal-plan/picks": [pick(curry)],
       "GET /api/recipes": page([bread]),
@@ -151,6 +151,7 @@ describe("PicksPanel", () => {
     fireEvent.dragStart(row, { dataTransfer });
     expect(onDrag).toHaveBeenLastCalledWith({ kind: "recipe", recipe: curry });
     expect(dataTransfer.setData).toHaveBeenCalledWith("text/plain", "Weeknight chicken curry");
+    expect(dataTransfer.setData).toHaveBeenCalledWith(PLACING_TYPE, "recipe");
     expect(dataTransfer.effectAllowed).toBe("copy");
     fireEvent.dragEnd(row, { dataTransfer });
     expect(onDrag).toHaveBeenLastCalledWith(null);

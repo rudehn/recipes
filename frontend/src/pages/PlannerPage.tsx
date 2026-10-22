@@ -22,6 +22,7 @@ import {
 import {
   copies,
   isOwnCell,
+  isPlacingDrag,
   placingTitle,
   type CellRef,
   type Placing,
@@ -171,16 +172,11 @@ export default function PlannerPage() {
 
   /**
    * Starts or ends a drag. A drag is another way to place, so it lets go of
-   * whatever was chosen to place by pressing, and puts an opened panel away
-   * so every cell can be reached. Only once the drag is under way: a browser
-   * hands the drag its picture of the row after this, and would have nothing
-   * to draw were the row already hidden.
+   * whatever was chosen to place by pressing.
    */
   function drag(next: Placing | null) {
     setDragging(next);
-    if (!next) return;
-    setPlacing(null);
-    setTimeout(() => setPicksOpen(false));
+    if (next) setPlacing(null);
   }
 
   /** Puts what was dragged on the cell it was let go on, which ends the drag. */
@@ -341,20 +337,39 @@ export default function PlannerPage() {
 
   // Only a cell takes what is dragged. Anywhere else is told the drop does
   // nothing, or a field there would take the title the drag carries as text.
+  //
+  // And the drag is over, whatever was missed, once the pointer moves: a
+  // browser sends no pointer events while it drags. A row that went while it
+  // was dragged may never hear its drag end (Firefox does not tell a row no
+  // longer in the page), and a drag left in the air would keep the cells
+  // taking drops and the meals' menus hidden.
   useEffect(() => {
     if (!dragging) return;
     function refuse(event: DragEvent) {
-      if (event.defaultPrevented || !event.dataTransfer) return;
+      const data = event.dataTransfer;
+      if (event.defaultPrevented || !data || !isPlacingDrag(data)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "none";
+      data.dropEffect = "none";
     }
+    const over = () => setDragging(null);
     window.addEventListener("dragenter", refuse);
     window.addEventListener("dragover", refuse);
+    window.addEventListener("pointermove", over);
     return () => {
       window.removeEventListener("dragenter", refuse);
       window.removeEventListener("dragover", refuse);
+      window.removeEventListener("pointermove", over);
     };
   }, [dragging]);
+
+  // A drag puts an opened panel away, so every cell can be reached. Only once
+  // the drag is under way: the browser takes its picture of the row as the
+  // drag starts, and would have nothing to draw were the row already hidden.
+  useEffect(() => {
+    if (!dragging || !overlaid) return;
+    const timer = setTimeout(() => setPicksOpen(false));
+    return () => clearTimeout(timer);
+  }, [dragging, overlaid]);
 
   // A press anywhere outside the opened panel puts it away, as a menu would.
   useEffect(() => {

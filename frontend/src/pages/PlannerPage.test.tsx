@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal, RecipeSummary } from "../api";
+import { PLACING_TYPE } from "../components/planner/placing";
 import { SETTLE_MS } from "../components/planner/usePlannedServings";
 import { PICKS_PANEL, WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
@@ -1667,17 +1668,25 @@ describe("PlannerPage", () => {
     const kids = { id: 2, name: "Kids" };
     const dad = { id: 3, name: "Dad" };
 
-    /** A stand-in for the drag's DataTransfer, which jsdom does not have. */
-    function dataTransfer() {
+    /**
+     * A stand-in for the drag's DataTransfer, which jsdom does not have. One
+     * drag's, shared by its events as a browser shares it: what the drag's
+     * start puts in is in its types from then on.
+     */
+    function dataTransfer(data = new Map<string, string>()) {
       return {
         dropEffect: "none",
         effectAllowed: "all",
-        types: [] as string[],
-        setData: vi.fn(),
-        getData: () => "",
-        clearData: vi.fn(),
+        get types() {
+          return [...data.keys()];
+        },
+        setData: (type: string, value: string) => void data.set(type, value),
+        getData: (type: string) => data.get(type) ?? "",
       };
     }
+
+    /** What a planner drag carries, for a drop with no drag of its own under way. */
+    const plannerDrag = () => dataTransfer(new Map([[PLACING_TYPE, "recipe"]]));
 
     /** The draggable thing a title is shown in: a pick's row, or a meal. */
     const draggable = (title: HTMLElement) => title.closest<HTMLElement>("[draggable=true]")!;
@@ -1898,7 +1907,7 @@ describe("PlannerPage", () => {
       expect(dt.dropEffect).toBe("none");
       fireEvent.dragEnd(pick, { dataTransfer: dt });
       // Nor does a drop with nothing being dragged, after a drag has ended.
-      fireEvent.drop(cell("lunch", 0), { dataTransfer: dataTransfer() });
+      fireEvent.drop(cell("lunch", 0), { dataTransfer: plannerDrag() });
 
       await act(async () => {});
       expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
@@ -1943,7 +1952,9 @@ describe("PlannerPage", () => {
       await waitFor(() => expect(toggle).toHaveAttribute("aria-expanded", "false"));
     });
 
-    it("ends a drag whose row the search took away while it was dragged", async () => {
+    it("ends a drag whose row went away while it was dragged, at the pointer's next move", async () => {
+      // A browser may never tell a row no longer in the page that its drag
+      // ended, so no dragend here: the pointer moving again is the backstop.
       const backend = mockBackend({
         "GET /api/meal-plan": [],
         "GET /api/meal-plan/picks": [],
@@ -1953,19 +1964,44 @@ describe("PlannerPage", () => {
       });
       const { user } = renderApp("/planner");
       const panel = screen.getByRole("complementary", { name: "Picks" });
-      const box = within(panel).getByRole("combobox", { name: "Search recipes" });
-      await user.type(box, "banana");
+      await user.type(within(panel).getByRole("combobox", { name: "Search recipes" }), "banana");
       const results = await within(panel).findByRole("list", { name: "Search results" });
       const row = draggable(await within(results).findByText("Banana bread"));
+      const body = document.querySelector(".planner-body")!;
 
       fireEvent.dragStart(row, { dataTransfer: dataTransfer() });
-      await user.clear(box);
-      await user.type(box, "curry");
+      // Keys only, so the pointer stays where it was: the box still has focus.
+      await user.keyboard("{Backspace>6/}curry");
       await waitFor(() => expect(row).not.toBeInTheDocument());
-      fireEvent.dragEnd(row, { dataTransfer: dataTransfer() });
+      expect(body).toHaveClass("dragging");
 
-      expect(document.querySelector(".planner-body")).not.toHaveClass("dragging");
-      fireEvent.drop(cell("lunch", 0), { dataTransfer: dataTransfer() });
+      fireEvent.pointerMove(body);
+
+      expect(body).not.toHaveClass("dragging");
+      fireEvent.drop(cell("lunch", 0), { dataTransfer: plannerDrag() });
+      await act(async () => {});
+      expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(0);
+    });
+
+    it("ignores a file or text dragged in from elsewhere, even mid-drag", async () => {
+      const backend = mockBackend({
+        "GET /api/meal-plan": [],
+        "GET /api/meal-plan/picks": [{ id: 105, week_start: "2026-07-27", recipe: curry }],
+        "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+      });
+      renderApp("/planner");
+      const picks = await screen.findByRole("list", { name: "This week's picks" });
+      const pick = draggable(await within(picks).findByText("Weeknight chicken curry"));
+
+      fireEvent.dragStart(pick, { dataTransfer: dataTransfer() });
+      const target = cell("dinner", 2);
+      for (const types of [["Files"], ["text/plain"]]) {
+        const foreign = { ...dataTransfer(), types };
+        expect(fireEvent.dragOver(target, { dataTransfer: foreign })).toBe(true);
+        expect(target).not.toHaveClass("drop-over");
+        fireEvent.drop(target, { dataTransfer: foreign });
+      }
+
       await act(async () => {});
       expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(0);
     });

@@ -7,7 +7,13 @@ import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
 import { ScopePrompt } from "./ScopePrompt";
 import { priced, type EntryActions } from "./plan";
-import { startDrag, type CellDrop, type CellTarget, type Placing } from "./placing";
+import {
+  isPlacingDrag,
+  startDrag,
+  type CellDrop,
+  type CellTarget,
+  type Placing,
+} from "./placing";
 
 /**
  * One day's one meal: what is planned for it, and the way to plan more.
@@ -59,10 +65,12 @@ export function PlanCell({
   const classes = [className, target && "drop-target", over && "drop-over"]
     .filter(Boolean)
     .join(" ");
-  // Taken only where something can be put: anywhere else the browser shows
-  // that a drop does nothing, and does nothing.
+  // Taken only where something can be put, and only from the planner's own
+  // drags: anywhere else, and for a file or text from elsewhere, the browser
+  // shows that a drop does nothing, and does nothing.
   const accept = drop
     ? (event: DragEvent) => {
+        if (!isPlacingDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = drop.effect(event.altKey);
         setOver(true);
@@ -80,6 +88,7 @@ export function PlanCell({
       onDrop={
         drop
           ? (event) => {
+              if (!isPlacingDrag(event.dataTransfer)) return;
               event.preventDefault();
               setOver(false);
               drop.onDrop(event.altKey);

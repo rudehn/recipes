@@ -83,6 +83,16 @@ export function cellDrop(
 }
 
 /**
+ * The type every drag of the planner's own carries, which tells it from a
+ * file or text dragged in from elsewhere: those carry only their own types.
+ */
+export const PLACING_TYPE = "application/x-mise-placing";
+
+/** Whether a drag is one of the planner's own, started by startDrag. */
+export const isPlacingDrag = (data: DataTransfer | null) =>
+  data !== null && Array.from(data.types).includes(PLACING_TYPE);
+
+/**
  * Starts dragging `p` from where the drag began, and ends it with null when
  * the drag ends. The page keeps what is dragged; the browser is given only
  * its title, since some will not start a drag that carries nothing, and a
@@ -95,6 +105,7 @@ export function cellDrop(
 export function startDrag(event: DragEvent, p: Placing, onDrag: (p: Placing | null) => void) {
   event.dataTransfer.effectAllowed = p.kind === "recipe" ? "copy" : "copyMove";
   event.dataTransfer.setData("text/plain", placingTitle(p));
+  event.dataTransfer.setData(PLACING_TYPE, p.kind);
   event.currentTarget.addEventListener("dragend", () => onDrag(null), { once: true });
   onDrag(p);
 }
