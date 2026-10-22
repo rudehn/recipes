@@ -121,6 +121,7 @@ export function plannedMeal(overrides: Partial<PlannedMeal> = {}): PlannedMeal {
     meal: "dinner" as Meal,
     servings: null,
     recipe: recipeSummary(),
+    repeat: null,
     ...overrides,
   };
 }

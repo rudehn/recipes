@@ -12,6 +12,7 @@ from pydantic import (
 )
 
 from .services.recipe_source import without_tracking
+from .services.repeats import from_mask
 
 Meal = Literal["breakfast", "lunch", "dinner", "snack"]
 
@@ -206,6 +207,28 @@ class MealPlanEntryUpdate(BaseModel):
     servings: int | None = Field(default=None, ge=1)
 
 
+class RepeatOut(BaseModel):
+    """A meal that repeats on chosen weekdays (0 = Monday ... 6 = Sunday)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    weekdays: list[int]
+    starts_on: date
+    ends_on: date | None
+
+    @field_validator("weekdays", mode="before")
+    @classmethod
+    def _weekdays_from_mask(cls, value):
+        return from_mask(value) if isinstance(value, int) else value
+
+
+class StartRepeat(BaseModel):
+    weekdays: list[int]
+    # The owner's today, which decides what counts as a day that has passed.
+    today: date
+
+
 class PlannedMealOut(BaseModel):
     """A meal on the plan, named by `key` for as long as it is shown.
 
@@ -220,6 +243,7 @@ class PlannedMealOut(BaseModel):
     meal: Meal
     servings: int | None
     recipe: RecipeSummary
+    repeat: RepeatOut | None = None
 
 
 class PantryItemIn(BaseModel):

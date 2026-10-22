@@ -209,8 +209,17 @@ export interface PastedRecipeDraft extends RecipeDraft {
   missing: RecipePart[];
 }
 
+/** A meal planned for the same weekdays every week (0 = Monday ... 6 = Sunday). */
+export interface Repeat {
+  id: number;
+  weekdays: number[];
+  starts_on: string;
+  ends_on: string | null;
+}
+
 export interface PlannedMeal {
-  // Names the meal for as long as it is shown; "e<id>" for a stored row.
+  // Names the meal for as long as it is shown; "e<id>" for a stored row,
+  // "r<repeat id>-<date>" for a repeat's day with no row of its own.
   key: string;
   // The stored row behind the meal, for the writes that take one.
   entry_id: number | null;
@@ -219,6 +228,8 @@ export interface PlannedMeal {
   // Planned servings; null means the recipe's own serving count.
   servings: number | null;
   recipe: RecipeSummary;
+  // The repeat the meal belongs to; null for a one-off meal.
+  repeat: Repeat | null;
 }
 
 export interface PantryItem {

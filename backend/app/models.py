@@ -184,9 +184,54 @@ class MealPlanEntry(Base):
     # Servings to cook; null means the recipe's own serving count. Grocery
     # quantities scale by servings / recipe.servings.
     servings: Mapped[int | None] = mapped_column(Integer)
+    # The repeat this row is a change to (a day's own servings), or null for
+    # a one-off meal. A linked row replaces the repeat's meal on its day.
+    from_repeat_id: Mapped[int | None] = mapped_column(
+        ForeignKey("meal_repeats.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     recipe: Mapped[Recipe] = relationship(lazy="selectin")
+    repeat: Mapped["MealRepeat | None"] = relationship(lazy="selectin")
+
+
+class MealRepeat(Base):
+    """A meal planned for the same weekdays of every week, from a day on.
+
+    Its days are not stored: the plan service works them out for whatever
+    range is asked about, so a repeat is always as long as the owner is
+    looking.
+    """
+
+    __tablename__ = "meal_repeats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(
+        ForeignKey("recipes.id", ondelete="CASCADE"), index=True
+    )
+    meal: Mapped[str] = mapped_column(String(20))
+    # Bit 0 is Monday ... bit 6 is Sunday.
+    weekdays: Mapped[int] = mapped_column(Integer)
+    # Null means the recipe's own serving count.
+    servings: Mapped[int | None] = mapped_column(Integer)
+    starts_on: Mapped[date] = mapped_column(Date)
+    # Inclusive; null means it goes on.
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    recipe: Mapped[Recipe] = relationship(lazy="selectin")
+    skips: Mapped[list["MealRepeatSkip"]] = relationship(lazy="selectin")
+
+
+class MealRepeatSkip(Base):
+    """A day a repeat does not happen on, though its weekday says it would."""
+
+    __tablename__ = "meal_repeat_skips"
+    __table_args__ = (UniqueConstraint("repeat_id", "plan_date"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    repeat_id: Mapped[int] = mapped_column(ForeignKey("meal_repeats.id", ondelete="CASCADE"))
+    plan_date: Mapped[date] = mapped_column(Date)
 
 
 class PantryItem(Base):

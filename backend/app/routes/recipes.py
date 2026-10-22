@@ -5,13 +5,20 @@ from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import Select, case, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import noload
 
 from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
-from ..models import Ingredient, Recipe, RecipeTag
+from ..models import (
+    Ingredient,
+    MealPlanEntry,
+    MealRepeat,
+    MealRepeatSkip,
+    Recipe,
+    RecipeTag,
+)
 from ..schemas import (
     MAX_TAG_FILTERS,
     ImageFromUrl,
@@ -511,6 +518,21 @@ async def update_recipe(
 async def delete_recipe(recipe_id: int, session: AsyncSession = Depends(get_session)):
     recipe = await _get_recipe(session, recipe_id)
     _delete_image_file(recipe.image_filename)
+    # SQLite does not enforce foreign keys, so what hangs off the recipe goes
+    # explicitly: its one-off meals, its repeats and what hangs off them.
+    repeat_ids = select(MealRepeat.id).where(MealRepeat.recipe_id == recipe_id)
+    await session.execute(
+        delete(MealPlanEntry).where(
+            or_(
+                MealPlanEntry.recipe_id == recipe_id,
+                MealPlanEntry.from_repeat_id.in_(repeat_ids),
+            )
+        )
+    )
+    await session.execute(
+        delete(MealRepeatSkip).where(MealRepeatSkip.repeat_id.in_(repeat_ids))
+    )
+    await session.execute(delete(MealRepeat).where(MealRepeat.recipe_id == recipe_id))
     await session.delete(recipe)
     await session.commit()
 

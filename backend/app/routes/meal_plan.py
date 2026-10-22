@@ -12,8 +12,10 @@ from ..schemas import (
     MealPlanEntryUpdate,
     PlanCost,
     PlannedMealOut,
+    RepeatOut,
+    StartRepeat,
 )
-from ..services import plan
+from ..services import plan, repeats
 from ..services.kroger import costing
 
 router = APIRouter(prefix="/meal-plan", tags=["meal-plan"])
@@ -71,6 +73,25 @@ async def update_entry(
     await session.commit()
     await session.refresh(entry)
     return plan.from_entry(entry)
+
+
+@router.post("/{entry_id}/repeat", response_model=RepeatOut, status_code=201)
+async def start_repeat(
+    entry_id: int, data: StartRepeat, session: AsyncSession = Depends(get_session)
+):
+    """Make a planned meal repeat on the given weekdays, from its day on."""
+    entry = await session.get(MealPlanEntry, entry_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Meal plan entry not found")
+    try:
+        repeat = await repeats.start_repeat(session, entry, data.weekdays, data.today)
+    except repeats.PastDay as error:
+        raise HTTPException(status_code=422, detail="That day has passed.") from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    await session.commit()
+    await session.refresh(repeat)
+    return repeat
 
 
 @router.post("/copy-week", response_model=list[PlannedMealOut])

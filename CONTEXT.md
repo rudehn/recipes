@@ -15,3 +15,15 @@ Avoid: pantry item, in user-facing text.
 **Merge**: the owner saying two names are one ingredient, stored apart from recipe text and reversible (ADR 10).
 
 **Suggested merge**: a pair the app thinks might be one ingredient, offered for the owner to merge or turn down, never applied by itself.
+
+## Planner
+
+**Repeat**: a meal planned for chosen weekdays of every week, from a day on, stored once and worked out for whatever days are read.
+It ends when the owner stops it, and a single day can be skipped without ending it.
+Avoid: recurring meal, series, schedule.
+
+**One-off meal**: a meal planned for one day, a stored row of its own.
+Avoid: single meal, standalone.
+
+**Skip**: a day a repeat does not happen on although its weekday says it would.
+Avoid: exception, removed day.
