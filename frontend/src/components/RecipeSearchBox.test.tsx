@@ -39,7 +39,7 @@ function setup({
     "DELETE /api/recipes/searches": () => undefined,
     "GET /api/recipes/suggest": () => suggestions,
   });
-  const onOpenRecipe = vi.fn();
+  const onChooseRecipe = vi.fn();
   const seen: Search[] = [];
   function Harness() {
     const [search, setSearch] = useState(initial);
@@ -51,7 +51,7 @@ function setup({
         onChange={setSearch}
         draft={draft}
         onDraft={setDraft}
-        onOpenRecipe={onOpenRecipe}
+        onChooseRecipe={onChooseRecipe}
       />
     );
   }
@@ -60,7 +60,7 @@ function setup({
   return {
     user,
     backend,
-    onOpenRecipe,
+    onChooseRecipe,
     box: screen.getByRole("combobox", { name: "Search recipes" }),
     search: () => seen[seen.length - 1],
   };
@@ -215,11 +215,11 @@ describe("RecipeSearchBox", () => {
   });
 
   it("opens a recipe picked from the suggestions", async () => {
-    const { user, box, onOpenRecipe, search } = setup();
+    const { user, box, onChooseRecipe, search } = setup();
     await user.type(box, "chi");
     await user.click(await screen.findByRole("option", { name: "Chicken Fried Rice" }));
 
-    expect(onOpenRecipe).toHaveBeenCalledWith(42);
+    expect(onChooseRecipe).toHaveBeenCalledWith(42);
     expect(search()).toEqual(EMPTY_SEARCH);
   });
 
@@ -280,7 +280,7 @@ describe("RecipeSearchBox", () => {
     // the token is the same token either way. Two ingredients can share a
     // name, and each is still its own token.
     mockBackend({});
-    const props = { onChange: vi.fn(), draft: "", onDraft: vi.fn(), onOpenRecipe: vi.fn() };
+    const props = { onChange: vi.fn(), draft: "", onDraft: vi.fn(), onChooseRecipe: vi.fn() };
     const searchWith = (ingredients: { key: string; name: string }[]): Search => ({
       ...EMPTY_SEARCH,
       ingredients,

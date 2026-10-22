@@ -172,7 +172,7 @@ export function RecipePickerModal({
           onChange={setSearch}
           draft={draft}
           onDraft={setDraft}
-          onOpenRecipe={pickById}
+          onChooseRecipe={pickById}
         />
       </div>
       <div className="modal-list">

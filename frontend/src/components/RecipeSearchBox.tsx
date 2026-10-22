@@ -75,7 +75,7 @@ export function RecipeSearchBox({
   onChange,
   draft,
   onDraft,
-  onOpenRecipe,
+  onChooseRecipe,
   autoFocus,
   placeholder = "Search recipes, ingredients or tags…",
 }: {
@@ -84,7 +84,8 @@ export function RecipeSearchBox({
   /** What is typed and not yet a token. */
   draft: string;
   onDraft: (text: string) => void;
-  onOpenRecipe: (id: number) => void;
+  /** A recipe chosen from the suggestions, for the page to open, plan or pick. */
+  onChooseRecipe: (id: number) => void;
   /** Takes focus when it appears, for a dialog opened to search. */
   autoFocus?: boolean;
   /** What an empty box says, shorter where the box is narrow. */
@@ -237,7 +238,7 @@ export function RecipeSearchBox({
         }
         break;
       case "recipe":
-        onOpenRecipe(option.id);
+        onChooseRecipe(option.id);
         break;
       case "text":
         takeText();

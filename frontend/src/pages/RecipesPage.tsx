@@ -254,7 +254,7 @@ export default function RecipesPage() {
             onChange={setSearch}
             draft={draft}
             onDraft={setDraft}
-            onOpenRecipe={openRecipe}
+            onChooseRecipe={openRecipe}
           />
           <label className="recipes-sort">
             Sort

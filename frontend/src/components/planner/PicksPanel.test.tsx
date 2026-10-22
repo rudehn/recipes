@@ -162,11 +162,12 @@ describe("PicksPanel", () => {
     expect(onDrag).toHaveBeenLastCalledWith({ kind: "recipe", recipe: bread });
   });
 
-  it("opens a recipe chosen from the suggestions in a new tab", async () => {
-    mockBackend({
+  it("picks a recipe chosen from the suggestions, rather than leaving the planner", async () => {
+    const backend = mockBackend({
       "GET /api/meal-plan/picks": [],
       "GET /api/recipes": page([curry]),
       "GET /api/recipes/suggest": { ingredients: [], tags: [], recipes: [{ id: 5, title: curry.title }] },
+      "POST /api/meal-plan/picks": pick(),
     });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     const { user } = renderPanel();
@@ -174,7 +175,13 @@ describe("PicksPanel", () => {
     await user.type(searchBox(), "curry");
     await user.click(await screen.findByRole("option", { name: "Weeknight chicken curry" }));
 
-    expect(open).toHaveBeenCalledWith("/recipes/5", "_blank", "noopener");
+    await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan/picks")).toHaveLength(1));
+    expect(backend.requestsTo("POST /api/meal-plan/picks")[0].body).toEqual({
+      week_start: WEEK,
+      recipe_id: 5,
+    });
+    expect(await within(picks()).findByText("Weeknight chicken curry")).toBeVisible();
+    expect(open).not.toHaveBeenCalled();
   });
 });
 

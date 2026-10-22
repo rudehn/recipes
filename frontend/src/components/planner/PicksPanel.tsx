@@ -114,10 +114,10 @@ export function PicksPanel({
       onDragStart: (event: DragEvent) => startDrag(event, { kind: "recipe", recipe: r }, onDrag),
     };
 
-  async function add(recipe: RecipeSummary) {
+  async function add(recipeId: number) {
     let saved: PlanPick | undefined;
     const ok = await action.run(async () => {
-      saved = await api.addPick(week, recipe.id);
+      saved = await api.addPick(week, recipeId);
     });
     if (!ok || !saved) return;
     const pick = saved;
@@ -142,7 +142,8 @@ export function PicksPanel({
         onChange={setSearch}
         draft={draft}
         onDraft={setDraft}
-        onOpenRecipe={(id) => window.open(`/recipes/${id}`, "_blank", "noopener")}
+        // A recipe named in the suggestions is one being chosen for the week.
+        onChooseRecipe={add}
         placeholder="Search recipes…"
       />
 
@@ -179,7 +180,7 @@ export function PicksPanel({
                     type="button"
                     className="pick-act"
                     aria-label={`Add ${r.title} to picks`}
-                    onClick={() => add(r)}
+                    onClick={() => add(r.id)}
                   >
                     +
                   </button>
