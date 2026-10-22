@@ -20,7 +20,13 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   Typing suggests ingredients, tags and recipes, each counting how many recipes it would leave, and clicking into the empty box offers your recent searches, the same on every device.
   Under the box, one row holds the tags you search for most, On sale and All tags; four sorts put the box A-Z, newest first, most recently cooked or biggest sale first.
   An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.
-* Weekly meal planner: assign any recipe to breakfast, lunch, dinner, or snack on any day.
+* Weekly meal planner: breakfast, lunch, dinner and snack for each day of the week.
+  Choosing the week's recipes and putting them on days are two steps: find recipes with the same search box as the Recipes page and keep them as the week's picks, then drag each onto a day, or press it and then the day.
+  A pick already on the plan fades and names its days, so what is left to place stands out.
+  A meal can repeat on chosen weekdays - every Tuesday, weekdays, every day, or any set - and turns up every week without being copied, counted by the grocery list and the costs like any other meal.
+  A change to a repeated meal asks whether it is for just that day or from that day on, and the days already past never change.
+  Labels you make up, such as who a meal is for, can go on any meal; the week can be shown one label at a time, and a meal added while one is shown gets that label.
+  On a phone the week opens at today, and a meal or a pick opens a sheet with everything it can do.
 * Generated grocery list for a date range.
   Ingredients are merged across recipes ("2 cups" + "1 cup" flour becomes "3 cups"), with mixed units listed side by side.
 * Ingredients: one page per ingredient, with the recipes that use it, whether it is a staple, the product it is priced with and the food it counts as, each changeable where it is shown.
