@@ -990,8 +990,10 @@ describe("PlannerPage", () => {
           meal: "lunch",
         });
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-        // Its new day is brought into view, as a placed pick's is.
+        // Its new day is brought into view, as a placed pick's is, once the
+        // week has loaded with it there: a day above it may be shorter now.
         await waitFor(() => expect(scrolledTo.at(-1)).toMatch(/^Sat\s*Aug 1/));
+        expect(scrolledTo.at(-1)).toContain("Weeknight chicken curry");
 
         // A repeated day copies as a one-off with its own servings and labels;
         // Back leaves the sheet as it was.

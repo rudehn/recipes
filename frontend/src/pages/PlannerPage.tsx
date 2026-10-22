@@ -65,6 +65,7 @@ export default function PlannerPage() {
     data: entries,
     setData: setEntries,
     error,
+    loading,
     reload,
   } = useLoad(
     useCallback(async () => {
@@ -227,7 +228,7 @@ export default function PlannerPage() {
 
   /** Moves or copies a meal from its sheet, and brings where it went into view. */
   async function placeMeal(meal: PlannedMeal, cell: CellRef, copy: boolean) {
-    if (await dropOn(cell, { kind: "meal", meal, copy }, false)) setPlacedOn(cell);
+    if (await dropOn(cell, { kind: "meal", meal, copy }, false)) toReveal.current = cell;
   }
 
   /*
@@ -353,6 +354,15 @@ export default function PlannerPage() {
   // The pick being placed from the Picks sheet, and where the last one went.
   const [toPlace, setToPlace] = useState<RecipeSummary | null>(null);
   const [placedOn, setPlacedOn] = useState<CellRef | null>(null);
+  // Where something put from a sheet goes, until the week has loaded again
+  // with it: a meal moved off an earlier day shortens that day, which would
+  // push a day scrolled to before then up under the top bar.
+  const toReveal = useRef<CellRef | null>(null);
+  useEffect(() => {
+    if (loading || !toReveal.current) return;
+    setPlacedOn(toReveal.current);
+    toReveal.current = null;
+  }, [loading]);
   // The meal whose sheet is open, by key, so the sheet shows each change to
   // it as it lands, and goes once the meal does.
   const [sheetKey, setSheetKey] = useState<string | null>(null);
@@ -377,8 +387,8 @@ export default function PlannerPage() {
     const ok = await addMeal(cell, toPlace.id);
     if (ok) {
       setToPlace(null);
-      setPlacedOn(cell);
       reload();
+      toReveal.current = cell;
     }
     return ok;
   }
