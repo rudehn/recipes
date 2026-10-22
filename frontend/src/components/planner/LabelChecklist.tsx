@@ -1,8 +1,8 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 
 import type { Label } from "../../api";
 import { Button } from "../ui";
-import { errorMessage } from "../../useLoad";
+import { useLabelChoice } from "./useLabelChoice";
 
 /**
  * The labels to put on a meal, as checkboxes, with a field to make a new one.
@@ -32,29 +32,20 @@ export function LabelChecklist({
   const root = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const fieldId = useId();
-  const [ticked, setTicked] = useState(() => new Set(chosen));
-  // Labels made here, kept beside the ones given: the parent's list only
-  // catches up when it next loads.
-  const [made, setMade] = useState<Label[]>([]);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const choice = useLabelChoice({ labels, chosen, onCreate });
 
-  const all = [...labels, ...made.filter((m) => !labels.some((l) => l.id === m.id))];
-
-  // The newest set, for the close handlers below, which outlive a render.
-  const latest = useRef({ ticked, chosen, onDone, onClose });
+  // The newest choice, for the close handlers below, which outlive a render.
+  const latest = useRef({ choice, onDone, onClose });
   useEffect(() => {
-    latest.current = { ticked, chosen, onDone, onClose };
+    latest.current = { choice, onDone, onClose };
   });
   const finished = useRef(false);
 
   function finish() {
     if (finished.current) return;
     finished.current = true;
-    const { ticked, chosen, onDone, onClose } = latest.current;
-    const same = ticked.size === chosen.length && chosen.every((id) => ticked.has(id));
-    if (!same) onDone([...ticked].sort((a, b) => a - b));
+    const { choice, onDone, onClose } = latest.current;
+    if (choice.changed) onDone(choice.ids);
     onClose();
   }
 
@@ -77,29 +68,9 @@ export function LabelChecklist({
     };
   }, []);
 
-  function toggle(id: number) {
-    const next = new Set(ticked);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setTicked(next);
-  }
-
   async function create() {
-    const name = draft.trim();
-    if (!name || creating) return;
-    setCreating(true);
-    setError(null);
-    try {
-      const label = await onCreate(name);
-      setMade((m) => [...m, label]);
-      setTicked((t) => new Set(t).add(label.id));
-      setDraft("");
-    } catch (cause) {
-      setError(errorMessage(cause, "Could not make that label."));
-    } finally {
-      setCreating(false);
-      field.current?.focus();
-    }
+    await choice.create();
+    field.current?.focus();
   }
 
   return (
@@ -113,15 +84,15 @@ export function LabelChecklist({
         if (e.relatedTarget && !root.current?.contains(e.relatedTarget)) finish();
       }}
     >
-      {all.length > 0 && (
+      {choice.all.length > 0 && (
         <ul>
-          {all.map((l) => (
+          {choice.all.map((l) => (
             <li key={l.id}>
               <label>
                 <input
                   type="checkbox"
-                  checked={ticked.has(l.id)}
-                  onChange={() => toggle(l.id)}
+                  checked={choice.ticked.has(l.id)}
+                  onChange={() => choice.toggle(l.id)}
                 />
                 {l.name}
               </label>
@@ -137,8 +108,8 @@ export function LabelChecklist({
         ref={field}
         placeholder="New label…"
         maxLength={40}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        value={choice.draft}
+        onChange={(e) => choice.setDraft(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
@@ -146,9 +117,9 @@ export function LabelChecklist({
           }
         }}
       />
-      {error && (
+      {choice.error && (
         <p className="label-checklist-error" role="alert">
-          {error}
+          {choice.error}
         </p>
       )}
       <Button size="small" onClick={finish}>

@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 
 import type { EntryCost, Label, Meal, PlannedMeal } from "../../api";
 import { formatWeekday, fromISODate } from "../../dates";
-import { errorMessage } from "../../useLoad";
 import { Button, Modal } from "../ui";
 import { CellChooser } from "./CellChooser";
 import { PlanFigure } from "./PlanFigure";
@@ -18,6 +17,7 @@ import {
 import type { CellRef } from "./placing";
 import { RepeatMenu } from "./RepeatMenu";
 import { ScopePrompt } from "./ScopePrompt";
+import { useLabelChoice, type LabelChoice } from "./useLabelChoice";
 import { asStored } from "./usePlannedServings";
 
 /**
@@ -83,22 +83,19 @@ export function MealSheet({
   // A repeated meal's count as stepped here, until the sheet closes; null
   // until it is stepped.
   const [count, setCount] = useState<number | null>(null);
-  const [ticked, setTicked] = useState(() => new Set(meal.labels.map((l) => l.id)));
-  // Labels made here, kept beside the ones given until the page's list
-  // catches up with them.
-  const [made, setMade] = useState<Label[]>([]);
-  const all = [...labels, ...made.filter((m) => !labels.some((l) => l.id === m.id))];
+  const choice = useLabelChoice({
+    labels,
+    chosen: meal.labels.map((l) => l.id),
+    onCreate: onCreateLabel,
+  });
 
   const servings = count ?? meal.servings ?? meal.recipe.servings;
   const stored = count === null ? meal.servings : asStored(meal, count);
-  const chosen = [...ticked].sort((a, b) => a - b);
-  const labelsChanged =
-    ticked.size !== meal.labels.length || meal.labels.some((l) => !ticked.has(l.id));
   const servingsChanged = stored !== meal.servings;
-  const changed = labelsChanged || servingsChanged;
+  const changed = choice.changed || servingsChanged;
   const change: MealChange = {
     ...(servingsChanged && { servings: stored }),
-    ...(labelsChanged && { labelIds: chosen }),
+    ...(choice.changed && { labelIds: choice.ids }),
   };
 
   // A question takes focus as it is asked, and the control that asked it
@@ -132,13 +129,6 @@ export function MealSheet({
     if (servings != null) setCount(Math.max(1, servings + delta));
   }
 
-  function toggle(id: number) {
-    const next = new Set(ticked);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setTicked(next);
-  }
-
   function remove() {
     if (repeated) return setView("remove");
     onClose();
@@ -164,8 +154,8 @@ export function MealSheet({
   async function place(cell: CellRef, copy: boolean) {
     onClose();
     if (changed && !repeated && !(await onChange(changeTarget(meal), change))) return;
-    const now = { ...meal, servings: stored, labels: all.filter((l) => ticked.has(l.id)) };
-    onPlace(now, cell, copy);
+    const labelled = choice.all.filter((l) => choice.ticked.has(l.id));
+    onPlace({ ...meal, servings: stored, labels: labelled }, cell, copy);
   }
 
   // A repeated meal's changes wait on their question until the sheet closes.
@@ -212,24 +202,18 @@ export function MealSheet({
                 For
               </span>
               <div className="meal-sheet-labels" role="group" aria-labelledby={forId}>
-                {all.map((l) => (
+                {choice.all.map((l) => (
                   <button
                     key={l.id}
                     type="button"
-                    className={`tag-pill${ticked.has(l.id) ? " active" : ""}`}
-                    aria-pressed={ticked.has(l.id)}
-                    onClick={() => toggle(l.id)}
+                    className={`tag-pill${choice.ticked.has(l.id) ? " active" : ""}`}
+                    aria-pressed={choice.ticked.has(l.id)}
+                    onClick={() => choice.toggle(l.id)}
                   >
                     {l.name}
                   </button>
                 ))}
-                <NewLabel
-                  onCreate={async (name) => {
-                    const label = await onCreateLabel(name);
-                    setMade((m) => [...m, label]);
-                    setTicked((t) => new Set(t).add(label.id));
-                  }}
-                />
+                <NewLabel choice={choice} />
               </div>
             </div>
 
@@ -384,11 +368,9 @@ function PlaceMeal({
  * the label; Escape, or leaving the field empty, puts the chip back without
  * closing the sheet around it.
  */
-function NewLabel({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+function NewLabel({ choice }: { choice: LabelChoice }) {
   const [naming, setNaming] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
+  const { draft, error, creating } = choice;
   const chip = useRef<HTMLButtonElement>(null);
   const field = useRef<HTMLInputElement>(null);
   const fieldId = useId();
@@ -405,24 +387,12 @@ function NewLabel({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
   function stop(focusChip: boolean) {
     refocus.current = focusChip;
     setNaming(false);
-    setDraft("");
-    setError(null);
+    choice.stopNaming();
   }
 
   async function create() {
-    const name = draft.trim();
-    if (!name || creating) return;
-    setCreating(true);
-    setError(null);
-    try {
-      await onCreate(name);
-      setDraft("");
-    } catch (cause) {
-      setError(errorMessage(cause, "Could not make that label."));
-    } finally {
-      setCreating(false);
-      field.current?.focus();
-    }
+    await choice.create();
+    field.current?.focus();
   }
 
   if (!naming) {
@@ -450,7 +420,7 @@ function NewLabel({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
         maxLength={40}
         enterKeyHint="done"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => choice.setDraft(e.target.value)}
         onBlur={() => {
           if (!draft.trim() && !creating) stop(false);
         }}
