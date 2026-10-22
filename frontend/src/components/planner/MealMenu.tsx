@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import type { Label, PlannedMeal, Scope } from "../../api";
 import { LabelChecklist } from "./LabelChecklist";
@@ -61,11 +68,12 @@ export function MealMenu({
   const repeated = meal.repeat !== null;
   const past = isPast(meal.plan_date);
 
-  function close(returnFocus: boolean) {
+  /** Takes down whatever is open, and drops a change still waiting on its question. */
+  const close = useCallback((returnFocus: boolean) => {
     setView(null);
     setPending(null);
     if (returnFocus) button.current?.focus();
-  }
+  }, []);
 
   /**
    * Opens down when the space below fits the popover, up when the space above
@@ -112,18 +120,13 @@ export function MealMenu({
     if (view === null || view === "labels") return;
     if (view === "menu") menu.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
     if (view === "scope") popover.current?.querySelector<HTMLElement>("button")?.focus();
-    function dismiss(returnFocus: boolean) {
-      setView(null);
-      setPending(null);
-      if (returnFocus) button.current?.focus();
-    }
     function onPointerDown(event: MouseEvent) {
-      if (!root.current?.contains(event.target as Node)) dismiss(false);
+      if (!root.current?.contains(event.target as Node)) close(false);
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        dismiss(true);
+        close(true);
       }
     }
     document.addEventListener("mousedown", onPointerDown);
@@ -132,7 +135,7 @@ export function MealMenu({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [view]);
+  }, [view, close]);
 
   /** Asks a repeated meal's question about `change`, or makes a one-off's at once. */
   function change(next: Pending) {
