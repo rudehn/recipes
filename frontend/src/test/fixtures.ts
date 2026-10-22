@@ -122,6 +122,7 @@ export function plannedMeal(overrides: Partial<PlannedMeal> = {}): PlannedMeal {
     servings: null,
     recipe: recipeSummary(),
     repeat: null,
+    labels: [],
     ...overrides,
   };
 }

@@ -222,9 +222,9 @@ async def test_just_this_day_servings_override_only_that_day(client):
     assert (tue["entry_id"], thu["entry_id"]) == (None, None)
 
     # A second change edits the same day's meal rather than adding one, and
-    # leaving servings out leaves them as they are.
+    # a change that names nothing is refused.
     await ok(await change_day(client, rid, "2026-10-28", servings=4))
-    await ok(await change_day(client, rid, "2026-10-28"))
+    await ok(await change_day(client, rid, "2026-10-28"), 422)
     (wed,) = await listed(client, "2026-10-28", "2026-10-28")
     assert wed["servings"] == 4
     # Null is the recipe's own count, which is a change of its own.

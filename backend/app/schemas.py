@@ -195,16 +195,48 @@ class TagCount(BaseModel):
     count: int
 
 
+class LabelIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class LabelOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+
+
+class LabelUsage(LabelOut):
+    # Meals carrying the label; a repeat counts once however long it runs.
+    meals: int
+
+
 class MealPlanEntryIn(BaseModel):
     plan_date: date
     meal: Meal
     recipe_id: int
     servings: int | None = Field(default=None, ge=1)
+    label_ids: list[int] = []
 
 
 class MealPlanEntryUpdate(BaseModel):
-    # None resets to the recipe's own serving count.
+    """Changes to a planned meal; only the fields sent are applied.
+
+    Null servings reset to the recipe's own count. A date, a meal or the
+    labels cannot be null.
+    """
+
     servings: int | None = Field(default=None, ge=1)
+    label_ids: list[int] | None = None
+    plan_date: date | None = None
+    meal: Meal | None = None
+
+    @model_validator(mode="after")
+    def _sent_fields_have_values(self):
+        for name in ("label_ids", "plan_date", "meal"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null.")
+        return self
 
 
 class RepeatOut(BaseModel):
@@ -241,10 +273,14 @@ class RepeatDayChange(BaseModel):
     # The owner's today: a change from a day on is refused for a past day.
     today: date
     servings: int | None = Field(default=None, ge=1)
-    weekdays: list[int] = Field(default_factory=list)
+    label_ids: list[int] | None = None
+    weekdays: list[int] | None = None
 
     @model_validator(mode="after")
     def _days_change_from_a_day_on(self):
+        for name in ("label_ids", "weekdays"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null.")
         if self.scope == "day" and "weekdays" in self.model_fields_set:
             raise ValueError("The days of a repeat change from a day on, not for one day.")
         return self
@@ -275,6 +311,7 @@ class PlannedMealOut(BaseModel):
     servings: int | None
     recipe: RecipeSummary
     repeat: RepeatOut | None = None
+    labels: list[LabelOut] = []
 
 
 class PantryItemIn(BaseModel):

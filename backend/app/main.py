@@ -12,6 +12,7 @@ from .routes import (
     grocery,
     import_recipe,
     ingredients,
+    labels,
     meal_plan,
     nutrition,
     pantry,
@@ -39,6 +40,7 @@ app = FastAPI(title="Recipes", lifespan=lifespan)
 
 api = FastAPI(title="Recipes API")
 api.include_router(recipes.router)
+api.include_router(labels.router)
 api.include_router(meal_plan.router)
 api.include_router(pantry.router)
 api.include_router(ingredients.router)

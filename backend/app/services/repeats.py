@@ -14,14 +14,19 @@ writes to any more.
 from datetime import date, timedelta
 from enum import Enum
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import MealPlanEntry, MealRepeat, MealRepeatSkip
+from ..models import MealPlanEntry, MealRepeat, MealRepeatSkip, PlanLabel
+from .labels import unlabel_entries, unlabel_repeats
 
 
 class PastDay(ValueError):
     """A change that reaches forward was asked of a day that has passed."""
+
+
+class NoMeal(LookupError):
+    """The repeat has no meal on the day asked about."""
 
 
 class Unset(Enum):
@@ -84,6 +89,7 @@ async def start_repeat(
         meal=entry.meal,
         weekdays=_weekday_mask(weekdays),
         servings=entry.servings,
+        labels=list(entry.labels),
         starts_on=entry.plan_date,
     )
     await session.delete(entry)
@@ -98,6 +104,7 @@ async def override_day(
     day: date,
     *,
     servings: int | Unset | None = UNSET,
+    labels: list[PlanLabel] | Unset = UNSET,
 ) -> MealPlanEntry:
     """Change the repeat's meal on `day` alone, on any day, past ones included.
 
@@ -106,6 +113,8 @@ async def override_day(
     entry = await _day_row(session, repeat, day)
     if servings is not UNSET:
         entry.servings = servings
+    if labels is not UNSET:
+        entry.labels = labels
     await session.flush()
     return entry
 
@@ -129,6 +138,7 @@ async def change_from(
     *,
     servings: int | Unset | None = UNSET,
     weekdays: list[int] | Unset = UNSET,
+    labels: list[PlanLabel] | Unset = UNSET,
 ) -> MealRepeat:
     """Change the repeat from `day` on, in this week and every week after.
 
@@ -152,6 +162,7 @@ async def change_from(
             meal=repeat.meal,
             weekdays=repeat.weekdays,
             servings=repeat.servings,
+            labels=list(repeat.labels),
             starts_on=day,
             ends_on=repeat.ends_on,
             origin_id=_origin(repeat),
@@ -161,6 +172,8 @@ async def change_from(
     for row in (changed, *later):
         if servings is not UNSET:
             row.servings = servings
+        if labels is not UNSET:
+            row.labels = labels
         if mask is not UNSET:
             row.weekdays = mask
     await session.flush()
@@ -210,11 +223,11 @@ async def _linked_entry(
 ) -> MealPlanEntry | None:
     """The row standing in for the repeat's meal on `day`, if it has one.
 
-    Raises LookupError when the repeat has no meal on `day`: the day is
+    Raises NoMeal when the repeat has no meal on `day`: the day is
     outside its span, on a weekday it does not have, or removed on its own.
     """
     if not occurs_on(repeat, day):
-        raise LookupError("The repeat has no meal on that day.")
+        raise NoMeal("The repeat has no meal on that day.")
     entry = await session.scalar(
         select(MealPlanEntry).where(
             MealPlanEntry.from_repeat_id == repeat.id, MealPlanEntry.plan_date == day
@@ -227,7 +240,7 @@ async def _linked_entry(
             )
         )
         if skipped is not None:
-            raise LookupError("The repeat has no meal on that day.")
+            raise NoMeal("The repeat has no meal on that day.")
     return entry
 
 
@@ -239,6 +252,7 @@ def _replace_day(session: AsyncSession, repeat: MealRepeat, day: date) -> MealPl
         meal=repeat.meal,
         recipe_id=repeat.recipe_id,
         servings=repeat.servings,
+        labels=list(repeat.labels),
         from_repeat_id=repeat.id,
     )
     session.add(entry)
@@ -278,11 +292,9 @@ async def _forget_changes_from(
     SQLite does not enforce foreign keys, so nothing here happens by itself.
     """
     ids = [row.id for row in rows]
-    await session.execute(
-        delete(MealPlanEntry).where(
-            MealPlanEntry.from_repeat_id.in_(ids), MealPlanEntry.plan_date >= day
-        )
-    )
+    changes = (MealPlanEntry.from_repeat_id.in_(ids), MealPlanEntry.plan_date >= day)
+    await unlabel_entries(session, and_(*changes))
+    await session.execute(delete(MealPlanEntry).where(*changes))
     await session.execute(
         delete(MealRepeatSkip).where(
             MealRepeatSkip.repeat_id.in_(ids), MealRepeatSkip.plan_date >= day
@@ -302,5 +314,6 @@ async def _end_before(session: AsyncSession, repeat: MealRepeat, day: date) -> N
         gone.append(repeat.id)
     else:
         repeat.ends_on = day - timedelta(days=1)
+    await unlabel_repeats(session, MealRepeat.id.in_(gone))
     await session.execute(delete(MealRepeat).where(MealRepeat.id.in_(gone)))
     await session.flush()

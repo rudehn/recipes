@@ -50,6 +50,7 @@ from ..services.images import (
     upload_chunks,
 )
 from ..services.kroger import costing
+from ..services.labels import unlabel_entries, unlabel_repeats
 from ..services.nutrition import facts as nutrition
 from ..services.plan import last_planned
 from ..services.recipe_filters import ingredient_names, intersect, recipes_using
@@ -521,14 +522,12 @@ async def delete_recipe(recipe_id: int, session: AsyncSession = Depends(get_sess
     # SQLite does not enforce foreign keys, so what hangs off the recipe goes
     # explicitly: its one-off meals, its repeats and what hangs off them.
     repeat_ids = select(MealRepeat.id).where(MealRepeat.recipe_id == recipe_id)
-    await session.execute(
-        delete(MealPlanEntry).where(
-            or_(
-                MealPlanEntry.recipe_id == recipe_id,
-                MealPlanEntry.from_repeat_id.in_(repeat_ids),
-            )
-        )
+    meals = or_(
+        MealPlanEntry.recipe_id == recipe_id, MealPlanEntry.from_repeat_id.in_(repeat_ids)
     )
+    await unlabel_entries(session, meals)
+    await unlabel_repeats(session, MealRepeat.recipe_id == recipe_id)
+    await session.execute(delete(MealPlanEntry).where(meals))
     await session.execute(
         delete(MealRepeatSkip).where(MealRepeatSkip.repeat_id.in_(repeat_ids))
     )

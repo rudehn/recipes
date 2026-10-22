@@ -3,12 +3,14 @@ from datetime import UTC, date, datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    Column,
     Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
     String,
+    Table,
     Text,
     UniqueConstraint,
 )
@@ -171,6 +173,36 @@ class Ingredient(Base):
         return ingredient_issue(self.name, self.quantity, self.unit)
 
 
+class PlanLabel(Base):
+    """A marker the owner puts on planned meals ("Dad", "Kids", "Guests").
+
+    Not the recipe's `tag`, which is for searching recipes: a label belongs
+    to a meal on the plan. Names are unique ignoring case; `key` is the
+    casefolded name that holds that.
+    """
+
+    __tablename__ = "plan_labels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(40))
+    key: Mapped[str] = mapped_column(String(40), unique=True)
+
+
+meal_plan_entry_labels = Table(
+    "meal_plan_entry_labels",
+    Base.metadata,
+    Column("entry_id", ForeignKey("meal_plan_entries.id", ondelete="CASCADE"), primary_key=True),
+    Column("label_id", ForeignKey("plan_labels.id", ondelete="CASCADE"), primary_key=True),
+)
+
+meal_repeat_labels = Table(
+    "meal_repeat_labels",
+    Base.metadata,
+    Column("repeat_id", ForeignKey("meal_repeats.id", ondelete="CASCADE"), primary_key=True),
+    Column("label_id", ForeignKey("plan_labels.id", ondelete="CASCADE"), primary_key=True),
+)
+
+
 class MealPlanEntry(Base):
     __tablename__ = "meal_plan_entries"
 
@@ -193,6 +225,9 @@ class MealPlanEntry(Base):
 
     recipe: Mapped[Recipe] = relationship(lazy="selectin")
     repeat: Mapped["MealRepeat | None"] = relationship(lazy="selectin")
+    labels: Mapped[list[PlanLabel]] = relationship(
+        secondary=meal_plan_entry_labels, lazy="selectin", order_by=PlanLabel.key
+    )
 
 
 class MealRepeat(Base):
@@ -228,6 +263,9 @@ class MealRepeat(Base):
 
     recipe: Mapped[Recipe] = relationship(lazy="selectin")
     skips: Mapped[list["MealRepeatSkip"]] = relationship(lazy="selectin")
+    labels: Mapped[list[PlanLabel]] = relationship(
+        secondary=meal_repeat_labels, lazy="selectin", order_by=PlanLabel.key
+    )
 
 
 class MealRepeatSkip(Base):

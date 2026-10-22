@@ -217,6 +217,12 @@ export interface Repeat {
   ends_on: string | null;
 }
 
+/** A marker the owner puts on planned meals ("Dad", "Kids"). Not a recipe tag. */
+export interface Label {
+  id: number;
+  name: string;
+}
+
 export interface PlannedMeal {
   // Names the meal for as long as it is shown; "e<id>" for a stored row,
   // "r<repeat id>-<date>" for a repeat's day with no row of its own.
@@ -230,6 +236,8 @@ export interface PlannedMeal {
   recipe: RecipeSummary;
   // The repeat the meal belongs to; null for a one-off meal.
   repeat: Repeat | null;
+  // The labels on the meal, by name.
+  labels: Label[];
 }
 
 export interface PantryItem {

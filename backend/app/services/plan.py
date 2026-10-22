@@ -7,13 +7,13 @@ client; a row's key is `e<id>`, and a repeat's day that has no row of its
 own is `r<repeat id>-<date>`.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import MealPlanEntry, MealRepeat, Recipe
+from ..models import MealPlanEntry, MealRepeat, PlanLabel, Recipe
 from .repeats import occurs_on
 
 
@@ -23,7 +23,8 @@ class PlannedMeal:
 
     `entry_id` is the row behind the meal, for the writes that need one; a
     repeat's day with no row of its own has none. `repeat` is the repeat the
-    meal belongs to, if any.
+    meal belongs to, if any. `labels` are the owner's markers on the meal,
+    by name.
     """
 
     key: str
@@ -33,6 +34,7 @@ class PlannedMeal:
     servings: int | None
     entry_id: int | None
     repeat: MealRepeat | None = None
+    labels: list[PlanLabel] = field(default_factory=list)
 
 
 def from_entry(entry: MealPlanEntry) -> PlannedMeal:
@@ -45,6 +47,7 @@ def from_entry(entry: MealPlanEntry) -> PlannedMeal:
         servings=entry.servings,
         entry_id=entry.id,
         repeat=entry.repeat,
+        labels=list(entry.labels),
     )
 
 
@@ -58,6 +61,7 @@ def _from_repeat(repeat: MealRepeat, day: date) -> PlannedMeal:
         servings=repeat.servings,
         entry_id=None,
         repeat=repeat,
+        labels=list(repeat.labels),
     )
 
 

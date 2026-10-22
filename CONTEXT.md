@@ -27,3 +27,8 @@ Avoid: single meal, standalone.
 
 **Skip**: a day a repeat does not happen on although its weekday says it would.
 Avoid: exception, removed day.
+
+**Label**: a marker the owner puts on planned meals ("Dad", "Kids", "Guests"), made and named by them.
+A meal carries any number of labels, and a repeat carries its labels to every day it falls on.
+Names are unique ignoring case.
+Avoid: tag, which is the recipe's search tag and belongs to the recipe, not to a meal on the plan.

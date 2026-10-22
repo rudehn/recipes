@@ -21,7 +21,7 @@ from ..schemas import (
     StartRepeat,
     StopRepeat,
 )
-from ..services import plan, repeats
+from ..services import labels, plan, repeats
 from ..services.kroger import costing
 
 router = APIRouter(prefix="/meal-plan", tags=["meal-plan"])
@@ -54,11 +54,14 @@ async def create_entry(
 ):
     if await session.get(Recipe, data.recipe_id) is None:
         raise HTTPException(status_code=404, detail="Recipe not found")
+    with _repeat_errors():
+        chosen = await labels.get_labels(session, data.label_ids)
     entry = MealPlanEntry(
         plan_date=data.plan_date,
         meal=data.meal,
         recipe_id=data.recipe_id,
         servings=data.servings,
+        labels=chosen,
     )
     session.add(entry)
     await session.commit()
@@ -75,7 +78,22 @@ async def update_entry(
     entry = await session.get(MealPlanEntry, entry_id)
     if entry is None:
         raise HTTPException(status_code=404, detail="Meal plan entry not found")
-    entry.servings = data.servings
+    given = data.model_fields_set
+    if entry.from_repeat_id is not None and given & {"plan_date", "meal"}:
+        raise HTTPException(
+            status_code=422, detail="A repeated meal moves through its repeat."
+        )
+    with _repeat_errors():
+        chosen = await labels.get_labels(session, data.label_ids) if "label_ids" in given else None
+    # Only what was sent changes; null servings are the recipe's own count.
+    if "servings" in given:
+        entry.servings = data.servings
+    if chosen is not None:
+        entry.labels = chosen
+    if data.plan_date is not None:
+        entry.plan_date = data.plan_date
+    if data.meal is not None:
+        entry.meal = data.meal
     await session.commit()
     await session.refresh(entry)
     return plan.from_entry(entry)
@@ -103,14 +121,24 @@ async def change_repeat_day(
     """Change a repeated meal on just this day, or from this day on."""
     repeat = await _get_repeat(session, repeat_id)
     given = data.model_fields_set
+    if not given & {"servings", "label_ids", "weekdays"}:
+        raise HTTPException(status_code=422, detail="Nothing to change.")
     servings = data.servings if "servings" in given else repeats.UNSET
+    weekdays = data.weekdays if "weekdays" in given else repeats.UNSET
     with _repeat_errors():
+        chosen = (
+            await labels.get_labels(session, data.label_ids)
+            if "label_ids" in given
+            else repeats.UNSET
+        )
         if data.scope == "day":
-            await repeats.override_day(session, repeat, day, servings=servings)
+            await repeats.override_day(
+                session, repeat, day, servings=servings, labels=chosen
+            )
         else:
-            weekdays = data.weekdays if "weekdays" in given else repeats.UNSET
             await repeats.change_from(
-                session, repeat, day, data.today, servings=servings, weekdays=weekdays
+                session, repeat, day, data.today,
+                servings=servings, weekdays=weekdays, labels=chosen,
             )
     await session.commit()
 
@@ -171,7 +199,7 @@ def _repeat_errors() -> Iterator[None]:
     """The repeat service's refusals, as the responses a client acts on."""
     try:
         yield
-    except LookupError as error:
+    except repeats.NoMeal as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except repeats.PastDay as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
@@ -224,6 +252,7 @@ async def copy_week(
             meal=entry.meal,
             recipe_id=entry.recipe_id,
             servings=entry.servings,
+            labels=list(entry.labels),
         )
         session.add(copy)
         created.append(copy)
