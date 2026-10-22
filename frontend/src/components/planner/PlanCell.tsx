@@ -68,6 +68,7 @@ export function PlanCell({
   onSetLabels,
   onRepeat,
   onCreateLabel,
+  onPlacing,
 }: {
   className: string;
   /**
@@ -154,6 +155,7 @@ export function PlanCell({
             onSetLabels={onSetLabels}
             onRemove={onRemove}
             onRepeat={onRepeat}
+            onPlacing={onPlacing}
           />
         );
         // Beside the title, unless a narrow card's title needs the width and

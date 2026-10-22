@@ -558,8 +558,8 @@ input:focus, select:focus, textarea:focus {
   white-space: nowrap;
 }
 
-.btn:hover:not(:disabled) { background: var(--surface-2); }
-.btn:active:not(:disabled) { transform: scale(0.98); }
+.btn:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--surface-2); }
+.btn:active:not(:disabled):not([aria-disabled="true"]) { transform: scale(0.98); }
 
 .btn.primary {
   background: var(--accent);
@@ -567,19 +567,20 @@ input:focus, select:focus, textarea:focus {
   color: var(--ink-on-accent);
 }
 
-.btn.primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn.primary:hover:not(:disabled):not([aria-disabled="true"]) { background: var(--accent-hover); }
 
 .btn.danger {
   color: var(--danger);
 }
 
-.btn.danger:hover:not(:disabled) {
+.btn.danger:hover:not(:disabled):not([aria-disabled="true"]) {
   background: var(--danger-soft);
   border-color: var(--danger-line);
 }
 
 /* Faded, and still under the pointer, so a button waiting on something -
    an empty import box, a save under way - does not read as ready to press. */
+.btn[aria-disabled="true"],
 .btn:disabled {
   opacity: 0.45;
   cursor: default;
@@ -3306,6 +3307,12 @@ body.has-install-hint .page {
   margin: calc(var(--space-4) * -1) 0 var(--space-8) calc(var(--meal-sheet-key) + var(--space-12));
   font-size: var(--text-xs);
   color: var(--muted);
+}
+
+/* Move to… and Copy to…, side by side across the sheet. */
+.meal-sheet-place .btn {
+  flex: 1;
+  justify-content: center;
 }
 
 .meal-sheet-remove {

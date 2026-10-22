@@ -37,18 +37,23 @@ export function placeName(p: Placing, { date, meal }: CellRef): string {
   return `${verbOf(p)} ${placingTitle(p)} on ${formatDay(fromISODate(date))} ${meal}`;
 }
 
-/** The target each cell is while `p` is being placed, or null when nothing is. */
+/** Whether `cell` is where the meal being placed already is, which is no place to put it. */
+export const isOwnCell = (p: Placing, { date, meal }: CellRef) =>
+  p.kind === "meal" && p.meal.plan_date === date && p.meal.meal === meal;
+
+/**
+ * The target each cell is while `p` is being placed, or null when nothing
+ * is, or when the cell is the placed meal's own: that is no place to put it,
+ * and the meal and its menu stay in reach there.
+ */
 export function cellTarget(
   p: Placing | null,
   cell: CellRef,
   onPlace: (cell: CellRef) => void,
 ): CellTarget | null {
-  return p && { name: placeName(p, cell), onPlace: () => onPlace(cell) };
+  if (!p || isOwnCell(p, cell)) return null;
+  return { name: placeName(p, cell), onPlace: () => onPlace(cell) };
 }
-
-/** Whether `cell` is where the meal being placed already is, which is no place to put it. */
-export const isOwnCell = (p: Placing, { date, meal }: CellRef) =>
-  p.kind === "meal" && p.meal.plan_date === date && p.meal.meal === meal;
 
 /**
  * Whether placing `p` makes a new meal: a recipe always does, and a meal

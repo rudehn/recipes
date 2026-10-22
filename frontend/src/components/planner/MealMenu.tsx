@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 import type { Label, PlannedMeal, Scope } from "../../api";
 import { LabelChecklist } from "./LabelChecklist";
 import { changeTarget, isPast, type ChangeTarget } from "./plan";
+import type { Placing } from "./placing";
 import { RepeatMenu } from "./RepeatMenu";
 import { ScopePrompt } from "./ScopePrompt";
 
@@ -16,7 +17,9 @@ type Pending = { kind: "remove" } | { kind: "labels"; ids: number[] };
 /**
  * The "⋯" on a planned meal: the things to do to it that are not a tap on its
  * servings. Opens a menu, and Labels… or Repeat… swaps that for its own
- * choices in the same place.
+ * choices in the same place. Move to… and Copy to… are a drag's equivalent,
+ * for a press or the keyboard: they start placing the meal, and the cells
+ * are then the targets, as for a pick.
  *
  * The popover is fixed to the window rather than hung from the meal. The
  * week grid scrolls sideways, which makes it clip downward as well, and a
@@ -33,6 +36,7 @@ export function MealMenu({
   onSetLabels,
   onRemove,
   onRepeat,
+  onPlacing,
 }: {
   meal: PlannedMeal;
   labels: Label[];
@@ -40,6 +44,8 @@ export function MealMenu({
   onSetLabels: (target: ChangeTarget, ids: number[]) => void;
   onRemove: (target: ChangeTarget) => void;
   onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
+  /** Starts moving the meal, or copying it, to a cell chosen next. */
+  onPlacing: (placing: Placing) => void;
 }) {
   const [view, setView] = useState<"menu" | "labels" | "repeat" | "scope" | null>(null);
   const [place, setPlace] = useState<CSSProperties>({});
@@ -207,6 +213,19 @@ export function MealMenu({
           >
             Repeat…
           </button>
+          {([false, true] as const).map((copy) => (
+            <button
+              key={String(copy)}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                close(true);
+                onPlacing({ kind: "meal", meal, copy });
+              }}
+            >
+              {copy ? "Copy to…" : "Move to…"}
+            </button>
+          ))}
           <button
             type="button"
             role="menuitem"

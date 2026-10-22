@@ -807,7 +807,7 @@ describe("PlannerPage", () => {
           "true",
         );
         expect(within(dialog).getByRole("button", { name: /^Repeat/ })).toHaveAccessibleDescription(
-          "Close to save the changes above, then change its days.",
+          "Close to save the changes above, then change its days, move or copy it.",
         );
         expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
 
@@ -931,6 +931,125 @@ describe("PlannerPage", () => {
           "/api/meal-plan/3/repeat",
         );
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("moves and copies a meal to a day and meal chosen in its sheet", async () => {
+        setViewportWidth(375);
+        const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [
+            plannedMeal({ entry_id: 3, plan_date: "2026-07-30", recipe: curry, labels: [dad] }),
+            { ...repeatDay("2026-07-28"), servings: 2 },
+          ],
+          "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3 }),
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+          "POST /api/meal-plan/repeats/:id/days/:day/move": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner");
+        const open = (name: RegExp) => screen.findByRole("button", { name });
+
+        // A one-off moves to the day and meal chosen; its own cell is no
+        // place to move it to.
+        await user.click(await open(/^Weeknight chicken curry$/));
+        let dialog = await sheet("Thursday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Move to…" }));
+        const day = () => within(dialog).getByRole("group", { name: "Day" });
+        const meal = () => within(dialog).getByRole("group", { name: "Meal" });
+        expect(within(day()).getByRole("button", { name: "Thursday, Jul 30" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(within(meal()).getByRole("button", { name: "Dinner" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        expect(within(dialog).getByRole("button", { name: "Move" })).toBeDisabled();
+        await user.click(within(day()).getByRole("button", { name: "Saturday, Aug 1" }));
+        await user.click(within(meal()).getByRole("button", { name: "Lunch" }));
+        scrolled.mockClear();
+        await user.click(within(dialog).getByRole("button", { name: "Move" }));
+
+        await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({
+          plan_date: "2026-08-01",
+          meal: "lunch",
+        });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        // Its new day is brought into view, as a placed pick's is.
+        await waitFor(() => expect(scrolled.mock.contexts.at(-1)).toHaveTextContent(/^Sat\s*Aug 1/));
+
+        // A repeated day copies as a one-off with its own servings and labels;
+        // Back leaves the sheet as it was.
+        await user.click(await open(/^Repeats/));
+        dialog = await sheet("Tuesday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Copy to…" }));
+        await user.click(within(dialog).getByRole("button", { name: "Back" }));
+        expect(within(dialog).getByRole("button", { name: "Copy to…" })).toHaveFocus();
+        await user.click(within(dialog).getByRole("button", { name: "Copy to…" }));
+        await user.click(within(meal()).getByRole("button", { name: "Breakfast" }));
+        await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+        await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+        expect(backend.requestsTo("POST /api/meal-plan")[0].body).toEqual({
+          plan_date: "2026-07-28",
+          meal: "breakfast",
+          recipe_id: 5,
+          servings: 2,
+        });
+
+        // And moves through its repeat, that day alone.
+        await user.click(await open(/^Repeats/));
+        dialog = await sheet("Tuesday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Move to…" }));
+        await user.click(within(day()).getByRole("button", { name: "Friday, Jul 31" }));
+        await user.click(within(dialog).getByRole("button", { name: "Move" }));
+        const moves = () => backend.requestsTo("POST /api/meal-plan/repeats/:id/days/:day/move");
+        await waitFor(() => expect(moves()).toHaveLength(1));
+        expect(moves()[0].params).toEqual({ id: "1", day: "2026-07-28" });
+        expect(moves()[0].body).toEqual({ plan_date: "2026-07-31", meal: "dinner" });
+      });
+
+      it("saves a one-off's waiting labels before moving it, and holds a repeated meal's", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [
+            plannedMeal({ entry_id: 3, plan_date: "2026-07-30", recipe: curry }),
+            repeatDay("2026-07-28"),
+          ],
+          "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3 }),
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(await screen.findByRole("button", { name: /^Weeknight chicken curry$/ }));
+        let dialog = await sheet("Thursday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Kids" }));
+        await user.click(within(dialog).getByRole("button", { name: "Copy to…" }));
+        await user.click(within(dialog).getByRole("button", { name: "Lunch" }));
+        await user.click(within(dialog).getByRole("button", { name: "Copy" }));
+        await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({ label_ids: [2] });
+        // The copy is of the meal as it now is.
+        expect(backend.requestsTo("POST /api/meal-plan")[0].body).toEqual({
+          plan_date: "2026-07-30",
+          meal: "lunch",
+          recipe_id: 5,
+          label_ids: [2],
+        });
+
+        await user.click(await screen.findByRole("button", { name: /^Repeats/ }));
+        dialog = await sheet("Tuesday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Kids" }));
+        for (const name of ["Move to…", "Copy to…"]) {
+          const button = within(dialog).getByRole("button", { name });
+          expect(button).toHaveAttribute("aria-disabled", "true");
+          expect(button).toHaveAccessibleDescription(
+            "Close to save the changes above, then change its days, move or copy it.",
+          );
+          await user.click(button);
+        }
+        expect(within(dialog).queryByRole("group", { name: "Day" })).not.toBeInTheDocument();
       });
 
       it("places a pick on a day and meal from the picks sheet", async () => {
@@ -2241,6 +2360,120 @@ describe("PlannerPage", () => {
       });
     });
   });
+  /*
+   * Every drag has a press and a key equivalent: a meal's menu starts moving
+   * or copying it, and the cells are then the targets, as for a pick.
+   */
+  describe("moving and copying a meal from its menu", () => {
+    const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry", servings: 4 });
+    const bread = recipeSummary({ id: 6, title: "Banana bread" });
+    const kids = { id: 2, name: "Kids" };
+
+    it("moves a one-off meal to the cell pressed after Move to…", async () => {
+      const backend = mockBackend({
+        "GET /api/meal-plan": [
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-29", meal: "dinner", recipe: bread }),
+        ],
+        "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3 }),
+      });
+      const { user } = renderApp("/planner");
+
+      await user.click(await screen.findByRole("button", { name: "Actions for Banana bread" }));
+      await user.click(screen.getByRole("menuitem", { name: "Move to…" }));
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Choose a day and meal for Banana bread",
+      );
+      // Every cell but the meal's own, which is no place to move it to.
+      expect(document.querySelectorAll(".drop-target")).toHaveLength(27);
+      expect(within(cell("dinner", 2)).queryByRole("button", { name: /^Move/ })).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Move Banana bread on Fri lunch" }));
+
+      await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+      const [request] = backend.requestsTo("PATCH /api/meal-plan/:id");
+      expect(request.params.id).toBe("3");
+      expect(request.body).toEqual({ plan_date: "2026-07-31", meal: "lunch" });
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
+    });
+
+    it("moves and copies a repeated meal's day with the keyboard alone", async () => {
+      const repeat = { id: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], starts_on: "2026-07-20", ends_on: null };
+      const backend = mockBackend({
+        "GET /api/labels": [{ ...kids, meals: 1 }],
+        "GET /api/meal-plan": [
+          plannedMeal({
+            entry_id: null,
+            key: "r1-2026-07-30",
+            plan_date: "2026-07-30",
+            recipe: curry,
+            repeat,
+            servings: 2,
+            labels: [kids],
+          }),
+        ],
+        "POST /api/meal-plan/repeats/:id/days/:day/move": plannedMeal({ recipe: curry }),
+        "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+      });
+      const { user } = renderApp("/planner");
+      const actions = await screen.findByRole("button", {
+        name: "Actions for Weeknight chicken curry",
+      });
+
+      /** Tabs on from wherever focus is to the button named `name`. */
+      async function tabTo(name: string) {
+        for (let i = 0; i < 40 && document.activeElement?.getAttribute("aria-label") !== name; i++) {
+          await user.tab();
+        }
+        expect(document.activeElement).toHaveAccessibleName(name);
+      }
+
+      // Copy to…: the menu's fourth item.
+      actions.focus();
+      await user.keyboard("{Enter}");
+      await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Copy to…" })).toHaveFocus();
+      await user.keyboard("{Enter}");
+      expect(actions).toHaveFocus();
+      await tabTo("Copy Weeknight chicken curry on Sat dinner");
+      await user.keyboard("{Enter}");
+
+      await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+      // A one-off, with the meal's own servings and labels.
+      expect(backend.requestsTo("POST /api/meal-plan")[0].body).toEqual({
+        plan_date: "2026-08-01",
+        meal: "dinner",
+        recipe_id: 5,
+        servings: 2,
+        label_ids: [2],
+      });
+      await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
+
+      // Move to…, and Escape lets go of it before anything is written.
+      actions.focus();
+      await user.keyboard("{Enter}{ArrowDown}{ArrowDown}{Enter}");
+      expect(screen.getByRole("status")).toHaveTextContent("Weeknight chicken curry");
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+      expect(document.querySelector(".drop-target")).toBeNull();
+
+      actions.focus();
+      await user.keyboard("{Enter}{ArrowDown}{ArrowDown}");
+      expect(screen.getByRole("menuitem", { name: "Move to…" })).toHaveFocus();
+      await user.keyboard("{Enter}");
+      await tabTo("Move Weeknight chicken curry on Sun dinner");
+      await user.keyboard("{Enter}");
+
+      const moves = () => backend.requestsTo("POST /api/meal-plan/repeats/:id/days/:day/move");
+      await waitFor(() => expect(moves()).toHaveLength(1));
+      // That day alone, through its repeat: nothing to ask.
+      expect(moves()[0].params).toEqual({ id: "1", day: "2026-07-30" });
+      expect(moves()[0].body).toEqual({ plan_date: "2026-08-02", meal: "dinner" });
+      expect(screen.queryByRole("button", { name: "Just this day" })).not.toBeInTheDocument();
+      expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1);
+    });
+  });
+
   describe("drag and drop", () => {
     const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry", servings: 4 });
     const bread = recipeSummary({ id: 6, title: "Banana bread" });

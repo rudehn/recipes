@@ -170,6 +170,8 @@ export interface EntryActions {
   onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
   /** Makes a label, answering it, or rejecting with the reason it was refused. */
   onCreateLabel: (name: string) => Promise<Label>;
+  /** Starts placing a meal (moving or copying it) by a press on a cell. */
+  onPlacing: (placing: Placing) => void;
 }
 
 /** A figure and how much of it is priced, which a day and a meal both carry. */

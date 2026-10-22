@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import type { EntryCost, Label, PlannedMeal } from "../../api";
+import type { EntryCost, Label, Meal, PlannedMeal } from "../../api";
 import { formatWeekday, fromISODate } from "../../dates";
 import { errorMessage } from "../../useLoad";
 import { Button, Modal } from "../ui";
+import { CellChooser } from "./CellChooser";
 import { PlanFigure } from "./PlanFigure";
 import {
   changeTarget,
@@ -14,21 +15,24 @@ import {
   type ChangeTarget,
   type MealChange,
 } from "./plan";
+import type { CellRef } from "./placing";
 import { RepeatMenu } from "./RepeatMenu";
 import { ScopePrompt } from "./ScopePrompt";
 import { asStored } from "./usePlannedServings";
 
 /**
- * What the sheet shows: the meal, the days it repeats on, or one of the two
- * questions a repeated meal asks - which days lose it, and which days get
- * what was changed here.
+ * What the sheet shows: the meal, the days it repeats on, where it is moved
+ * or copied to, or one of the two questions a repeated meal asks - which days
+ * lose it, and which days get what was changed here.
  */
-type View = "meal" | "repeat" | "remove" | "save";
+type View = "meal" | "repeat" | "move" | "copy" | "remove" | "save";
 
 /**
  * A planned meal's own controls on a phone, in a sheet from the bottom of the
- * screen: its recipe, servings, labels, repeat and Remove. The list keeps only
- * the meal's title, labels and ↻, so a long title has the card's width.
+ * screen: its recipe, servings, labels, repeat, Move to…, Copy to… and
+ * Remove. The list keeps only the meal's title, labels and ↻, so a long title
+ * has the card's width. Move to… and Copy to… are a phone's drag: a day and
+ * a meal chosen as chips, the way a pick is placed.
  *
  * Closing the sheet is what saves the labels, so ticking two is one write.
  * A repeated meal's servings wait with them: every change to it asks Just
@@ -38,6 +42,7 @@ type View = "meal" | "repeat" | "remove" | "save";
  */
 export function MealSheet({
   meal,
+  days,
   cost,
   labels,
   onCreateLabel,
@@ -45,10 +50,13 @@ export function MealSheet({
   onChange,
   onRemove,
   onRepeat,
+  onPlace,
   onClose,
 }: {
   /** The meal as shown, with a one-off's stepped count in it. */
   meal: PlannedMeal;
+  /** The week's seven days, Monday first, for Move to… and Copy to…. */
+  days: Date[];
   cost: EntryCost | undefined;
   labels: Label[];
   onCreateLabel: (name: string) => Promise<Label>;
@@ -58,12 +66,15 @@ export function MealSheet({
   onChange: (target: ChangeTarget, change: MealChange) => Promise<boolean>;
   onRemove: (target: ChangeTarget) => void;
   onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
+  /** Moves the meal to a cell, or copies it there. */
+  onPlace: (meal: PlannedMeal, cell: CellRef, copy: boolean) => void;
   onClose: () => void;
 }) {
   const [view, setView] = useState<View>("meal");
   const body = useRef<HTMLDivElement>(null);
   const forId = useId();
-  const noteId = useId();
+  const pastId = useId();
+  const waitingId = useId();
   const repeated = meal.repeat !== null;
   const past = isPast(meal.plan_date);
   const weekday = formatWeekday(fromISODate(meal.plan_date));
@@ -96,6 +107,8 @@ export function MealSheet({
   useEffect(() => {
     if (view === "remove" || view === "save") {
       body.current?.querySelector<HTMLElement>(".scope-choice")?.focus();
+    } else if (view === "move" || view === "copy") {
+      body.current?.querySelector<HTMLElement>(".place-chip[aria-pressed=true]")?.focus();
     } else if (view === "meal" && from.current !== "meal") {
       body.current?.querySelector<HTMLElement>(`[data-opens="${from.current}"]`)?.focus();
     }
@@ -143,10 +156,24 @@ export function MealSheet({
     onRepeat(meal, weekdays);
   }
 
-  // Its days change from this day on, which a passed day cannot take, and
-  // which is a write of its own: one made beside a repeated meal's waiting
-  // changes would answer their question for them.
-  const repeatBlocked = past ? "That day has passed" : repeated && changed ? "waiting" : null;
+  /**
+   * Moved or copied as it now is: a one-off's waiting labels go first, so the
+   * meal moved has them, and a copy gets them too. A repeated meal has none
+   * waiting (see `waiting`).
+   */
+  async function place(cell: CellRef, copy: boolean) {
+    onClose();
+    if (changed && !repeated && !(await onChange(changeTarget(meal), change))) return;
+    const now = { ...meal, servings: stored, labels: all.filter((l) => ticked.has(l.id)) };
+    onPlace(now, cell, copy);
+  }
+
+  // A repeated meal's changes wait on their question until the sheet closes.
+  // Changing its days, or moving or copying it, is a write of its own, and
+  // one made beside them would leave them unasked, or answer for them.
+  const waiting = repeated && changed;
+  // Its days change from this day on, which a passed day cannot take either.
+  const repeatBlocked = past || waiting;
 
   return (
     <Modal title={`${weekday} ${meal.meal}`} onClose={close}>
@@ -210,9 +237,9 @@ export function MealSheet({
               type="button"
               className="meal-sheet-row meal-sheet-repeat"
               data-opens="repeat"
-              aria-disabled={repeatBlocked !== null}
-              aria-describedby={repeatBlocked ? noteId : undefined}
-              onClick={() => repeatBlocked === null && setView("repeat")}
+              aria-disabled={repeatBlocked}
+              aria-describedby={past ? pastId : waiting ? waitingId : undefined}
+              onClick={() => !repeatBlocked && setView("repeat")}
             >
               <span className="meal-sheet-key">Repeat</span>
               <span className="meal-sheet-value">
@@ -227,11 +254,28 @@ export function MealSheet({
                 ›
               </span>
             </button>
-            {repeatBlocked && (
-              <p className="meal-sheet-note" id={noteId}>
-                {repeatBlocked === "waiting"
-                  ? "Close to save the changes above, then change its days."
-                  : repeatBlocked}
+            {past && (
+              <p className="meal-sheet-note" id={pastId}>
+                That day has passed
+              </p>
+            )}
+
+            <div className="meal-sheet-row meal-sheet-place">
+              {(["move", "copy"] as const).map((verb) => (
+                <Button
+                  key={verb}
+                  data-opens={verb}
+                  aria-disabled={waiting}
+                  aria-describedby={waiting ? waitingId : undefined}
+                  onClick={() => !waiting && setView(verb)}
+                >
+                  {verb === "move" ? "Move to…" : "Copy to…"}
+                </Button>
+              ))}
+            </div>
+            {waiting && (
+              <p className="meal-sheet-note" id={waitingId}>
+                Close to save the changes above, then change its days, move or copy it.
               </p>
             )}
 
@@ -259,6 +303,16 @@ export function MealSheet({
           </>
         )}
 
+        {(view === "move" || view === "copy") && (
+          <PlaceMeal
+            meal={meal}
+            days={days}
+            copy={view === "copy"}
+            onPlace={(cell) => void place(cell, view === "copy")}
+            onBack={() => setView("meal")}
+          />
+        )}
+
         {view === "remove" && (
           <ScopePrompt
             day={meal.plan_date}
@@ -284,6 +338,44 @@ export function MealSheet({
         )}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Where a meal is moved or copied to. It starts at the meal's own day and
+ * meal, which is no place to put it, as a drag back onto its own cell is not:
+ * one tap away from wherever it goes.
+ */
+function PlaceMeal({
+  meal,
+  days,
+  copy,
+  onPlace,
+  onBack,
+}: {
+  meal: PlannedMeal;
+  days: Date[];
+  copy: boolean;
+  onPlace: (cell: CellRef) => void;
+  onBack: () => void;
+}) {
+  const [date, setDate] = useState(meal.plan_date);
+  const [slot, setSlot] = useState<Meal>(meal.meal);
+  const own = date === meal.plan_date && slot === meal.meal;
+  return (
+    <div className="place-sheet">
+      <CellChooser days={days} date={date} meal={slot} onDate={setDate} onMeal={setSlot} />
+      <div className="place-sheet-actions">
+        <Button variant="primary" disabled={own} onClick={() => onPlace({ date, meal: slot })}>
+          {copy ? "Copy" : "Move"}
+        </Button>
+      </div>
+      <div className="meal-sheet-back">
+        <Button size="small" onClick={onBack}>
+          Back
+        </Button>
+      </div>
+    </div>
   );
 }
 

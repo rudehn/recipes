@@ -32,6 +32,7 @@ async function openAt(bottom: number, height = MENU_HEIGHT) {
       onSetLabels={vi.fn()}
       onRemove={vi.fn()}
       onRepeat={vi.fn()}
+      onPlacing={vi.fn()}
     />,
   );
   await user.click(screen.getByRole("button", { name: "Actions for Curry" }));

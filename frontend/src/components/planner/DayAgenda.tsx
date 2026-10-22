@@ -28,6 +28,7 @@ export function DayAgenda({
   onSetLabels,
   onRepeat,
   onCreateLabel,
+  onPlacing,
   placing,
   onPlace,
   dragging,
@@ -114,6 +115,7 @@ export function DayAgenda({
                   onSetLabels={onSetLabels}
                   onRepeat={onRepeat}
                   onCreateLabel={onCreateLabel}
+                  onPlacing={onPlacing}
                 />
               </div>
             ))}

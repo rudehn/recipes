@@ -196,18 +196,15 @@ export default function PlannerPage() {
    * a one-off with its own servings and labels. A repeated meal's day moves
    * through its repeat, as that day alone: it is somewhere the repeat never
    * goes, so there is nothing to ask. A meal put back where it is stays.
+   * Answers whether anything was written.
    */
-  async function dropOn(cell: CellRef, p: Placing, altKey: boolean) {
-    if (p.kind === "recipe") {
-      if (await addMeal(cell, p.recipe.id)) reload();
-      return;
-    }
+  async function dropOn(cell: CellRef, p: Placing, altKey: boolean): Promise<boolean> {
+    if (p.kind === "recipe") return written(await addMeal(cell, p.recipe.id));
     const { meal } = p;
-    if (isOwnCell(p, cell)) return;
+    if (isOwnCell(p, cell)) return false;
     if (copies(p, altKey)) {
       const copy = { servings: meal.servings, labelIds: meal.labels.map((l) => l.id) };
-      if (await addMeal(cell, meal.recipe.id, copy)) reload();
-      return;
+      return written(await addMeal(cell, meal.recipe.id, copy));
     }
     let write: () => Promise<unknown>;
     if (meal.repeat) {
@@ -215,10 +212,21 @@ export default function PlannerPage() {
       write = () => api.moveRepeatDay(repeatId, meal.plan_date, cell.date, cell.meal);
     } else {
       const entryId = meal.entry_id;
-      if (entryId === null) return;
+      if (entryId === null) return false;
       write = () => api.updateMealPlanEntry(entryId, { plan_date: cell.date, meal: cell.meal });
     }
-    if (await action.run(write)) reload();
+    return written(await action.run(write));
+  }
+
+  /** Loads the week again after a write that went through, and says whether it did. */
+  function written(ok: boolean) {
+    if (ok) reload();
+    return ok;
+  }
+
+  /** Moves or copies a meal from its sheet, and brings where it went into view. */
+  async function placeMeal(meal: PlannedMeal, cell: CellRef, copy: boolean) {
+    if (await dropOn(cell, { kind: "meal", meal, copy }, false)) setPlacedOn(cell);
   }
 
   /*
@@ -586,6 +594,7 @@ export default function PlannerPage() {
               onSetLabels={setLabels}
               onRepeat={repeat}
               onCreateLabel={createLabel}
+              onPlacing={choosePlacing}
               onOpen={phone ? (meal) => setSheetKey(meal.key) : undefined}
               reveal={placedOn}
             />
@@ -609,6 +618,7 @@ export default function PlannerPage() {
               onSetLabels={setLabels}
               onRepeat={repeat}
               onCreateLabel={createLabel}
+              onPlacing={choosePlacing}
             />
           )}
         </div>
@@ -629,6 +639,7 @@ export default function PlannerPage() {
         <MealSheet
           key={sheetMeal.key}
           meal={sheetMeal}
+          days={days}
           cost={costs.entries.get(sheetMeal.key)}
           labels={labels ?? []}
           onCreateLabel={createLabel}
@@ -636,6 +647,7 @@ export default function PlannerPage() {
           onChange={changeMeal}
           onRemove={removeEntry}
           onRepeat={repeat}
+          onPlace={placeMeal}
           onClose={() => setSheetKey(null)}
         />
       )}

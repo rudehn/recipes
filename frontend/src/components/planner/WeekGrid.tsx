@@ -26,6 +26,7 @@ export function WeekGrid({
   onSetLabels,
   onRepeat,
   onCreateLabel,
+  onPlacing,
   placing,
   onPlace,
   dragging,
@@ -76,6 +77,7 @@ export function WeekGrid({
                 onSetLabels={onSetLabels}
                 onRepeat={onRepeat}
                 onCreateLabel={onCreateLabel}
+                onPlacing={onPlacing}
               />
             );
           })}
