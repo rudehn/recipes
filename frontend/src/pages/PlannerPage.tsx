@@ -19,7 +19,13 @@ import {
   type Costs,
   type LabelFilter,
 } from "../components/planner/plan";
-import { placingTitle, type CellRef, type Placing } from "../components/planner/placing";
+import {
+  copies,
+  isOwnCell,
+  placingTitle,
+  type CellRef,
+  type Placing,
+} from "../components/planner/placing";
 import { usePlannedServings } from "../components/planner/usePlannedServings";
 import { RecipePickerModal } from "../components/RecipeBits";
 import { Banner, Button, LinkButton, PageHead } from "../components/ui";
@@ -34,6 +40,10 @@ export default function PlannerPage() {
   const [picker, setPicker] = useState<CellRef | null>(null);
   // What is being put on the plan by pressing it and then a cell.
   const [placing, setPlacing] = useState<Placing | null>(null);
+  // What is being dragged onto the plan, from its drag's start to its end.
+  // Kept here rather than in the drag's data, which a browser lets no one
+  // read until the drop, while the cells need it as soon as they are hovered.
+  const [dragging, setDragging] = useState<Placing | null>(null);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -120,15 +130,26 @@ export default function PlannerPage() {
     [cost],
   );
 
-  /** Plans a recipe on a cell, as a one-off with the recipe's own servings. */
-  function addMeal({ date, meal }: CellRef, recipeId: number) {
+  /**
+   * Plans a recipe on a cell, as a one-off with the recipe's own servings and
+   * the selected label; a meal being copied gives its own instead, since the
+   * copy is the same meal again.
+   */
+  function addMeal(
+    { date, meal }: CellRef,
+    recipeId: number,
+    {
+      servings = null,
+      labelIds = labelsForNew(filter),
+    }: { servings?: number | null; labelIds?: number[] } = {},
+  ) {
     return action.run(() =>
       api.addMealPlanEntry({
         plan_date: date,
         meal,
         recipe_id: recipeId,
-        // Every way of adding a meal passes this: the selected label.
-        ...(labelsForNew(filter).length > 0 && { label_ids: labelsForNew(filter) }),
+        ...(servings !== null && { servings }),
+        ...(labelIds.length > 0 && { label_ids: labelIds }),
       }),
     );
   }
@@ -141,11 +162,63 @@ export default function PlannerPage() {
     }
   }
 
-  /** Puts the recipe being placed on the cell chosen for it, which ends placing it. */
-  async function place(cell: CellRef) {
-    if (placing?.kind !== "recipe") return;
+  /** Puts what is being placed on the cell chosen for it, which ends placing it. */
+  function place(cell: CellRef) {
+    if (!placing) return;
     setPlacing(null);
-    if (await addMeal(cell, placing.recipe.id)) reload();
+    void dropOn(cell, placing, false);
+  }
+
+  /**
+   * Starts or ends a drag. A drag is another way to place, so it lets go of
+   * whatever was chosen to place by pressing, and puts an opened panel away
+   * so every cell can be reached. Only once the drag is under way: a browser
+   * hands the drag its picture of the row after this, and would have nothing
+   * to draw were the row already hidden.
+   */
+  function drag(next: Placing | null) {
+    setDragging(next);
+    if (!next) return;
+    setPlacing(null);
+    setTimeout(() => setPicksOpen(false));
+  }
+
+  /** Puts what was dragged on the cell it was let go on, which ends the drag. */
+  function drop(cell: CellRef, altKey: boolean) {
+    const dropped = dragging;
+    setDragging(null);
+    if (dropped) void dropOn(cell, dropped, altKey);
+  }
+
+  /**
+   * Puts a recipe or a meal on a cell, by a drag or a press. A recipe is
+   * planned there. A meal moves there, or, copied, is planned there again as
+   * a one-off with its own servings and labels. A repeated meal's day moves
+   * through its repeat, as that day alone: it is somewhere the repeat never
+   * goes, so there is nothing to ask. A meal put back where it is stays.
+   */
+  async function dropOn(cell: CellRef, p: Placing, altKey: boolean) {
+    if (p.kind === "recipe") {
+      if (await addMeal(cell, p.recipe.id)) reload();
+      return;
+    }
+    const { meal } = p;
+    if (isOwnCell(p, cell)) return;
+    if (copies(p, altKey)) {
+      const copy = { servings: meal.servings, labelIds: meal.labels.map((l) => l.id) };
+      if (await addMeal(cell, meal.recipe.id, copy)) reload();
+      return;
+    }
+    let write: () => Promise<unknown>;
+    if (meal.repeat) {
+      const repeatId = meal.repeat.id;
+      write = () => api.moveRepeatDay(repeatId, meal.plan_date, cell.date, cell.meal);
+    } else {
+      const entryId = meal.entry_id;
+      if (entryId === null) return;
+      write = () => api.updateMealPlanEntry(entryId, { plan_date: cell.date, meal: cell.meal });
+    }
+    if (await action.run(write)) reload();
   }
 
   /*
@@ -266,6 +339,23 @@ export default function PlannerPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [placing, overlaid]);
 
+  // Only a cell takes what is dragged. Anywhere else is told the drop does
+  // nothing, or a field there would take the title the drag carries as text.
+  useEffect(() => {
+    if (!dragging) return;
+    function refuse(event: DragEvent) {
+      if (event.defaultPrevented || !event.dataTransfer) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "none";
+    }
+    window.addEventListener("dragenter", refuse);
+    window.addEventListener("dragover", refuse);
+    return () => {
+      window.removeEventListener("dragenter", refuse);
+      window.removeEventListener("dragover", refuse);
+    };
+  }, [dragging]);
+
   // A press anywhere outside the opened panel puts it away, as a menu would.
   useEffect(() => {
     if (!overlaid) return;
@@ -359,7 +449,11 @@ export default function PlannerPage() {
       {/* The empty week is also what a first load looks like, so it stays up
           unless the page has nothing and no prospect of any. */}
       {!(error && entries === null) && (
-        <div className={`planner-body${folded ? " picks-collapsed" : ""}`}>
+        <div
+          className={["planner-body", folded && "picks-collapsed", dragging && "dragging"]
+            .filter(Boolean)
+            .join(" ")}
+        >
           <div className="picks-dock" ref={picksDock}>
             {folded && (
               <button
@@ -382,6 +476,7 @@ export default function PlannerPage() {
                 meals={loadedWeek === week ? (entries ?? []) : []}
                 placing={placing}
                 onPlacing={choosePlacing}
+                onDrag={drag}
               />
             </div>
           </div>
@@ -397,6 +492,9 @@ export default function PlannerPage() {
               placing={placing}
               onAdd={setPicker}
               onPlace={place}
+              dragging={dragging}
+              onDrag={drag}
+              onDrop={drop}
               onRemove={removeEntry}
               onChangeServings={servings.step}
               onAnswerServings={servings.answer}
@@ -415,6 +513,9 @@ export default function PlannerPage() {
               placing={placing}
               onAdd={setPicker}
               onPlace={place}
+              dragging={dragging}
+              onDrag={drag}
+              onDrop={drop}
               onRemove={removeEntry}
               onChangeServings={servings.step}
               onAnswerServings={servings.answer}

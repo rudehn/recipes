@@ -1,3 +1,4 @@
+import { useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
 
 import type { EntryCost, Label, PlannedMeal } from "../../api";
@@ -6,7 +7,7 @@ import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
 import { ScopePrompt } from "./ScopePrompt";
 import { priced, type EntryActions } from "./plan";
-import type { CellTarget } from "./placing";
+import { startDrag, type CellDrop, type CellTarget, type Placing } from "./placing";
 
 /**
  * One day's one meal: what is planned for it, and the way to plan more.
@@ -14,10 +15,15 @@ import type { CellTarget } from "./placing";
  * While something is being placed the whole cell is the target: one button
  * laid over all of it, so a press anywhere places, and never lands on a meal's
  * link or menu underneath by accident.
+ *
+ * Its meals can be dragged to another cell, and the cell takes what is
+ * dragged onto it, highlighted while it is over it.
  */
 export function PlanCell({
   className,
   target,
+  drop,
+  onDrag,
   entries,
   costs,
   dimmed,
@@ -40,9 +46,47 @@ export function PlanCell({
   onAdd: () => void;
   /** What a press on the cell does while something is being placed. */
   target: CellTarget | null;
+  /** What a drop on the cell does while something is dragged; null where it cannot go. */
+  drop: CellDrop | null;
+  /** Starts dragging one of the cell's meals, or ends the drag with null. */
+  onDrag: (placing: Placing | null) => void;
 } & EntryActions) {
+  // Whether what is dragged is over this cell. Let go of as soon as there is
+  // no drag, so a drag that ended without leaving the cell leaves no mark.
+  const [over, setOver] = useState(false);
+  if (over && !drop) setOver(false);
+
+  const classes = [className, target && "drop-target", over && "drop-over"]
+    .filter(Boolean)
+    .join(" ");
+  // Taken only where something can be put: anywhere else the browser shows
+  // that a drop does nothing, and does nothing.
+  const accept = drop
+    ? (event: DragEvent) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = drop.effect(event.altKey);
+        setOver(true);
+      }
+    : undefined;
   return (
-    <div className={target ? `${className} drop-target` : className}>
+    <div
+      className={classes}
+      onDragEnter={accept}
+      onDragOver={accept}
+      onDragLeave={(event) => {
+        // Not when the pointer only crosses onto one of the cell's own meals.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOver(false);
+      }}
+      onDrop={
+        drop
+          ? (event) => {
+              event.preventDefault();
+              setOver(false);
+              drop.onDrop(event.altKey);
+            }
+          : undefined
+      }
+    >
       {target && (
         <button type="button" className="cell-target" aria-label={target.name} onClick={target.onPlace} />
       )}
@@ -52,6 +96,23 @@ export function PlanCell({
         return (
           <div
             key={e.key}
+            // The whole card is what is picked up, wherever it is pressed,
+            // except in its menu: there a press is for the menu, and a field
+            // in it inside anything draggable could not have its text
+            // selected, since the browser drags the card instead. Decided
+            // afresh on each press, before the browser looks for something
+            // to drag; React leaves the attribute be, its prop never changing.
+            draggable
+            onPointerDown={(event) => {
+              const inMenu = (event.target as Element).closest(".meal-popover") !== null;
+              event.currentTarget.draggable = !inMenu;
+            }}
+            onDragStart={(event) => {
+              // Only the card's own drag: not text selected in a field of its
+              // menu, which the browser drags on its own and bubbles here.
+              if (event.target !== event.currentTarget) return;
+              startDrag(event, { kind: "meal", meal: e, copy: false }, onDrag);
+            }}
             className={[
               "plan-entry",
               e.repeat && "repeated",
@@ -61,7 +122,9 @@ export function PlanCell({
               .join(" ")}
           >
             <div className="plan-entry-main">
-              <Link to={`/recipes/${e.recipe.id}`}>
+              {/* Not a drag of its own: a link dragged is its address,
+                  which a drop elsewhere would open. The card is dragged. */}
+              <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
                 {/* Drawn lighter, and marked: the routine, so the meals chosen
                     for this week stand out from it. Inside the title's first
                     line rather than a column beside it, which would take its

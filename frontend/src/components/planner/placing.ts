@@ -1,3 +1,5 @@
+import type { DragEvent } from "react";
+
 import type { Meal, PlannedMeal, RecipeSummary } from "../../api";
 import { formatDay, fromISODate } from "../../dates";
 
@@ -42,6 +44,59 @@ export function cellTarget(
   onPlace: (cell: CellRef) => void,
 ): CellTarget | null {
   return p && { name: placeName(p, cell), onPlace: () => onPlace(cell) };
+}
+
+/** Whether `cell` is where the meal being placed already is, which is no place to put it. */
+export const isOwnCell = (p: Placing, { date, meal }: CellRef) =>
+  p.kind === "meal" && p.meal.plan_date === date && p.meal.meal === meal;
+
+/**
+ * Whether placing `p` makes a new meal: a recipe always does, and a meal
+ * does when it is copied, by its own choice or by Alt (Option) held as it
+ * is dropped. Otherwise the meal moves.
+ */
+export const copies = (p: Placing, altKey: boolean) =>
+  p.kind === "recipe" || p.copy || altKey;
+
+/** What a cell does while something is dragged over the plan. */
+export interface CellDrop {
+  /** The drop a browser shows for the pointer: a copy, or a move. */
+  effect: (altKey: boolean) => "copy" | "move";
+  onDrop: (altKey: boolean) => void;
+}
+
+/**
+ * The drop each cell is while `p` is dragged, or null when nothing is, or
+ * when the cell is the dragged meal's own: a meal let go where it started
+ * stays as it was, so that cell does not take the drop at all.
+ */
+export function cellDrop(
+  p: Placing | null,
+  cell: CellRef,
+  onDrop: (cell: CellRef, altKey: boolean) => void,
+): CellDrop | null {
+  if (!p || isOwnCell(p, cell)) return null;
+  return {
+    effect: (altKey) => (copies(p, altKey) ? "copy" : "move"),
+    onDrop: (altKey) => onDrop(cell, altKey),
+  };
+}
+
+/**
+ * Starts dragging `p` from where the drag began, and ends it with null when
+ * the drag ends. The page keeps what is dragged; the browser is given only
+ * its title, since some will not start a drag that carries nothing, and a
+ * title is all a drop outside the page should get.
+ *
+ * The end is heard on the element itself rather than through React, which
+ * hears only what reaches its root: a row the list redraws while it is
+ * dragged is no longer there, and its drag would never end.
+ */
+export function startDrag(event: DragEvent, p: Placing, onDrag: (p: Placing | null) => void) {
+  event.dataTransfer.effectAllowed = p.kind === "recipe" ? "copy" : "copyMove";
+  event.dataTransfer.setData("text/plain", placingTitle(p));
+  event.currentTarget.addEventListener("dragend", () => onDrag(null), { once: true });
+  onDrag(p);
 }
 
 /**

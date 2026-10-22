@@ -1,4 +1,4 @@
-import { useCallback, useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState, type DragEvent } from "react";
 
 import { api, imageUrl, type PlanPick, type PlannedMeal, type RecipeSummary } from "../../api";
 import { EMPTY_SEARCH, isEmpty, toFilters, type Search } from "../../recipeSearch";
@@ -6,7 +6,7 @@ import { useAction } from "../../useAction";
 import { useAppliedSearch } from "../../useAppliedSearch";
 import { useLoad } from "../../useLoad";
 import { RecipeSearchBox } from "../RecipeSearchBox";
-import { placedDays, type Placing } from "./placing";
+import { placedDays, startDrag, type Placing } from "./placing";
 
 /**
  * How many results the panel lists under its search. A column 240px wide is
@@ -17,7 +17,8 @@ const RESULTS = 8;
 /** A recipe's photo at row size, or the plate that stands in for one. */
 function Thumb({ recipe }: { recipe: RecipeSummary }) {
   const url = imageUrl(recipe.image_filename);
-  if (url) return <img className="pick-thumb" src={url} alt="" />;
+  // Not a drag of its own: the row it is in is what is dragged.
+  if (url) return <img className="pick-thumb" src={url} alt="" draggable={false} />;
   return (
     <span className="pick-thumb" aria-hidden="true">
       🍽️
@@ -30,16 +31,18 @@ function Thumb({ recipe }: { recipe: RecipeSummary }) {
  * with the Recipes page's search and placed from here onto the cells.
  *
  * Choosing what to cook and putting it on a day are two jobs, and this is the
- * first of them. Pressing a pick (or a result) starts placing it; the plan's
- * cells are then the targets, and the page owns that state since the cells
- * are not ours. The search is the panel's own and not the URL's: the planner's
- * URL already carries its label filter, and a search here is a passing thing.
+ * first of them. Pressing a pick (or a result) starts placing it, and so does
+ * dragging it; the plan's cells are then the targets, and the page owns that
+ * state since the cells are not ours. The search is the panel's own and not
+ * the URL's: the planner's URL already carries its label filter, and a search
+ * here is a passing thing.
  */
 export function PicksPanel({
   week,
   meals,
   placing,
   onPlacing,
+  onDrag,
 }: {
   /** The Monday (ISO) of the week being viewed. */
   week: string;
@@ -47,6 +50,8 @@ export function PicksPanel({
   meals: PlannedMeal[];
   placing: Placing | null;
   onPlacing: (placing: Placing | null) => void;
+  /** Starts dragging a recipe onto the plan, or ends the drag with null. */
+  onDrag: (placing: Placing | null) => void;
 }) {
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
   const [draft, setDraft] = useState("");
@@ -80,6 +85,11 @@ export function PicksPanel({
 
   const choosing = (r: RecipeSummary) => placing?.kind === "recipe" && placing.recipe.id === r.id;
   const press = (r: RecipeSummary) => onPlacing(choosing(r) ? null : { kind: "recipe", recipe: r });
+  // A row is dragged whole, from its picture, title or button alike.
+  const dragRow = (r: RecipeSummary) => ({
+    draggable: true,
+    onDragStart: (event: DragEvent) => startDrag(event, { kind: "recipe", recipe: r }, onDrag),
+  });
 
   async function add(recipe: RecipeSummary) {
     let saved: PlanPick | undefined;
@@ -123,7 +133,7 @@ export function PicksPanel({
         <>
           <ul className="pick-list" aria-label="Search results">
             {found.items.map((r) => (
-              <li key={r.id} className="pick-row">
+              <li key={r.id} className="pick-row" {...dragRow(r)}>
                 <button
                   type="button"
                   className="pick-choose"
@@ -171,7 +181,11 @@ export function PicksPanel({
         {picks.map((p) => {
           const days = placedDays(p.recipe.id, meals);
           return (
-            <li key={p.id} className={`pick-row${days.length > 0 ? " placed" : ""}`}>
+            <li
+              key={p.id}
+              className={`pick-row${days.length > 0 ? " placed" : ""}`}
+              {...dragRow(p.recipe)}
+            >
               <button
                 type="button"
                 className="pick-choose"

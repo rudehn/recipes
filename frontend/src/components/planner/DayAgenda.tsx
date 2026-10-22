@@ -4,7 +4,7 @@ import { formatDate, formatDay, isToday, toISODate } from "../../dates";
 import { PlanCell } from "./PlanCell";
 import { PlanFigure } from "./PlanFigure";
 import { MEALS, cellKey, priced, type LayoutProps } from "./plan";
-import { cellTarget } from "./placing";
+import { cellDrop, cellTarget } from "./placing";
 
 /**
  * The same week as a stack of days, each listing its four meals.
@@ -29,6 +29,9 @@ export function DayAgenda({
   onCreateLabel,
   placing,
   onPlace,
+  dragging,
+  onDrag,
+  onDrop,
   loadedWeek,
 }: LayoutProps & {
   /** The Monday (ISO) of the week whose meals were last loaded, if any. */
@@ -83,6 +86,8 @@ export function DayAgenda({
                   labels={labels}
                   onAdd={() => onAdd({ date: iso, meal })}
                   target={cellTarget(placing, { date: iso, meal }, onPlace)}
+                  drop={cellDrop(dragging, { date: iso, meal }, onDrop)}
+                  onDrag={onDrag}
                   onRemove={onRemove}
                   onChangeServings={onChangeServings}
                   onAnswerServings={onAnswerServings}

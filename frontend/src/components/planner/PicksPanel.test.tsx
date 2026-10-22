@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +17,7 @@ const pick = (recipe = curry) => ({ id: recipe.id + 100, week_start: WEEK, recip
 /** The panel with the page's half of placing: it holds what the panel asks for. */
 function renderPanel({ meals = [] }: { meals?: PlannedMeal[] } = {}) {
   const onPlacing = vi.fn();
+  const onDrag = vi.fn();
   function Page() {
     const [placing, setPlacing] = useState<Placing | null>(null);
     return (
@@ -28,11 +29,12 @@ function renderPanel({ meals = [] }: { meals?: PlannedMeal[] } = {}) {
           onPlacing(next);
           setPlacing(next);
         }}
+        onDrag={onDrag}
       />
     );
   }
   const rendered = renderInRouter(<Page />);
-  return { ...rendered, onPlacing };
+  return { ...rendered, onPlacing, onDrag };
 }
 
 const picks = () => screen.getByRole("list", { name: "This week's picks" });
@@ -134,6 +136,29 @@ describe("PicksPanel", () => {
 
     await user.click(within(results).getByRole("button", { name: /^Banana bread/ }));
     expect(onPlacing).toHaveBeenLastCalledWith(null);
+  });
+
+  it("drags a pick or a result whole, giving the browser only its title", async () => {
+    mockBackend({
+      "GET /api/meal-plan/picks": [pick(curry)],
+      "GET /api/recipes": page([bread]),
+    });
+    const { user, onDrag } = renderPanel();
+    const dataTransfer = { effectAllowed: "all", setData: vi.fn() };
+
+    const row = (await within(picks()).findByText("Weeknight chicken curry")).closest("li")!;
+    expect(row).toHaveAttribute("draggable", "true");
+    fireEvent.dragStart(row, { dataTransfer });
+    expect(onDrag).toHaveBeenLastCalledWith({ kind: "recipe", recipe: curry });
+    expect(dataTransfer.setData).toHaveBeenCalledWith("text/plain", "Weeknight chicken curry");
+    expect(dataTransfer.effectAllowed).toBe("copy");
+    fireEvent.dragEnd(row, { dataTransfer });
+    expect(onDrag).toHaveBeenLastCalledWith(null);
+
+    await user.type(searchBox(), "bread");
+    const results = await screen.findByRole("list", { name: "Search results" });
+    fireEvent.dragStart(within(results).getByText("Banana bread").closest("li")!, { dataTransfer });
+    expect(onDrag).toHaveBeenLastCalledWith({ kind: "recipe", recipe: bread });
   });
 
   it("opens a recipe chosen from the suggestions in a new tab", async () => {

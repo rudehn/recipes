@@ -33,6 +33,17 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom has no DragEvent, so Testing Library builds a drag event as a plain
+// Event and drops the modifier keys from its init: a drop with Alt held would
+// arrive without it. A drag event is a mouse event with a DataTransfer, and
+// Testing Library attaches the test's DataTransfer itself.
+if (typeof window.DragEvent !== "function") {
+  Object.defineProperty(window, "DragEvent", {
+    value: class DragEvent extends MouseEvent {},
+    configurable: true,
+  });
+}
+
 /**
  * jsdom exposes the Storage class but leaves window.localStorage a bare object
  * carrying none of its methods, so every call on it throws TypeError here and

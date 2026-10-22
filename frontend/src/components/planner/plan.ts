@@ -154,4 +154,10 @@ export interface LayoutProps extends EntryActions {
   placing: Placing | null;
   /** Puts what is being placed on the cell that was chosen. */
   onPlace: (cell: CellRef) => void;
+  /** What is being dragged over the plan, while it is; null otherwise. */
+  dragging: Placing | null;
+  /** Starts dragging a meal off the plan, or ends a drag with null. */
+  onDrag: (placing: Placing | null) => void;
+  /** Puts what is being dragged on the cell it was let go on; Alt held copies a meal. */
+  onDrop: (cell: CellRef, altKey: boolean) => void;
 }
