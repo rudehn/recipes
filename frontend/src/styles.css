@@ -2391,6 +2391,7 @@ body.has-install-hint .page {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-lift);
+  overflow-y: auto;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
 }

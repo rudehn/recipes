@@ -36,13 +36,20 @@ export function MealMenu({
   const [place, setPlace] = useState<CSSProperties>({});
   const root = useRef<HTMLSpanElement>(null);
   const button = useRef<HTMLButtonElement>(null);
-  const menu = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  // Whichever popover is showing, for measuring.
+  const popover = useRef<HTMLDivElement | null>(null);
 
   function close(returnFocus: boolean) {
     setView(null);
     if (returnFocus) button.current?.focus();
   }
 
+  /**
+   * Opens down when the space below fits the popover, up when the space above
+   * does, and otherwise on the side with more room. It is capped to the space
+   * it was given and scrolls inside it, so Done is always reachable.
+   */
   function position() {
     const rect = button.current?.getBoundingClientRect();
     if (!rect) return;
@@ -50,11 +57,14 @@ export function MealMenu({
       EDGE,
       Math.min(rect.right - POPOVER_WIDTH, window.innerWidth - POPOVER_WIDTH - EDGE),
     );
-    // Opens upward from a button in the lower part of the window.
+    const below = window.innerHeight - rect.bottom - GAP - EDGE;
+    const above = rect.top - GAP - EDGE;
+    const needed = popover.current?.scrollHeight ?? 0;
+    const down = needed <= below || (needed > above && below >= above);
     setPlace(
-      rect.bottom > window.innerHeight * 0.6
-        ? { left, bottom: window.innerHeight - rect.top + GAP }
-        : { left, top: rect.bottom + GAP },
+      down
+        ? { left, top: rect.bottom + GAP, maxHeight: Math.max(below, 0) }
+        : { left, bottom: window.innerHeight - rect.top + GAP, maxHeight: Math.max(above, 0) },
     );
   }
 
@@ -128,7 +138,10 @@ export function MealMenu({
           className="meal-popover"
           role="menu"
           aria-label={title}
-          ref={menu}
+          ref={(el) => {
+            menu.current = el;
+            popover.current = el;
+          }}
           style={place}
           onKeyDown={onMenuKeyDown}
         >
@@ -151,7 +164,7 @@ export function MealMenu({
         </div>
       )}
       {view === "labels" && (
-        <div className="meal-popover" style={place}>
+        <div className="meal-popover" style={place} ref={popover}>
           <LabelChecklist
             labels={labels}
             chosen={meal.labels.map((l) => l.id)}
