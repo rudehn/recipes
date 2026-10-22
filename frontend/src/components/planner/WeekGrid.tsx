@@ -4,6 +4,7 @@ import { formatDate, formatDay, isToday, toISODate } from "../../dates";
 import { PlanCell } from "./PlanCell";
 import { PlanFigure } from "./PlanFigure";
 import { MEALS, cellKey, priced, type LayoutProps } from "./plan";
+import { cellTarget } from "./placing";
 
 /**
  * The week as a grid: a row per meal, a column per day.
@@ -25,6 +26,8 @@ export function WeekGrid({
   onSetLabels,
   onRepeat,
   onCreateLabel,
+  placing,
+  onPlace,
 }: LayoutProps) {
   return (
     <div className="week-grid">
@@ -60,6 +63,7 @@ export function WeekGrid({
                 asking={asking}
                 labels={labels}
                 onAdd={() => onAdd({ date: iso, meal })}
+                target={cellTarget(placing, { date: iso, meal }, onPlace)}
                 onRemove={onRemove}
                 onChangeServings={onChangeServings}
                 onAnswerServings={onAnswerServings}

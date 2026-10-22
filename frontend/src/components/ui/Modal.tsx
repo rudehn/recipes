@@ -41,6 +41,20 @@ export function Modal({
   // time an effect runs document.activeElement is already inside the dialog
   // and whatever opened it has been lost.
   const [returnTo] = useState(() => document.activeElement as HTMLElement | null);
+  // The latest onClose, read when it is needed. A page passes a new one on
+  // every render, and the effect below must not run again for it: its
+  // cleanup hands focus back to the trigger, which would pull it out of the
+  // field being typed in whenever the page behind happened to re-render.
+  const close = useRef(onClose);
+  useEffect(() => {
+    close.current = onClose;
+  });
+
+  // What had focus inside the dialog when the effect below was last cleaned
+  // up while the dialog stayed, which in development StrictMode does once on
+  // every open: without it the second run found focus back on the trigger and
+  // moved it to the Close button, away from the field marked autoFocus.
+  const focusedInside = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const root = dialog.current;
@@ -49,12 +63,18 @@ export function Modal({
     // marked autoFocus still wins - it knows better than we do which control
     // the user came here to use.
     if (root && !root.contains(document.activeElement)) {
-      root.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+      const before = focusedInside.current;
+      (before && root.contains(before)
+        ? before
+        : root.querySelector<HTMLElement>(FOCUSABLE)
+      )?.focus();
     }
 
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        onClose();
+        // Not an Escape already spent inside the dialog, closing a search's
+        // suggestions or a list of its own.
+        if (!event.defaultPrevented) close.current();
         return;
       }
       if (event.key !== "Tab" || !root) return;
@@ -78,11 +98,14 @@ export function Modal({
     window.addEventListener("keydown", onKeyDown);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
+      if (root?.contains(document.activeElement)) {
+        focusedInside.current = document.activeElement as HTMLElement;
+      }
       // Guarded: the trigger may itself have been removed by whatever the
       // dialog just did, and focusing a detached node silently does nothing.
       if (returnTo && document.body.contains(returnTo)) returnTo.focus();
     };
-  }, [onClose, returnTo]);
+  }, [returnTo]);
 
   return (
     <div className="modal-backdrop" onClick={onClose}>

@@ -1,5 +1,6 @@
 import type { DayCost, EntryCost, Label, Meal, PlannedMeal, Repeat, Scope } from "../../api";
 import { formatDate, formatDay, fromISODate, toISODate } from "../../dates";
+import type { CellRef, Placing } from "./placing";
 
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -148,5 +149,9 @@ export interface LayoutProps extends EntryActions {
   /** Every label, for the meals' checklists. */
   labels: Label[];
   /** Opens the picker on the day and meal that asked for it. */
-  onAdd: (cell: { date: string; meal: Meal }) => void;
+  onAdd: (cell: CellRef) => void;
+  /** What is being placed, while the cells are its targets; null otherwise. */
+  placing: Placing | null;
+  /** Puts what is being placed on the cell that was chosen. */
+  onPlace: (cell: CellRef) => void;
 }

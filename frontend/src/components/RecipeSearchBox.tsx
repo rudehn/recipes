@@ -76,6 +76,8 @@ export function RecipeSearchBox({
   draft,
   onDraft,
   onOpenRecipe,
+  autoFocus,
+  placeholder = "Search recipes, ingredients or tags…",
 }: {
   search: Search;
   onChange: (search: Search) => void;
@@ -83,6 +85,10 @@ export function RecipeSearchBox({
   draft: string;
   onDraft: (text: string) => void;
   onOpenRecipe: (id: number) => void;
+  /** Takes focus when it appears, for a dialog opened to search. */
+  autoFocus?: boolean;
+  /** What an empty box says, shorter where the box is narrow. */
+  placeholder?: string;
 }) {
   const [open, setOpen] = useState(false);
   // Index into the options of the one moved to, or -1 for the typing.
@@ -95,6 +101,11 @@ export function RecipeSearchBox({
   const list = useRef<HTMLUListElement>(null);
   // A press inside the dropdown is about to pick a row; see onBlur.
   const pressingList = useRef(false);
+  // The focus autoFocus gives was not the reader's doing: the box waits for
+  // them to type or click before it offers anything over what is below it,
+  // and an Escape straight away is still the dialog's. Until then any focus
+  // is quiet, since development StrictMode gives the field its focus twice.
+  const quietFocus = useRef(autoFocus ?? false);
   const listId = useId();
 
   const typed = draft.trim();
@@ -242,6 +253,7 @@ export function RecipeSearchBox({
   }
 
   function handleChange(e: ChangeEvent<HTMLInputElement>) {
+    quietFocus.current = false;
     onDraft(e.target.value);
     setActive(-1);
     setOpen(true);
@@ -380,6 +392,7 @@ export function RecipeSearchBox({
         ))}
         <input
           ref={input}
+          autoFocus={autoFocus}
           role="combobox"
           aria-label="Search recipes"
           aria-autocomplete="list"
@@ -387,7 +400,7 @@ export function RecipeSearchBox({
           aria-controls={listed ? listId : undefined}
           aria-activedescendant={listed && active >= 0 ? optionId(active) : undefined}
           value={draft}
-          placeholder={tokens.length === 0 ? "Search recipes, ingredients or tags…" : ""}
+          placeholder={tokens.length === 0 ? placeholder : ""}
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
@@ -396,9 +409,12 @@ export function RecipeSearchBox({
           onKeyDown={handleKeyDown}
           onFocus={() => {
             pressingList.current = false;
+            if (!quietFocus.current) setOpen(true);
+          }}
+          onClick={() => {
+            quietFocus.current = false;
             setOpen(true);
           }}
-          onClick={() => setOpen(true)}
           onBlur={() => {
             // A press on a row can take focus on some touch browsers before
             // its click arrives; closing then would drop the click.

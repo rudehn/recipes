@@ -1,10 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RecipePhoto, RecipePickerModal, TagChips, TimeChips } from "./RecipeBits";
 import { HttpError, mockBackend, type MockRequest } from "../test/backend";
-import { page, recipeSummary } from "../test/fixtures";
+import { page, recipe, recipeSummary } from "../test/fixtures";
 import { renderInRouter } from "../test/render";
 
 describe("TimeChips", () => {
@@ -134,7 +134,7 @@ describe("RecipePickerModal", () => {
     const { user } = renderPicker();
     await screen.findByRole("button", { name: /Weeknight chicken curry/ });
 
-    await user.type(screen.getByPlaceholderText("Search recipes…"), "banana");
+    await user.type(screen.getByRole("combobox", { name: "Search recipes" }), "banana");
 
     await waitFor(() =>
       expect(
@@ -177,7 +177,7 @@ describe("RecipePickerModal", () => {
     const { user } = renderPicker();
     await screen.findByRole("button", { name: /Weeknight chicken curry/ });
 
-    await user.type(screen.getByPlaceholderText("Search recipes…"), "kohlrabi");
+    await user.type(screen.getByRole("combobox", { name: "Search recipes" }), "kohlrabi");
 
     expect(await screen.findByText("No recipes found.")).toBeInTheDocument();
   });
@@ -207,6 +207,65 @@ describe("RecipePickerModal", () => {
 
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it("closes the search's suggestions on Escape, and not the picker", async () => {
+    mockBackend({ "GET /api/recipes": page([curry]) });
+    const onClose = vi.fn();
+    const { user } = renderPicker({ onClose });
+    await screen.findByRole("button", { name: /Weeknight chicken curry/ });
+
+    await user.type(screen.getByRole("combobox", { name: "Search recipes" }), "cur");
+    expect(screen.getByRole("combobox", { name: "Search recipes" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    await user.keyboard("{Escape}");
+
+    expect(screen.getByRole("combobox", { name: "Search recipes" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("searches by the tags and ingredients the Recipes page does", async () => {
+    const backend = mockBackend({
+      "GET /api/recipes": page([curry]),
+      "GET /api/recipes/suggest": {
+        ingredients: [{ key: "chicken", name: "chicken", count: 3 }],
+        tags: [],
+        recipes: [],
+      },
+    });
+    const { user } = renderPicker();
+    await screen.findByRole("button", { name: /Weeknight chicken curry/ });
+
+    await user.type(screen.getByRole("combobox", { name: "Search recipes" }), "chick");
+    await user.click(await screen.findByRole("option", { name: /chicken/ }));
+
+    await waitFor(() =>
+      expect(backend.requestsTo("GET /api/recipes").at(-1)!.searchParams.getAll("ingredient")).toEqual(
+        ["chicken"],
+      ),
+    );
+  });
+
+  it("picks a recipe chosen from the suggestions", async () => {
+    mockBackend({
+      "GET /api/recipes": page([curry, bread]),
+      "GET /api/recipes/suggest": { ingredients: [], tags: [], recipes: [{ id: 2, title: "Banana bread" }] },
+      "GET /api/recipes/:id": recipe({ id: 2, title: "Banana bread" }),
+    });
+    const onPick = vi.fn();
+    const { user } = renderPicker({ onPick });
+    await screen.findByRole("button", { name: /Banana bread/ });
+
+    await user.type(screen.getByRole("combobox", { name: "Search recipes" }), "bana");
+    await user.click(await screen.findByRole("option", { name: "Banana bread" }));
+
+    await waitFor(() => expect(onPick).toHaveBeenCalledTimes(1));
+    expect(onPick.mock.calls[0][0]).toMatchObject({ id: 2, title: "Banana bread" });
   });
 
   it("stays open when the modal itself is clicked", async () => {
@@ -248,7 +307,7 @@ describe("RecipePickerModal", () => {
     renderPicker();
 
     await waitFor(() =>
-      expect(screen.getByPlaceholderText("Search recipes…")).toHaveFocus(),
+      expect(screen.getByRole("combobox", { name: "Search recipes" })).toHaveFocus(),
     );
   });
 
@@ -281,6 +340,32 @@ describe("RecipePickerModal", () => {
     await user.keyboard("{Escape}");
 
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("keeps focus in the box when the page behind it renders again", async () => {
+    // A page passes a new onClose every render; taking each one as a new
+    // dialog handed focus back to the trigger and then to the Close button.
+    mockBackend({ "GET /api/recipes": page([curry]) });
+    let renderAgain!: () => void;
+    function Page() {
+      const [open, setOpen] = useState(false);
+      const [, setCount] = useState(0);
+      renderAgain = () => setCount((n) => n + 1);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>Open picker</button>
+          {open && <RecipePickerModal title="Add to dinner" onPick={vi.fn()} onClose={() => {}} />}
+        </>
+      );
+    }
+    const { user } = renderInRouter(<Page />);
+    await user.click(screen.getByRole("button", { name: "Open picker" }));
+    const box = screen.getByRole("combobox", { name: "Search recipes" });
+    await waitFor(() => expect(box).toHaveFocus());
+
+    act(() => renderAgain());
+
+    expect(box).toHaveFocus();
   });
 
   it("keeps Tab inside the dialog", async () => {

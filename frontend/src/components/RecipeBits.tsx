@@ -1,10 +1,12 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
 import { chipsThatFit } from "../chipFit";
 import { descriptionParagraphs } from "../description";
+import { EMPTY_SEARCH, toFilters, type Search } from "../recipeSearch";
 import { useDebounced } from "../useDebounced";
-import { useLoad } from "../useLoad";
+import { errorMessage, useLoad } from "../useLoad";
+import { RecipeSearchBox } from "./RecipeSearchBox";
 import { Chip, Chips, Modal } from "./ui";
 
 /** How many matches the picker shows before asking for a narrower search. */
@@ -117,6 +119,11 @@ export function RecipePhoto({
   );
 }
 
+/**
+ * The "+ Add" picker: the Recipes page's search box over the first matches.
+ * The typing searches before it is entered, as it does there, and a recipe
+ * chosen from the box's own suggestions is the one picked.
+ */
 export function RecipePickerModal({
   title,
   onPick,
@@ -126,30 +133,54 @@ export function RecipePickerModal({
   onPick: (recipe: RecipeSummary) => void;
   onClose: () => void;
 }) {
-  const [query, setQuery] = useState("");
-  const search = useDebounced(query.trim());
+  const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
+  const [draft, setDraft] = useState("");
+  const settled = useDebounced(draft.trim());
+  const applied = useMemo(
+    () => (search.text || !settled ? search : { ...search, text: settled }),
+    [search, settled],
+  );
   // A modal paging through recipes would be a worse way to find one than
   // typing, so it shows the first screenful of matches and asks for more
   // letters instead of a page number.
   const { data: matches, error } = useLoad(
-    useCallback(() => api.listRecipes({ q: search, per_page: PICKER_LIMIT }), [search]),
+    useCallback(
+      () => api.listRecipes({ ...toFilters(applied), per_page: PICKER_LIMIT }),
+      [applied],
+    ),
   );
+  const [pickError, setPickError] = useState<string | null>(null);
 
   const found = matches?.items ?? [];
   const hidden = (matches?.total ?? 0) - found.length;
+
+  /** A suggested recipe is usually among the matches; otherwise it is asked for. */
+  async function pickById(id: number) {
+    setPickError(null);
+    const listed = found.find((r) => r.id === id);
+    if (listed) return onPick(listed);
+    try {
+      onPick(await api.getRecipe(id));
+    } catch (cause) {
+      setPickError(errorMessage(cause, "Could not load that recipe."));
+    }
+  }
 
   // Escape, the focus trap and the focus restore belong to Modal.
   return (
     <Modal title={title} onClose={onClose}>
       <div className="modal-search">
-        <input
+        <RecipeSearchBox
           autoFocus
-          placeholder="Search recipes…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          search={search}
+          onChange={setSearch}
+          draft={draft}
+          onDraft={setDraft}
+          onOpenRecipe={pickById}
         />
       </div>
       <div className="modal-list">
+        {pickError && <p className="modal-note">{pickError}</p>}
         {found.map((r) => (
           <button key={r.id} className="modal-recipe" onClick={() => onPick(r)}>
             {r.image_filename ? (

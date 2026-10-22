@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type Meal, type PlannedMeal } from "../api";
+import { api, type PlannedMeal } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
+import { PicksPanel } from "../components/planner/PicksPanel";
 import { WeekGrid } from "../components/planner/WeekGrid";
 import { LabelFilterBar } from "../components/planner/LabelFilter";
 import {
@@ -18,10 +19,11 @@ import {
   type Costs,
   type LabelFilter,
 } from "../components/planner/plan";
+import { placingTitle, type CellRef, type Placing } from "../components/planner/placing";
 import { usePlannedServings } from "../components/planner/usePlannedServings";
 import { RecipePickerModal } from "../components/RecipeBits";
 import { Banner, Button, LinkButton, PageHead } from "../components/ui";
-import { WEEK_GRID, below } from "../layout";
+import { PICKS_PANEL, WEEK_GRID, below } from "../layout";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 import { useMediaQuery } from "../useMediaQuery";
@@ -29,9 +31,9 @@ import { addDays, formatRange, startOfWeek, toISODate } from "../dates";
 
 export default function PlannerPage() {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
-  const [picker, setPicker] = useState<{ date: string; meal: Meal } | null>(
-    null,
-  );
+  const [picker, setPicker] = useState<CellRef | null>(null);
+  // What is being put on the plan by pressing it and then a cell.
+  const [placing, setPlacing] = useState<Placing | null>(null);
 
   const days = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
@@ -118,22 +120,32 @@ export default function PlannerPage() {
     [cost],
   );
 
+  /** Plans a recipe on a cell, as a one-off with the recipe's own servings. */
+  function addMeal({ date, meal }: CellRef, recipeId: number) {
+    return action.run(() =>
+      api.addMealPlanEntry({
+        plan_date: date,
+        meal,
+        recipe_id: recipeId,
+        // Every way of adding a meal passes this: the selected label.
+        ...(labelsForNew(filter).length > 0 && { label_ids: labelsForNew(filter) }),
+      }),
+    );
+  }
+
   async function addEntry(recipeId: number) {
     if (!picker) return;
-    if (
-      await action.run(() =>
-        api.addMealPlanEntry({
-          plan_date: picker.date,
-          meal: picker.meal,
-          recipe_id: recipeId,
-          // Every way of adding a meal passes this: the selected label.
-          ...(labelsForNew(filter).length > 0 && { label_ids: labelsForNew(filter) }),
-        }),
-      )
-    ) {
+    if (await addMeal(picker, recipeId)) {
       setPicker(null);
       reload();
     }
+  }
+
+  /** Puts the recipe being placed on the cell chosen for it, which ends placing it. */
+  async function place(cell: CellRef) {
+    if (placing?.kind !== "recipe") return;
+    setPlacing(null);
+    if (await addMeal(cell, placing.recipe.id)) reload();
   }
 
   /*
@@ -217,14 +229,54 @@ export default function PlannerPage() {
   }
 
   /*
-   * Seven columns of meals need about 1100px before each meal's title has
-   * room for its words, and a phone has a third of that: the grid was 988px
+   * Seven columns of meals, with the Picks strip beside them, need about
+   * 1140px before each meal's title has room for its words, and a phone has
+   * a third of that: the grid was 988px
    * wide inside a 343px window, so two days were visible at a time and the
    * sticky label column ate a third of what was left. Below that width the
    * same week is a stack of days instead, which reads top to bottom like the
    * rest of the app.
    */
   const agenda = useMediaQuery(below(WEEK_GRID));
+  // Where the Picks panel and the grid do not both fit, the panel folds to a
+  // strip whose toggle opens it over the plan's left edge.
+  const folded = useMediaQuery(below(WEEK_GRID + PICKS_PANEL));
+  const [picksOpen, setPicksOpen] = useState(false);
+  const picksDock = useRef<HTMLDivElement>(null);
+  const picksId = useId();
+  const overlaid = folded && picksOpen;
+
+  /** Starts or stops placing; a folded panel is put away so every cell can be chosen. */
+  function choosePlacing(next: Placing | null) {
+    setPlacing(next);
+    if (next) setPicksOpen(false);
+  }
+
+  // Escape lets go of what is being placed, or else puts the opened panel
+  // away. Not an Escape something else has already answered: a meal's menu,
+  // the search's suggestions.
+  useEffect(() => {
+    if (!placing && !overlaid) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (placing) setPlacing(null);
+      else setPicksOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [placing, overlaid]);
+
+  // A press anywhere outside the opened panel puts it away, as a menu would.
+  useEffect(() => {
+    if (!overlaid) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!picksDock.current?.contains(event.target as Node)) setPicksOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [overlaid]);
+
+  const week = toISODate(weekStart);
 
   return (
     <>
@@ -304,41 +356,84 @@ export default function PlannerPage() {
 
       {/* The empty week is also what a first load looks like, so it stays up
           unless the page has nothing and no prospect of any. */}
-      {!(error && entries === null) &&
-        (agenda ? (
-          <DayAgenda
-            loadedWeek={loadedWeek}
-            days={days}
-            byCell={cells}
-            costs={costs}
-            dimmed={dimmed}
-            asking={servings.asking}
-            labels={labels ?? []}
-            onAdd={setPicker}
-            onRemove={removeEntry}
-            onChangeServings={servings.step}
-            onAnswerServings={servings.answer}
-            onSetLabels={setLabels}
-            onRepeat={repeat}
-            onCreateLabel={createLabel}
-          />
-        ) : (
-          <WeekGrid
-            days={days}
-            byCell={cells}
-            costs={costs}
-            dimmed={dimmed}
-            asking={servings.asking}
-            labels={labels ?? []}
-            onAdd={setPicker}
-            onRemove={removeEntry}
-            onChangeServings={servings.step}
-            onAnswerServings={servings.answer}
-            onSetLabels={setLabels}
-            onRepeat={repeat}
-            onCreateLabel={createLabel}
-          />
-        ))}
+      {!(error && entries === null) && (
+        <div className={`planner-body${folded ? " picks-collapsed" : ""}`}>
+          <div className="picks-dock" ref={picksDock}>
+            {folded && (
+              <button
+                type="button"
+                className="picks-toggle"
+                aria-expanded={picksOpen}
+                aria-controls={picksId}
+                onClick={() => setPicksOpen((open) => !open)}
+              >
+                Picks
+              </button>
+            )}
+            {/* Kept while folded away, so a search there is still there
+                when it opens again. */}
+            <div className="picks-sheet" id={picksId} hidden={folded && !picksOpen}>
+              <PicksPanel
+                week={week}
+                // Only the week's own meals: the last week's stay up while
+                // this one loads, and say nothing about this week's picks.
+                meals={loadedWeek === week ? (entries ?? []) : []}
+                placing={placing}
+                onPlacing={choosePlacing}
+              />
+            </div>
+          </div>
+          {agenda ? (
+            <DayAgenda
+              loadedWeek={loadedWeek}
+              days={days}
+              byCell={cells}
+              costs={costs}
+              dimmed={dimmed}
+              asking={servings.asking}
+              labels={labels ?? []}
+              placing={placing}
+              onAdd={setPicker}
+              onPlace={place}
+              onRemove={removeEntry}
+              onChangeServings={servings.step}
+              onAnswerServings={servings.answer}
+              onSetLabels={setLabels}
+              onRepeat={repeat}
+              onCreateLabel={createLabel}
+            />
+          ) : (
+            <WeekGrid
+              days={days}
+              byCell={cells}
+              costs={costs}
+              dimmed={dimmed}
+              asking={servings.asking}
+              labels={labels ?? []}
+              placing={placing}
+              onAdd={setPicker}
+              onPlace={place}
+              onRemove={removeEntry}
+              onChangeServings={servings.step}
+              onAnswerServings={servings.answer}
+              onSetLabels={setLabels}
+              onRepeat={repeat}
+              onCreateLabel={createLabel}
+            />
+          )}
+        </div>
+      )}
+
+      {placing && (
+        <div className="placing-bar" role="status">
+          <span>
+            Choose a day and meal for <strong>{placingTitle(placing)}</strong>
+          </span>
+          <Button size="small" onClick={() => setPlacing(null)}>
+            Cancel
+          </Button>
+        </div>
+      )}
 
       {picker && (
         <RecipePickerModal

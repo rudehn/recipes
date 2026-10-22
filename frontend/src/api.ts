@@ -251,6 +251,16 @@ export interface PlannedMeal {
   labels: Label[];
 }
 
+/**
+ * A recipe chosen for a week, to be placed on its days. Kept per week, by its
+ * Monday. Not `Pick`, which would hide TypeScript's own in every file using it.
+ */
+export interface PlanPick {
+  id: number;
+  week_start: string;
+  recipe: RecipeSummary;
+}
+
 export interface PantryItem {
   id: number;
   name: string;
@@ -1059,6 +1069,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ plan_date, meal }),
     }),
+
+  /** A week's picks, in the order they were added; `week` is its Monday. */
+  listPicks: (week: string) => request<PlanPick[]>(`/api/meal-plan/picks${queryString({ week })}`),
+  /** Picks a recipe for the week; picking it again answers the pick it already has. */
+  addPick: (week: string, recipeId: number) =>
+    request<PlanPick>("/api/meal-plan/picks", {
+      method: "POST",
+      body: JSON.stringify({ week_start: week, recipe_id: recipeId }),
+    }),
+  removePick: (id: number) => request<void>(`/api/meal-plan/picks/${id}`, { method: "DELETE" }),
 
   listLabels: () => request<LabelUsage[]>("/api/labels"),
   createLabel: (name: string) =>

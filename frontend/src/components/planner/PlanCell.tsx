@@ -6,10 +6,18 @@ import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
 import { ScopePrompt } from "./ScopePrompt";
 import { priced, type EntryActions } from "./plan";
+import type { CellTarget } from "./placing";
 
-/** One day's one meal: what is planned for it, and the way to plan more. */
+/**
+ * One day's one meal: what is planned for it, and the way to plan more.
+ *
+ * While something is being placed the whole cell is the target: one button
+ * laid over all of it, so a press anywhere places, and never lands on a meal's
+ * link or menu underneath by accident.
+ */
 export function PlanCell({
   className,
+  target,
   entries,
   costs,
   dimmed,
@@ -30,9 +38,14 @@ export function PlanCell({
   asking: ReadonlySet<string>;
   labels: Label[];
   onAdd: () => void;
+  /** What a press on the cell does while something is being placed. */
+  target: CellTarget | null;
 } & EntryActions) {
   return (
-    <div className={className}>
+    <div className={target ? `${className} drop-target` : className}>
+      {target && (
+        <button type="button" className="cell-target" aria-label={target.name} onClick={target.onPlace} />
+      )}
       {entries.map((e) => {
         const servings = e.servings ?? e.recipe.servings;
         const cost = costs.get(e.key);
@@ -111,7 +124,13 @@ export function PlanCell({
           </div>
         );
       })}
-      <button className="plan-add" onClick={onAdd}>
+      {/* Hidden rather than gone while the cell is a target, so the cell keeps
+          its size: in the agenda an empty one would otherwise fold to nothing. */}
+      <button
+        className="plan-add"
+        onClick={onAdd}
+        style={target ? { visibility: "hidden" } : undefined}
+      >
         + Add
       </button>
     </div>
