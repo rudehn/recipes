@@ -17,11 +17,14 @@ export function DayAgenda({
   byCell,
   costs,
   dimmed,
+  asking,
   labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onAnswerServings,
   onSetLabels,
+  onRepeat,
   onCreateLabel,
   loadedWeek,
 }: LayoutProps & {
@@ -72,13 +75,16 @@ export function DayAgenda({
                   className="plan-cell"
                   entries={byCell.get(cellKey(iso, meal)) ?? []}
                   costs={costs.entries}
-                dimmed={dimmed}
-                labels={labels}
+                  dimmed={dimmed}
+                  asking={asking}
+                  labels={labels}
                   onAdd={() => onAdd({ date: iso, meal })}
                   onRemove={onRemove}
                   onChangeServings={onChangeServings}
-                onSetLabels={onSetLabels}
-                onCreateLabel={onCreateLabel}
+                  onAnswerServings={onAnswerServings}
+                  onSetLabels={onSetLabels}
+                  onRepeat={onRepeat}
+                  onCreateLabel={onCreateLabel}
                 />
               </div>
             ))}

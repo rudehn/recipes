@@ -16,11 +16,14 @@ export function WeekGrid({
   byCell,
   costs,
   dimmed,
+  asking,
   labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onAnswerServings,
   onSetLabels,
+  onRepeat,
   onCreateLabel,
 }: LayoutProps) {
   return (
@@ -54,11 +57,14 @@ export function WeekGrid({
                 entries={byCell.get(cellKey(iso, meal)) ?? []}
                 costs={costs.entries}
                 dimmed={dimmed}
+                asking={asking}
                 labels={labels}
                 onAdd={() => onAdd({ date: iso, meal })}
                 onRemove={onRemove}
                 onChangeServings={onChangeServings}
+                onAnswerServings={onAnswerServings}
                 onSetLabels={onSetLabels}
+                onRepeat={onRepeat}
                 onCreateLabel={onCreateLabel}
               />
             );

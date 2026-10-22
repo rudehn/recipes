@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type Meal, type PlannedMeal } from "../api";
+import { api, type Meal, type PlannedMeal, type Scope } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
 import { WeekGrid } from "../components/planner/WeekGrid";
@@ -86,7 +86,8 @@ export default function PlannerPage() {
     setSearchParams((p) => writeFilter(f, new URLSearchParams(p)), { replace: true });
 
   const action = useAction();
-  const { shown, step: changeServings } = usePlannedServings(
+  const servings = usePlannedServings(
+    entries,
     action.run,
     // The saved entry in place of the loaded one, which also asks for the
     // cost again: the meal's figure follows its new count.
@@ -94,10 +95,9 @@ export default function PlannerPage() {
       setEntries(
         (prev) => prev?.map((e) => (e.key === saved.key ? saved : e)) ?? prev,
       ),
-    // An earlier count in the burst may have landed, so the week is asked
-    // for again rather than assumed to be what was loaded.
     reload,
   );
+  const { shown } = servings;
 
   // The filter changes what the grid shows and nothing else: the costs and
   // the Grocery list link below stay on the whole plan.
@@ -135,11 +135,35 @@ export default function PlannerPage() {
     }
   }
 
-  async function removeEntry(entryId: number) {
-    if (await action.run(() => api.deleteMealPlanEntry(entryId))) reload();
+  /*
+   * A repeated meal is changed through its repeat, never as a row of its
+   * own: even a day that already has a row (changed on its own before) is
+   * still the repeat's, and its Just this day goes through the repeat too.
+   * A change from a day on reaches days other than the one shown, so the week
+   * is loaded again after any of them.
+   */
+
+  async function removeEntry(meal: PlannedMeal, scope: Scope = "day") {
+    const { repeat, entry_id } = meal;
+    const write = repeat
+      ? () => api.removeRepeatDay(repeat.id, meal.plan_date, scope)
+      : entry_id !== null && (() => api.deleteMealPlanEntry(entry_id));
+    if (write && (await action.run(write))) reload();
   }
 
-  async function setLabels(meal: PlannedMeal, labelIds: number[]) {
+  async function setLabels(meal: PlannedMeal, labelIds: number[], scope: Scope = "day") {
+    if (meal.repeat) {
+      const repeatId = meal.repeat.id;
+      if (
+        await action.run(() =>
+          api.changeRepeatDay(repeatId, meal.plan_date, { scope, label_ids: labelIds }),
+        )
+      ) {
+        reload();
+        reloadLabels();
+      }
+      return;
+    }
     if (meal.entry_id === null) return;
     const entryId = meal.entry_id;
     let saved: PlannedMeal | undefined;
@@ -154,6 +178,29 @@ export default function PlannerPage() {
     } else {
       reload();
     }
+  }
+
+  /**
+   * A one-off starts repeating from its day; a repeat's days change from this
+   * day on, and Just this day ends it after this day. Choosing what a meal
+   * already does changes nothing.
+   */
+  async function repeat(meal: PlannedMeal, weekdays: number[] | null) {
+    const current = meal.repeat?.weekdays ?? null;
+    if (weekdays === null ? current === null : current?.join() === weekdays.join()) return;
+    let write: () => Promise<unknown>;
+    if (!meal.repeat) {
+      if (meal.entry_id === null || weekdays === null) return;
+      const entryId = meal.entry_id;
+      write = () => api.startRepeat(entryId, weekdays);
+    } else {
+      const repeatId = meal.repeat.id;
+      write =
+        weekdays === null
+          ? () => api.stopRepeat(repeatId, meal.plan_date)
+          : () => api.changeRepeatDay(repeatId, meal.plan_date, { scope: "from", weekdays });
+    }
+    if (await action.run(write)) reload();
   }
 
   async function createLabel(name: string) {
@@ -258,11 +305,14 @@ export default function PlannerPage() {
             byCell={cells}
             costs={costs}
             dimmed={dimmed}
+            asking={servings.asking}
             labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}
-            onChangeServings={changeServings}
+            onChangeServings={servings.step}
+            onAnswerServings={servings.answer}
             onSetLabels={setLabels}
+            onRepeat={repeat}
             onCreateLabel={createLabel}
           />
         ) : (
@@ -271,11 +321,14 @@ export default function PlannerPage() {
             byCell={cells}
             costs={costs}
             dimmed={dimmed}
+            asking={servings.asking}
             labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}
-            onChangeServings={changeServings}
+            onChangeServings={servings.step}
+            onAnswerServings={servings.answer}
             onSetLabels={setLabels}
+            onRepeat={repeat}
             onCreateLabel={createLabel}
           />
         ))}

@@ -2283,7 +2283,7 @@ body.has-install-hint .page {
 }
 
 /* A flex item will not shrink below its longest word, and at the grid's
-   narrowest a column is about 85px of text beside the remove button: left to
+   narrowest a column is about 85px of text beside the menu button: left to
    itself "Hashbrown" pushed the button 23px out of the card. Allowed to
    shrink, a word that cannot fit breaks where a dictionary would, with a
    hyphen; break-word is only the backstop for one no dictionary knows, and
@@ -2497,6 +2497,155 @@ body.has-install-hint .page {
 /* Not this label's, but still a meal: the menu and the link work as ever. */
 .plan-entry.dimmed { opacity: 0.5; }
 
+/* The routine, drawn lighter than the meals chosen for this week: an outline
+   of the same green rather than its fill, and its title at an ordinary
+   weight, so the week's own choices are what the eye lands on. */
+.plan-entry.repeated {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--green-soft);
+  font-weight: var(--weight-medium);
+}
+
+/* Inline-block, so the link's underline on hover passes it by. */
+.repeat-mark {
+  display: inline-block;
+  margin-right: var(--space-4);
+  color: var(--green-muted);
+}
+
+/* A menu choice that cannot be taken here, kept focusable so its title can
+   say why. */
+.meal-popover [role="menuitem"][aria-disabled="true"] {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.meal-popover [role="menuitem"][aria-disabled="true"]:hover { background: none; }
+
+/* Repeat…: the patterns as a list, the current one ticked. */
+.repeat-menu {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.repeat-choice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+  text-align: left;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-xs);
+}
+
+.repeat-choice:hover:not(:disabled),
+.repeat-choice:focus-visible { background: var(--surface-2); }
+
+.repeat-choice:disabled { color: var(--muted); cursor: not-allowed; }
+
+.repeat-choice::before {
+  content: "";
+  flex: none;
+  width: 1em;
+  text-align: center;
+  color: var(--accent-ink);
+}
+
+.repeat-choice[aria-pressed="true"]::before { content: "✓"; }
+
+.repeat-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--space-2);
+}
+
+.repeat-weekdays button {
+  padding: var(--space-6) 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  color: var(--ink-soft);
+}
+
+.repeat-weekdays button[aria-pressed="true"] {
+  background: var(--selected);
+  border-color: var(--selected);
+  color: var(--selected-ink);
+}
+
+.repeat-summary {
+  margin: var(--space-6) 0;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+/* Just this day / From this day on, in the popover or under a meal whose
+   servings wait on it. A list of choices like the menu's, so a grid column's
+   width stacks them rather than squeezing them. */
+.scope-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.scope-question {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-4) var(--space-10) 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--muted);
+}
+
+.scope-choice {
+  text-align: left;
+  padding: var(--space-8) var(--space-10);
+  border-radius: var(--radius-xs);
+}
+
+.scope-choice:hover,
+.scope-choice:focus-visible { background: var(--surface-2); }
+
+/* Under the meal: the card's own small type, the choices drawn as buttons
+   on it. */
+.plan-entry > .scope-prompt {
+  margin-top: var(--space-4);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--green-wash);
+}
+
+.plan-entry > .scope-prompt .scope-question {
+  padding: 0;
+  font-size: var(--text-2xs);
+  color: var(--green-muted);
+}
+
+.plan-entry > .scope-prompt .scope-choice {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-2xs);
+  box-shadow: inset 0 0 0 1px var(--green-wash);
+  color: var(--green-ink);
+}
+
+.plan-entry > .scope-prompt .scope-choice:hover,
+.plan-entry > .scope-prompt .scope-choice:focus-visible { background: var(--green-wash); }
+
+.scope-cancel {
+  align-self: flex-start;
+  padding: var(--space-4) var(--space-10);
+  font-size: var(--text-xs);
+  color: var(--muted);
+  text-decoration: underline;
+}
+
+.plan-entry > .scope-prompt .scope-cancel {
+  padding: var(--space-2) var(--space-6);
+  font-size: var(--text-2xs);
+  color: var(--green-muted);
+}
+
+.repeat-menu > .btn { align-self: flex-end; }
+
 /* The Labels panel in Settings. */
 .label-list {
   list-style: none;
@@ -2544,7 +2693,9 @@ body.has-install-hint .page {
   transition: color var(--transition), border-color var(--transition), background var(--transition);
 }
 
-.plan-cell:hover .plan-add,
+/* Not while the pointer is over one of the cell's meal popovers, which is
+   the cell's in the page's tree but drawn well away from it. */
+.plan-cell:hover:not(:has(.meal-popover:hover)) .plan-add,
 .plan-add:focus-visible {
   color: var(--accent-ink);
   border-color: var(--accent);
@@ -4501,7 +4652,12 @@ body.has-install-hint .page {
   }
 
   .meal-popover [role="menuitem"],
+  .repeat-choice,
+  .scope-choice,
   .label-checklist li label { min-height: var(--tap); }
+
+  .repeat-weekdays button,
+  .scope-cancel { min-height: var(--tap); }
 
   /* The recipe's own link is a line of text 18px tall, which is a target only
      a cursor could find. */

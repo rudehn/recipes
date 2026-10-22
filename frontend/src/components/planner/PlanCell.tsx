@@ -4,6 +4,7 @@ import type { EntryCost, Label, PlannedMeal } from "../../api";
 import { LabelPills } from "./LabelPills";
 import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
+import { ScopePrompt } from "./ScopePrompt";
 import { priced, type EntryActions } from "./plan";
 
 /** One day's one meal: what is planned for it, and the way to plan more. */
@@ -12,17 +13,21 @@ export function PlanCell({
   entries,
   costs,
   dimmed,
+  asking,
   labels,
   onAdd,
   onRemove,
   onChangeServings,
+  onAnswerServings,
   onSetLabels,
+  onRepeat,
   onCreateLabel,
 }: {
   className: string;
   entries: PlannedMeal[];
   costs: Map<string, EntryCost>;
   dimmed: Set<string>;
+  asking: ReadonlySet<string>;
   labels: Label[];
   onAdd: () => void;
 } & EntryActions) {
@@ -34,16 +39,34 @@ export function PlanCell({
         return (
           <div
             key={e.key}
-            className={`plan-entry${dimmed.has(e.key) ? " dimmed" : ""}`}
+            className={[
+              "plan-entry",
+              e.repeat && "repeated",
+              dimmed.has(e.key) && "dimmed",
+            ]
+              .filter(Boolean)
+              .join(" ")}
           >
             <div className="plan-entry-main">
-              <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
+              <Link to={`/recipes/${e.recipe.id}`}>
+                {/* Drawn lighter, and marked: the routine, so the meals chosen
+                    for this week stand out from it. Inside the title's first
+                    line rather than a column beside it, which would take its
+                    width from every line of a title with little to spare. */}
+                {e.repeat && (
+                  <span className="repeat-mark" role="img" aria-label="Repeats">
+                    ↻
+                  </span>
+                )}
+                <span>{e.recipe.title}</span>
+              </Link>
               <MealMenu
                 meal={e}
                 labels={labels}
                 onCreateLabel={onCreateLabel}
                 onSetLabels={onSetLabels}
                 onRemove={onRemove}
+                onRepeat={onRepeat}
               />
             </div>
             <LabelPills labels={e.labels} />
@@ -76,6 +99,14 @@ export function PlanCell({
                 )}
                 {priced(cost) && <PlanFigure cost={cost} />}
               </div>
+            )}
+            {asking.has(e.key) && servings != null && (
+              <ScopePrompt
+                day={e.plan_date}
+                question={`Which days get ×${servings}?`}
+                onChoose={(scope) => onAnswerServings(e, scope)}
+                onCancel={() => onAnswerServings(e, null)}
+              />
             )}
           </div>
         );

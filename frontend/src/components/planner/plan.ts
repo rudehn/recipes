@@ -1,5 +1,5 @@
-import type { DayCost, EntryCost, Label, Meal, PlannedMeal } from "../../api";
-import { toISODate } from "../../dates";
+import type { DayCost, EntryCost, Label, Meal, PlannedMeal, Scope } from "../../api";
+import { formatDate, formatDay, fromISODate, toISODate } from "../../dates";
 
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -74,12 +74,31 @@ export const labelsForNew = (f: LabelFilter): number[] => (f.label === null ? []
 export const isPast = (iso: string, today: Date = new Date()) =>
   iso < toISODate(today);
 
-/** What either layout can do to an entry already in a cell. */
+/** A day's weekday as a repeat counts them: 0 is Monday, 6 is Sunday. */
+export const weekdayOf = (iso: string) => (fromISODate(iso).getDay() + 6) % 7;
+
+/** A day the way a repeat's choices name it: "Wed, Oct 28". */
+export const dayName = (iso: string) => {
+  const d = fromISODate(iso);
+  return `${formatDay(d)}, ${formatDate(d)}`;
+};
+
+/**
+ * What either layout can do to an entry already in a cell.
+ *
+ * A repeated meal is changed through its repeat, for its own day or from it
+ * on, so the changes that can be either carry the scope the owner chose; a
+ * one-off meal's never do.
+ */
 export interface EntryActions {
-  onRemove: (entryId: number) => void;
+  onRemove: (meal: PlannedMeal, scope?: Scope) => void;
   onChangeServings: (meal: PlannedMeal, delta: number) => void;
-  /** Puts exactly these labels on a one-off meal. */
-  onSetLabels: (meal: PlannedMeal, labelIds: number[]) => void;
+  /** The answer to a repeated meal's settled servings: its scope, or null to put them back. */
+  onAnswerServings: (meal: PlannedMeal, scope: Scope | null) => void;
+  /** Puts exactly these labels on a meal. */
+  onSetLabels: (meal: PlannedMeal, labelIds: number[], scope?: Scope) => void;
+  /** Repeats a meal on these weekdays from its day on; null for its day alone. */
+  onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
   /** Makes a label, answering it, or rejecting with the reason it was refused. */
   onCreateLabel: (name: string) => Promise<Label>;
 }
@@ -105,6 +124,8 @@ export interface LayoutProps extends EntryActions {
   costs: Costs;
   /** The keys of meals shown dimmed, which are otherwise as usable as any. */
   dimmed: Set<string>;
+  /** The keys of repeated meals whose new servings wait on Just this day or From this day on. */
+  asking: ReadonlySet<string>;
   /** Every label, for the meals' checklists. */
   labels: Label[];
   /** Opens the picker on the day and meal that asked for it. */

@@ -217,6 +217,12 @@ export interface Repeat {
   ends_on: string | null;
 }
 
+/**
+ * Which days a change to a repeated meal covers: only its own day, or that
+ * day and every one of the repeat's days after it.
+ */
+export type Scope = "day" | "from";
+
 /** A marker the owner puts on planned meals ("Dad", "Kids"). Not a recipe tag. */
 export interface Label {
   id: number;
@@ -1010,6 +1016,49 @@ export const api = {
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),
+
+  // A repeat's days are judged against the owner's today, not the server's,
+  // so each write that can be refused for a passed day carries it.
+  /** Makes a one-off meal repeat on these weekdays, from its own day on. */
+  startRepeat: (entryId: number, weekdays: number[]) =>
+    request<Repeat>(`/api/meal-plan/${entryId}/repeat`, {
+      method: "POST",
+      body: JSON.stringify({ weekdays, today: toISODate(new Date()) }),
+    }),
+  /**
+   * Changes a repeated meal on its day, or from it on. Only what the change
+   * names is sent; a null count is the recipe's own, and the weekdays only
+   * change from a day on.
+   */
+  changeRepeatDay: (
+    repeatId: number,
+    day: string,
+    change: { scope: Scope; servings?: number | null; label_ids?: number[]; weekdays?: number[] },
+  ) =>
+    request<void>(`/api/meal-plan/repeats/${repeatId}/days/${day}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...change, today: toISODate(new Date()) }),
+    }),
+  removeRepeatDay: (repeatId: number, day: string, scope: Scope) =>
+    request<void>(
+      `/api/meal-plan/repeats/${repeatId}/days/${day}${queryString({
+        scope,
+        today: toISODate(new Date()),
+      })}`,
+      { method: "DELETE" },
+    ),
+  /** Ends a repeat after this day, which keeps its meal as a one-off. */
+  stopRepeat: (repeatId: number, day: string) =>
+    request<PlannedMeal>(`/api/meal-plan/repeats/${repeatId}/days/${day}/stop`, {
+      method: "POST",
+      body: JSON.stringify({ today: toISODate(new Date()) }),
+    }),
+  /** Moves one day of a repeat to another cell, where it is a one-off. */
+  moveRepeatDay: (repeatId: number, day: string, plan_date: string, meal: Meal) =>
+    request<PlannedMeal>(`/api/meal-plan/repeats/${repeatId}/days/${day}/move`, {
+      method: "POST",
+      body: JSON.stringify({ plan_date, meal }),
+    }),
 
   listLabels: () => request<LabelUsage[]>("/api/labels"),
   createLabel: (name: string) =>
