@@ -15,6 +15,7 @@ export function WeekGrid({
   days,
   byCell,
   costs,
+  dimmed,
   labels,
   onAdd,
   onRemove,
@@ -52,6 +53,7 @@ export function WeekGrid({
                 className={`plan-cell${isToday(d) ? " today" : ""}`}
                 entries={byCell.get(cellKey(iso, meal)) ?? []}
                 costs={costs.entries}
+                dimmed={dimmed}
                 labels={labels}
                 onAdd={() => onAdd({ date: iso, meal })}
                 onRemove={onRemove}

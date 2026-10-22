@@ -16,6 +16,7 @@ export function DayAgenda({
   days,
   byCell,
   costs,
+  dimmed,
   labels,
   onAdd,
   onRemove,
@@ -71,6 +72,7 @@ export function DayAgenda({
                   className="plan-cell"
                   entries={byCell.get(cellKey(iso, meal)) ?? []}
                   costs={costs.entries}
+                dimmed={dimmed}
                 labels={labels}
                   onAdd={() => onAdd({ date: iso, meal })}
                   onRemove={onRemove}

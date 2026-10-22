@@ -19,6 +19,57 @@ export function byCell(meals: PlannedMeal[]): Cells {
   return map;
 }
 
+/**
+ * Which label's meals the planner shows. One label at a time, or none for
+ * Everything; `unlabelled` keeps the meals with no label in view (dimmed)
+ * while a label is selected.
+ */
+export interface LabelFilter {
+  label: number | null;
+  unlabelled: boolean;
+}
+
+export const EVERYTHING: LabelFilter = { label: null, unlabelled: true };
+
+/** Reads the filter from the URL; anything unreadable is Everything. */
+export function filterFromParams(p: URLSearchParams): LabelFilter {
+  const id = Number(p.get("label"));
+  if (!Number.isInteger(id) || id <= 0) return EVERYTHING;
+  return { label: id, unlabelled: p.get("unlabelled") !== "0" };
+}
+
+/** Writes the filter into `p`, leaving out whatever is at its default. */
+export function writeFilter(f: LabelFilter, p: URLSearchParams): URLSearchParams {
+  p.delete("label");
+  p.delete("unlabelled");
+  if (f.label !== null) {
+    p.set("label", String(f.label));
+    if (!f.unlabelled) p.set("unlabelled", "0");
+  }
+  return p;
+}
+
+/**
+ * The meals the filter shows, in the order given. With a label selected, its
+ * meals show as usual, unlabelled ones show dimmed (unless switched off), and
+ * meals carrying only other labels are left out.
+ */
+export function shownMeals(
+  meals: PlannedMeal[],
+  f: LabelFilter,
+): { meal: PlannedMeal; dimmed: boolean }[] {
+  if (f.label === null) return meals.map((meal) => ({ meal, dimmed: false }));
+  const out: { meal: PlannedMeal; dimmed: boolean }[] = [];
+  for (const meal of meals) {
+    if (meal.labels.some((l) => l.id === f.label)) out.push({ meal, dimmed: false });
+    else if (f.unlabelled && meal.labels.length === 0) out.push({ meal, dimmed: true });
+  }
+  return out;
+}
+
+/** The labels a meal placed under this filter starts with, whichever way it is added. */
+export const labelsForNew = (f: LabelFilter): number[] => (f.label === null ? [] : [f.label]);
+
 /** Whether a day (as an ISO date) is before today's. */
 export const isPast = (iso: string, today: Date = new Date()) =>
   iso < toISODate(today);
@@ -52,6 +103,8 @@ export interface LayoutProps extends EntryActions {
   days: Date[];
   byCell: Cells;
   costs: Costs;
+  /** The keys of meals shown dimmed, which are otherwise as usable as any. */
+  dimmed: Set<string>;
   /** Every label, for the meals' checklists. */
   labels: Label[];
   /** Opens the picker on the day and meal that asked for it. */

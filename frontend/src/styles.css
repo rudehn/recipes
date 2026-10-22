@@ -2463,6 +2463,40 @@ body.has-install-hint .page {
   overflow-wrap: anywhere;
 }
 
+/* The filter above the week: its chips scroll sideways within the row when
+   there are more labels than fit, so the page itself never does. */
+.label-filter {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-16);
+  margin-bottom: var(--space-16);
+}
+
+.label-filter-chips {
+  display: flex;
+  gap: var(--space-6);
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: var(--space-2);
+}
+
+.label-filter-chips .tag-pill {
+  flex: none;
+  white-space: nowrap;
+}
+
+.label-filter-unlabelled {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  font-size: var(--text-sm);
+  color: var(--ink-soft);
+}
+
+/* Not this label's, but still a meal: the menu and the link work as ever. */
+.plan-entry.dimmed { opacity: 0.5; }
+
 /* The Labels panel in Settings. */
 .label-list {
   list-style: none;

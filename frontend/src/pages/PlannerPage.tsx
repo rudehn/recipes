@@ -1,10 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { api, type Meal, type PlannedMeal } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
 import { WeekGrid } from "../components/planner/WeekGrid";
-import { byCell, money, type Costs } from "../components/planner/plan";
+import { LabelFilterBar } from "../components/planner/LabelFilter";
+import {
+  EVERYTHING,
+  byCell,
+  filterFromParams,
+  labelsForNew,
+  money,
+  shownMeals,
+  writeFilter,
+  type Costs,
+  type LabelFilter,
+} from "../components/planner/plan";
 import { usePlannedServings } from "../components/planner/usePlannedServings";
 import { RecipePickerModal } from "../components/RecipeBits";
 import { Banner, Button, LinkButton, PageHead } from "../components/ui";
@@ -61,6 +73,16 @@ export default function PlannerPage() {
   const { data: labels, reload: reloadLabels } = useLoad(
     useCallback(() => api.listLabels(), []),
   );
+  // The filter lives in the URL, so a reload or a shared link keeps it. A
+  // label that has since been deleted is Everything, not an empty week.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = filterFromParams(searchParams);
+  const filter: LabelFilter = labels?.some((l) => l.id === requested.label)
+    ? requested
+    : EVERYTHING;
+  const setFilter = (f: LabelFilter) =>
+    setSearchParams((p) => writeFilter(f, new URLSearchParams(p)), { replace: true });
+
   const action = useAction();
   const { shown, step: changeServings } = usePlannedServings(
     action.run,
@@ -75,7 +97,16 @@ export default function PlannerPage() {
     reload,
   );
 
-  const cells = useMemo(() => byCell(shown(entries ?? [])), [entries, shown]);
+  // The filter changes what the grid shows and nothing else: the costs and
+  // the Grocery list link below stay on the whole plan.
+  const { cells, dimmed } = useMemo(() => {
+    const visible = shownMeals(shown(entries ?? []), filter);
+    return {
+      cells: byCell(visible.map((v) => v.meal)),
+      dimmed: new Set(visible.filter((v) => v.dimmed).map((v) => v.meal.key)),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries, shown, filter.label, filter.unlabelled]);
 
   const costs = useMemo<Costs>(
     () => ({
@@ -93,6 +124,8 @@ export default function PlannerPage() {
           plan_date: picker.date,
           meal: picker.meal,
           recipe_id: recipeId,
+          // Every way of adding a meal passes this: the selected label.
+          ...(labelsForNew(filter).length > 0 && { label_ids: labelsForNew(filter) }),
         }),
       )
     ) {
@@ -201,6 +234,10 @@ export default function PlannerPage() {
         </Banner>
       )}
 
+      {labels && labels.length > 0 && (
+        <LabelFilterBar labels={labels} filter={filter} onChange={setFilter} />
+      )}
+
       {error && (
         <LoadFailure
           what="your meal plan"
@@ -219,6 +256,7 @@ export default function PlannerPage() {
             days={days}
             byCell={cells}
             costs={costs}
+            dimmed={dimmed}
             labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}
@@ -231,6 +269,7 @@ export default function PlannerPage() {
             days={days}
             byCell={cells}
             costs={costs}
+            dimmed={dimmed}
             labels={labels ?? []}
             onAdd={setPicker}
             onRemove={removeEntry}

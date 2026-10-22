@@ -886,6 +886,110 @@ describe("PlannerPage", () => {
       expect(within(cell("dinner", 1)).queryByRole("list")).not.toBeInTheDocument();
     });
 
+    describe("the filter", () => {
+      const labelRows = [
+        { ...dad, meals: 1 },
+        { ...kids, meals: 0 },
+      ];
+      const dadMeal = plannedMeal({
+        plan_date: "2026-07-27",
+        recipe: recipeSummary({ id: 5, title: "Dad curry" }),
+        labels: [dad],
+      });
+      const kidsMeal = plannedMeal({
+        plan_date: "2026-07-28",
+        recipe: recipeSummary({ id: 6, title: "Kids pasta" }),
+        labels: [kids],
+      });
+      const plainMeal = plannedMeal({
+        plan_date: "2026-07-29",
+        recipe: recipeSummary({ id: 7, title: "Plain rice" }),
+      });
+
+      it("shows no filter row until a label exists", async () => {
+        mockBackend({ "GET /api/labels": [], "GET /api/meal-plan": [plainMeal] });
+        renderApp("/planner");
+        await screen.findByText("Plain rice");
+        expect(screen.queryByRole("button", { name: "Everything" })).not.toBeInTheDocument();
+      });
+
+      it("dims unlabelled meals, hides other labels' and keeps the choice in the URL", async () => {
+        mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [dadMeal, kidsMeal, plainMeal],
+        });
+        const { user } = renderApp("/planner");
+        await screen.findByText("Plain rice");
+        expect(screen.getByRole("button", { name: "Everything" })).toHaveAttribute("aria-pressed", "true");
+
+        await user.click(screen.getByRole("button", { name: "Dad" }));
+        expect(screen.getByText("Dad curry")).toBeVisible();
+        expect(screen.queryByText("Kids pasta")).not.toBeInTheDocument();
+        const rice = screen.getByText("Plain rice");
+        expect(rice.closest(".plan-entry")).toHaveClass("dimmed");
+        expect(screen.getByText("Dad curry").closest(".plan-entry")).not.toHaveClass("dimmed");
+
+        await user.click(screen.getByRole("checkbox", { name: "Include unlabelled meals" }));
+        expect(screen.queryByText("Plain rice")).not.toBeInTheDocument();
+      });
+
+      it("keeps the filter across a reload", async () => {
+        mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [dadMeal, kidsMeal, plainMeal],
+        });
+        renderApp("/planner?label=1&unlabelled=0");
+        await screen.findByText("Dad curry");
+        expect(screen.getByRole("button", { name: "Dad" })).toHaveAttribute("aria-pressed", "true");
+        expect(screen.getByRole("checkbox", { name: "Include unlabelled meals" })).not.toBeChecked();
+        expect(screen.queryByText("Plain rice")).not.toBeInTheDocument();
+      });
+
+      it("falls back to Everything when the label in the URL no longer exists", async () => {
+        mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [dadMeal, kidsMeal],
+        });
+        renderApp("/planner?label=99");
+        expect(await screen.findByText("Kids pasta")).toBeVisible();
+        expect(screen.getByText("Dad curry")).toBeVisible();
+        expect(screen.getByRole("button", { name: "Everything" })).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("labels a meal added while a label is selected, and not otherwise", async () => {
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [],
+          "GET /api/recipes": page([recipeSummary({ id: 5, title: "Weeknight chicken curry" })]),
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner?label=2");
+        await screen.findByRole("button", { name: "Kids" });
+
+        await user.click(within(cell("lunch", 4)).getByRole("button", { name: "+ Add" }));
+        await user.click(await screen.findByRole("button", { name: /Weeknight chicken curry/ }));
+        await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+        expect(backend.requestsTo("POST /api/meal-plan")[0].body).toMatchObject({ label_ids: [2] });
+      });
+
+      it("leaves the costs and the Grocery list link on the whole plan", async () => {
+        mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [dadMeal, kidsMeal],
+          "GET /api/meal-plan/cost": planCost({ total: 12.5, priced: 3, total_lines: 4 }),
+        });
+        const { user } = renderApp("/planner");
+        await screen.findByText("Kids pasta");
+        await user.click(screen.getByRole("button", { name: "Dad" }));
+
+        expect(await screen.findByText(/est\. \$12\.50 to cook/)).toBeVisible();
+        expect(screen.getByRole("link", { name: /Grocery list/ })).toHaveAttribute(
+          "href",
+          "/groceries?start=2026-07-27&end=2026-08-02",
+        );
+      });
+    });
+
     it("labels a one-off meal once the checklist closes", async () => {
       const backend = mockBackend({
         "GET /api/labels": [

@@ -11,6 +11,7 @@ export function PlanCell({
   className,
   entries,
   costs,
+  dimmed,
   labels,
   onAdd,
   onRemove,
@@ -21,6 +22,7 @@ export function PlanCell({
   className: string;
   entries: PlannedMeal[];
   costs: Map<string, EntryCost>;
+  dimmed: Set<string>;
   labels: Label[];
   onAdd: () => void;
 } & EntryActions) {
@@ -30,7 +32,10 @@ export function PlanCell({
         const servings = e.servings ?? e.recipe.servings;
         const cost = costs.get(e.key);
         return (
-          <div key={e.key} className="plan-entry">
+          <div
+            key={e.key}
+            className={`plan-entry${dimmed.has(e.key) ? " dimmed" : ""}`}
+          >
             <div className="plan-entry-main">
               <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
               <MealMenu
