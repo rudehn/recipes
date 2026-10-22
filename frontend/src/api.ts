@@ -209,8 +209,11 @@ export interface PastedRecipeDraft extends RecipeDraft {
   missing: RecipePart[];
 }
 
-export interface MealPlanEntry {
-  id: number;
+export interface PlannedMeal {
+  // Names the meal for as long as it is shown; "e<id>" for a stored row.
+  key: string;
+  // The stored row behind the meal, for the writes that take one.
+  entry_id: number | null;
   plan_date: string;
   meal: Meal;
   // Planned servings; null means the recipe's own serving count.
@@ -557,7 +560,7 @@ export interface DayCost {
 
 /** One planned meal's cost at its planned servings: what its day is summed from. */
 export interface EntryCost {
-  entry_id: number;
+  key: string;
   total: number;
   priced: number;
   total_lines: number;
@@ -960,21 +963,21 @@ export const api = {
     }),
 
   listMealPlan: (start: string, end: string) =>
-    request<MealPlanEntry[]>(`/api/meal-plan?start=${start}&end=${end}`),
+    request<PlannedMeal[]>(`/api/meal-plan?start=${start}&end=${end}`),
   addMealPlanEntry: (plan_date: string, meal: Meal, recipe_id: number) =>
-    request<MealPlanEntry>("/api/meal-plan", {
+    request<PlannedMeal>("/api/meal-plan", {
       method: "POST",
       body: JSON.stringify({ plan_date, meal, recipe_id }),
     }),
   updateMealPlanServings: (id: number, servings: number | null) =>
-    request<MealPlanEntry>(`/api/meal-plan/${id}`, {
+    request<PlannedMeal>(`/api/meal-plan/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ servings }),
     }),
   deleteMealPlanEntry: (id: number) =>
     request<void>(`/api/meal-plan/${id}`, { method: "DELETE" }),
   copyWeek: (from_start: string, to_start: string) =>
-    request<MealPlanEntry[]>("/api/meal-plan/copy-week", {
+    request<PlannedMeal[]>("/api/meal-plan/copy-week", {
       method: "POST",
       body: JSON.stringify({ from_start, to_start }),
     }),

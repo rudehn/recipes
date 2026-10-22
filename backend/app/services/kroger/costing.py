@@ -27,7 +27,7 @@ from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...models import MealPlanEntry, Recipe
+from ...models import Recipe
 from ...schemas import (
     CostLine,
     DayCost,
@@ -39,6 +39,7 @@ from ...schemas import (
 from .. import settings as settings_service
 from ..grocery import build_grocery_list, normalize_unit, scale_factor
 from ..identity import Identity
+from ..plan import planned_meals
 from . import matching, pricing, products
 from .client import KrogerError, enabled
 from .products import Product
@@ -200,14 +201,8 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
     if not enabled() or store is None:
         return None
 
-    entries = (
-        await session.execute(
-            select(MealPlanEntry)
-            .where(MealPlanEntry.plan_date >= start, MealPlanEntry.plan_date <= end)
-            .order_by(MealPlanEntry.plan_date, MealPlanEntry.id)
-        )
-    ).scalars().all()
-    recipes = list({e.recipe.id: e.recipe for e in entries}.values())
+    meals = await planned_meals(session, start, end)
+    recipes = list({m.recipe.id: m.recipe for m in meals}.values())
     try:
         found = await _products_for(session, recipes, store.location_id, resolve=True)
         grocery_list = await pricing.attach_prices(
@@ -223,27 +218,27 @@ async def plan_cost(session: AsyncSession, start: date, end: date) -> PlanCost |
     total = 0.0
     priced = 0
     total_lines = 0
-    for entry in entries:
-        _, entry_total, entry_priced = _cost_recipe(
-            entry.recipe, found, scale_factor(entry), identity=identity
+    for meal in meals:
+        _, meal_total, meal_priced = _cost_recipe(
+            meal.recipe, found, scale_factor(meal), identity=identity
         )
         per_entry.append(
             EntryCost(
-                entry_id=entry.id,
-                total=to_cents(entry_total),
-                priced=entry_priced,
-                total_lines=len(entry.recipe.ingredients),
+                key=meal.key,
+                total=to_cents(meal_total),
+                priced=meal_priced,
+                total_lines=len(meal.recipe.ingredients),
             )
         )
         day = by_day.setdefault(
-            entry.plan_date, DayCost(plan_date=entry.plan_date, total=0.0, priced=0, total_lines=0)
+            meal.plan_date, DayCost(plan_date=meal.plan_date, total=0.0, priced=0, total_lines=0)
         )
-        day.total = to_cents(day.total + entry_total)
-        day.priced += entry_priced
-        day.total_lines += len(entry.recipe.ingredients)
-        total += entry_total
-        priced += entry_priced
-        total_lines += len(entry.recipe.ingredients)
+        day.total = to_cents(day.total + meal_total)
+        day.priced += meal_priced
+        day.total_lines += len(meal.recipe.ingredients)
+        total += meal_total
+        priced += meal_priced
+        total_lines += len(meal.recipe.ingredients)
 
     return PlanCost(
         store=StoreOut.model_validate(store),

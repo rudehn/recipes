@@ -11,7 +11,7 @@ from sqlalchemy.orm import noload
 
 from ..config import ALLOWED_IMAGE_TYPES, IMAGES_DIR, MAX_IMAGE_BYTES
 from ..db import get_session
-from ..models import Ingredient, MealPlanEntry, Recipe, RecipeTag
+from ..models import Ingredient, Recipe, RecipeTag
 from ..schemas import (
     MAX_TAG_FILTERS,
     ImageFromUrl,
@@ -44,6 +44,7 @@ from ..services.images import (
 )
 from ..services.kroger import costing
 from ..services.nutrition import facts as nutrition
+from ..services.plan import last_planned
 from ..services.recipe_filters import ingredient_names, intersect, recipes_using
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
@@ -187,17 +188,14 @@ async def list_recipes(
         # only for tomorrow has not been cooked, so it ranks with the rest.
         # Today is the owner's, as the page sends it: the server's clock may
         # be on UTC, already tomorrow during a US evening.
-        last = (
-            select(
-                MealPlanEntry.recipe_id.label("recipe_id"),
-                func.max(MealPlanEntry.plan_date).label("last"),
+        last = await last_planned(session, today or date.today())
+        if last:
+            # Most recent first, and what was never cooked after it. An empty
+            # mapping is not valid for `case`, hence the guard.
+            order = (
+                case(last, value=Recipe.id, else_=None).desc().nulls_last(),
+                *_SORTS["cooked"],
             )
-            .where(MealPlanEntry.plan_date <= (today or date.today()))
-            .group_by(MealPlanEntry.recipe_id)
-            .subquery()
-        )
-        filtered = filtered.outerjoin(last, last.c.recipe_id == Recipe.id)
-        order = (last.c.last.desc().nulls_last(), *_SORTS["cooked"])
 
     # A page past the end is an empty page, not an error: the collection can
     # shrink under a client that is holding a page number.

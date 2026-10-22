@@ -32,7 +32,7 @@ async def test_meal_plan_crud(client):
     )
     assert [e["meal"] for e in resp.json()] == ["dinner"]
 
-    assert (await client.delete(f"/api/meal-plan/{entry['id']}")).status_code == 204
+    assert (await client.delete(f"/api/meal-plan/{entry['entry_id']}")).status_code == 204
     resp = await client.get(
         "/api/meal-plan", params={"start": "2026-07-20", "end": "2026-07-26"}
     )

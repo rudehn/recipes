@@ -18,14 +18,16 @@ both marks are rendered in place and cleared together when the trip is over.
 import re
 from collections import defaultdict
 from datetime import date
+from typing import Protocol
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import GroceryCheck, MealPlanEntry, PantryItem, Recipe
+from ..models import GroceryCheck, PantryItem, Recipe
 from ..schemas import GroceryItem, GroceryList, GroceryRecipeUse, GroceryStatus, LineIssue
 from .canonical import best_display
 from .identity import Identity
+from .plan import planned_meals
 from .quantity import format_quantity
 
 UNIT_ALIASES = {
@@ -63,11 +65,18 @@ def normalize_unit(unit: str | None) -> str | None:
     return UNIT_ALIASES.get(u, u)
 
 
-def scale_factor(entry: MealPlanEntry) -> float:
-    """How much to scale this entry's ingredient quantities: planned servings
+class Scaled(Protocol):
+    """Anything planned for some servings of a recipe."""
+
+    servings: int | None
+    recipe: Recipe
+
+
+def scale_factor(meal: Scaled) -> float:
+    """How much to scale this meal's ingredient quantities: planned servings
     over the recipe's own serving count. 1.0 when either side is unset."""
-    if entry.servings and entry.recipe.servings:
-        return entry.servings / entry.recipe.servings
+    if meal.servings and meal.recipe.servings:
+        return meal.servings / meal.recipe.servings
     return 1.0
 
 
@@ -111,14 +120,7 @@ def _needs_buying(pantry: PantryItem | None, status: GroceryStatus) -> bool:
 async def build_grocery_list(
     session: AsyncSession, start: date, end: date
 ) -> GroceryList:
-    entries = (
-        await session.execute(
-            select(MealPlanEntry)
-            .where(MealPlanEntry.plan_date >= start, MealPlanEntry.plan_date <= end)
-            .join(MealPlanEntry.recipe)
-            .join(Recipe.ingredients, isouter=True)
-        )
-    ).unique().scalars().all()
+    meals = await planned_meals(session, start, end)
     identity = await Identity.of(session)
 
     pantry_items = (await session.execute(select(PantryItem))).scalars().all()
@@ -136,9 +138,9 @@ async def build_grocery_list(
     # several recipes' rows, and one bad row is enough to doubt the total.
     issues: dict[str, LineIssue] = {}
 
-    for entry in entries:
-        factor = scale_factor(entry)
-        for ing in entry.recipe.ingredients:
+    for meal in meals:
+        factor = scale_factor(meal)
+        for ing in meal.recipe.ingredients:
             key = identity.key(ing.name)
             if not key:
                 continue
@@ -153,8 +155,8 @@ async def build_grocery_list(
                 no_quantity_uses[key] += 1
             uses[key].append(
                 GroceryRecipeUse(
-                    recipe_id=entry.recipe.id,
-                    recipe_title=entry.recipe.title,
+                    recipe_id=meal.recipe.id,
+                    recipe_title=meal.recipe.title,
                     ingredient_id=ing.id,
                     quantity=round(scaled, 2) if scaled is not None else None,
                     unit=unit,

@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Meal } from "../api";
 import { WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
-import { mealPlanEntry, page, planCost, recipeSummary } from "../test/fixtures";
+import { plannedMeal, page, planCost, recipeSummary } from "../test/fixtures";
 import { renderApp } from "../test/render";
 import { setViewportWidth } from "../test/viewport";
 
@@ -81,7 +81,7 @@ describe("PlannerPage", () => {
   it("puts a planned meal in its own day and meal cell", async () => {
     mockBackend({
       "GET /api/meal-plan": [
-        mealPlanEntry({
+        plannedMeal({
           plan_date: "2026-07-29",
           meal: "dinner",
           recipe: recipeSummary({ id: 5, title: "Weeknight chicken curry" }),
@@ -99,7 +99,7 @@ describe("PlannerPage", () => {
   it("links a planned meal to its recipe", async () => {
     mockBackend({
       "GET /api/meal-plan": [
-        mealPlanEntry({ recipe: recipeSummary({ id: 5, title: "Weeknight chicken curry" }) }),
+        plannedMeal({ recipe: recipeSummary({ id: 5, title: "Weeknight chicken curry" }) }),
       ],
     });
     renderApp("/planner");
@@ -153,7 +153,7 @@ describe("PlannerPage", () => {
     const backend = mockBackend({
       "GET /api/meal-plan": [],
       "GET /api/recipes": page([curry, recipeSummary({ id: 6, title: "Banana bread" })]),
-      "POST /api/meal-plan": mealPlanEntry({ recipe: curry }),
+      "POST /api/meal-plan": plannedMeal({ recipe: curry }),
     });
     const { user } = renderApp("/planner");
     await screen.findByText("Jul 27 – Aug 2, 2026");
@@ -175,7 +175,7 @@ describe("PlannerPage", () => {
     const backend = mockBackend({
       "GET /api/meal-plan": [],
       "GET /api/recipes": page([curry]),
-      "POST /api/meal-plan": mealPlanEntry({ recipe: curry }),
+      "POST /api/meal-plan": plannedMeal({ recipe: curry }),
     });
     const { user } = renderApp("/planner");
     await screen.findByText("Jul 27 – Aug 2, 2026");
@@ -192,7 +192,7 @@ describe("PlannerPage", () => {
   it("removes a planned meal", async () => {
     const backend = mockBackend({
       "GET /api/meal-plan": [
-        mealPlanEntry({ id: 3, recipe: recipeSummary({ title: "Weeknight chicken curry" }) }),
+        plannedMeal({ entry_id: 3, recipe: recipeSummary({ title: "Weeknight chicken curry" }) }),
       ],
       "DELETE /api/meal-plan/:id": undefined,
     });
@@ -212,7 +212,7 @@ describe("PlannerPage", () => {
     it("starts from the recipe's own serving count", async () => {
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ servings: null, recipe: recipeSummary({ servings: 4 }) }),
+          plannedMeal({ servings: null, recipe: recipeSummary({ servings: 4 }) }),
         ],
       });
       renderApp("/planner");
@@ -223,9 +223,9 @@ describe("PlannerPage", () => {
     it("saves a raised count for this meal only", async () => {
       const backend = mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, servings: null, recipe: recipeSummary({ servings: 4 }) }),
+          plannedMeal({ entry_id: 3, servings: null, recipe: recipeSummary({ servings: 4 }) }),
         ],
-        "PATCH /api/meal-plan/:id": mealPlanEntry({ id: 3, servings: 5 }),
+        "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3, servings: 5 }),
       });
       const { user } = renderApp("/planner");
 
@@ -241,9 +241,9 @@ describe("PlannerPage", () => {
       // Storing null instead of 4 lets a later edit to the recipe flow through.
       const backend = mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, servings: 5, recipe: recipeSummary({ servings: 4 }) }),
+          plannedMeal({ entry_id: 3, servings: 5, recipe: recipeSummary({ servings: 4 }) }),
         ],
-        "PATCH /api/meal-plan/:id": mealPlanEntry({ id: 3, servings: null }),
+        "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3, servings: null }),
       });
       const { user } = renderApp("/planner");
 
@@ -256,9 +256,9 @@ describe("PlannerPage", () => {
     it("never plans fewer than one serving", async () => {
       const backend = mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, servings: 1, recipe: recipeSummary({ servings: 4 }) }),
+          plannedMeal({ entry_id: 3, servings: 1, recipe: recipeSummary({ servings: 4 }) }),
         ],
-        "PATCH /api/meal-plan/:id": mealPlanEntry({ id: 3, servings: 1 }),
+        "PATCH /api/meal-plan/:id": plannedMeal({ entry_id: 3, servings: 1 }),
       });
       const { user } = renderApp("/planner");
 
@@ -275,12 +275,12 @@ describe("PlannerPage", () => {
       let stored: number | null = null;
       const held: (() => void)[] = [];
       const backend = mockBackend({
-        "GET /api/meal-plan": () => [mealPlanEntry({ id: 3, servings: stored, recipe })],
+        "GET /api/meal-plan": () => [plannedMeal({ entry_id: 3, servings: stored, recipe })],
         "PATCH /api/meal-plan/:id": (req: MockRequest) =>
           new Promise((resolve) =>
             held.push(() => {
               stored = (req.body as { servings: number | null }).servings;
-              resolve(mealPlanEntry({ id: 3, servings: stored, recipe }));
+              resolve(plannedMeal({ entry_id: 3, servings: stored, recipe }));
             }),
           ),
       });
@@ -310,7 +310,7 @@ describe("PlannerPage", () => {
     it("puts the count back when the server refuses it", async () => {
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, servings: null, recipe: recipeSummary({ servings: 4 }) }),
+          plannedMeal({ entry_id: 3, servings: null, recipe: recipeSummary({ servings: 4 }) }),
         ],
         "PATCH /api/meal-plan/:id": new HttpError(503, "Server is restarting"),
       });
@@ -325,7 +325,7 @@ describe("PlannerPage", () => {
     it("hides the stepper for a recipe with no serving count", async () => {
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ servings: null, recipe: recipeSummary({ servings: null }) }),
+          plannedMeal({ servings: null, recipe: recipeSummary({ servings: null }) }),
         ],
       });
       renderApp("/planner");
@@ -339,7 +339,7 @@ describe("PlannerPage", () => {
     it("copies from the week before the one being viewed", async () => {
       const backend = mockBackend({
         "GET /api/meal-plan": [],
-        "POST /api/meal-plan/copy-week": [mealPlanEntry()],
+        "POST /api/meal-plan/copy-week": [plannedMeal()],
       });
       const { user } = renderApp("/planner");
       await screen.findByText("Jul 27 – Aug 2, 2026");
@@ -418,7 +418,7 @@ describe("PlannerPage", () => {
   it("says so when a planned meal could not be removed", async () => {
     const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry" });
     mockBackend({
-      "GET /api/meal-plan": [mealPlanEntry({ id: 9, plan_date: "2026-07-27", meal: "dinner", recipe: curry })],
+      "GET /api/meal-plan": [plannedMeal({ entry_id: 9, plan_date: "2026-07-27", meal: "dinner", recipe: curry })],
       "DELETE /api/meal-plan/:id": new HttpError(503, "Server is restarting"),
     });
     const { user } = renderApp("/planner");
@@ -436,7 +436,7 @@ describe("PlannerPage", () => {
     mockBackend({
       "GET /api/meal-plan": () =>
         ++attempt === 1
-          ? [mealPlanEntry({ id: 9, plan_date: "2026-07-27", meal: "dinner", recipe: curry })]
+          ? [plannedMeal({ entry_id: 9, plan_date: "2026-07-27", meal: "dinner", recipe: curry })]
           : new HttpError(503, "Server is restarting"),
       "DELETE /api/meal-plan/:id": undefined,
     });
@@ -521,7 +521,7 @@ describe("PlannerPage", () => {
       setViewportWidth(375);
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({
+          plannedMeal({
             plan_date: "2026-07-30",
             meal: "dinner",
             recipe: recipeSummary({ title: "Weeknight chicken curry" }),
@@ -542,7 +542,7 @@ describe("PlannerPage", () => {
       const backend = mockBackend({
         "GET /api/meal-plan": [],
         "GET /api/recipes": page([curry]),
-        "POST /api/meal-plan": mealPlanEntry({ recipe: curry }),
+        "POST /api/meal-plan": plannedMeal({ recipe: curry }),
       });
       const { user } = renderApp("/planner");
       await screen.findByText("Jul 27 – Aug 2, 2026");
@@ -592,7 +592,7 @@ describe("PlannerPage", () => {
       // meals use, shopping prices whole packages, and the gap is the pantry
       // surplus.
       mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry()],
+        "GET /api/meal-plan": [plannedMeal()],
         "GET /api/meal-plan/cost": planCost({
           total: 61.2,
           priced: 40,
@@ -614,7 +614,7 @@ describe("PlannerPage", () => {
         "GET /api/meal-plan/cost": null,
         "GET /api/recipes": page([recipeSummary({ id: 5, title: "Weeknight chicken curry" })]),
         "GET /api/recipes/tags": [],
-        "POST /api/meal-plan": mealPlanEntry({
+        "POST /api/meal-plan": plannedMeal({
           recipe: recipeSummary({ id: 5, title: "Weeknight chicken curry" }),
         }),
       });
@@ -631,7 +631,7 @@ describe("PlannerPage", () => {
 
     it("looks like the ordinary planner without pricing", async () => {
       const backend = mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry()],
+        "GET /api/meal-plan": [plannedMeal()],
         "GET /api/meal-plan/cost": null,
       });
       renderApp("/planner");
@@ -649,10 +649,10 @@ describe("PlannerPage", () => {
 
     it("heads each day with what its meals cost", async () => {
       mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-27" })],
+        "GET /api/meal-plan": [plannedMeal({ entry_id: 3, plan_date: "2026-07-27" })],
         "GET /api/meal-plan/cost": planCost({
           days: [{ plan_date: "2026-07-27", total: 12.4, priced: 4, total_lines: 4 }],
-          entries: [{ entry_id: 3, total: 12.4, priced: 4, total_lines: 4 }],
+          entries: [{ key: "e3", total: 12.4, priced: 4, total_lines: 4 }],
         }),
       });
       renderApp("/planner");
@@ -667,10 +667,10 @@ describe("PlannerPage", () => {
       // A plus rather than a bare number: the figure is a floor, and read
       // plain it would claim to be the whole.
       mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-28" })],
+        "GET /api/meal-plan": [plannedMeal({ entry_id: 3, plan_date: "2026-07-28" })],
         "GET /api/meal-plan/cost": planCost({
           days: [{ plan_date: "2026-07-28", total: 6.2, priced: 9, total_lines: 11 }],
-          entries: [{ entry_id: 3, total: 6.2, priced: 9, total_lines: 11 }],
+          entries: [{ key: "e3", total: 6.2, priced: 9, total_lines: 11 }],
         }),
       });
       renderApp("/planner");
@@ -685,14 +685,14 @@ describe("PlannerPage", () => {
     it("puts each meal's cost on the line with its servings", async () => {
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, plan_date: "2026-07-27", meal: "breakfast" }),
-          mealPlanEntry({ id: 4, plan_date: "2026-07-27", meal: "dinner" }),
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-27", meal: "breakfast" }),
+          plannedMeal({ entry_id: 4, plan_date: "2026-07-27", meal: "dinner" }),
         ],
         "GET /api/meal-plan/cost": planCost({
           days: [{ plan_date: "2026-07-27", total: 9.1, priced: 7, total_lines: 9 }],
           entries: [
-            { entry_id: 3, total: 2.9, priced: 3, total_lines: 3 },
-            { entry_id: 4, total: 6.2, priced: 4, total_lines: 6 },
+            { key: "e3", total: 2.9, priced: 3, total_lines: 3 },
+            { key: "e4", total: 6.2, priced: 4, total_lines: 6 },
           ],
         }),
       });
@@ -715,11 +715,11 @@ describe("PlannerPage", () => {
     it("still costs a meal whose recipe has no serving count", async () => {
       mockBackend({
         "GET /api/meal-plan": [
-          mealPlanEntry({ id: 3, plan_date: "2026-07-27", recipe: recipeSummary({ servings: null }) }),
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-27", recipe: recipeSummary({ servings: null }) }),
         ],
         "GET /api/meal-plan/cost": planCost({
           days: [{ plan_date: "2026-07-27", total: 3.1, priced: 2, total_lines: 2 }],
-          entries: [{ entry_id: 3, total: 3.1, priced: 2, total_lines: 2 }],
+          entries: [{ key: "e3", total: 3.1, priced: 2, total_lines: 2 }],
         }),
       });
       renderApp("/planner");
@@ -735,13 +735,13 @@ describe("PlannerPage", () => {
     it("shows no figure for a meal or a day with nothing priced", async () => {
       // Any number there would be invented.
       const backend = mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-27" })],
+        "GET /api/meal-plan": [plannedMeal({ entry_id: 3, plan_date: "2026-07-27" })],
         "GET /api/meal-plan/cost": planCost({
           total: 0,
           priced: 0,
           total_lines: 5,
           days: [{ plan_date: "2026-07-27", total: 0, priced: 0, total_lines: 5 }],
-          entries: [{ entry_id: 3, total: 0, priced: 0, total_lines: 5 }],
+          entries: [{ key: "e3", total: 0, priced: 0, total_lines: 5 }],
         }),
       });
       renderApp("/planner");
@@ -757,18 +757,18 @@ describe("PlannerPage", () => {
       let stored: number | null = null;
       mockBackend({
         "GET /api/meal-plan": () => [
-          mealPlanEntry({ id: 3, plan_date: "2026-07-27", servings: stored, recipe }),
+          plannedMeal({ entry_id: 3, plan_date: "2026-07-27", servings: stored, recipe }),
         ],
         "PATCH /api/meal-plan/:id": (req: MockRequest) => {
           stored = (req.body as { servings: number | null }).servings;
-          return mealPlanEntry({ id: 3, plan_date: "2026-07-27", servings: stored, recipe });
+          return plannedMeal({ entry_id: 3, plan_date: "2026-07-27", servings: stored, recipe });
         },
         // A dollar a serving, so the figure says which count it was priced at.
         "GET /api/meal-plan/cost": () => {
           const total = stored ?? 4;
           return planCost({
             days: [{ plan_date: "2026-07-27", total, priced: 2, total_lines: 2 }],
-            entries: [{ entry_id: 3, total, priced: 2, total_lines: 2 }],
+            entries: [{ key: "e3", total, priced: 2, total_lines: 2 }],
           });
         },
       });
@@ -789,10 +789,10 @@ describe("PlannerPage", () => {
     it("costs each day and meal in the agenda too", async () => {
       setViewportWidth(375);
       mockBackend({
-        "GET /api/meal-plan": [mealPlanEntry({ id: 3, plan_date: "2026-07-29" })],
+        "GET /api/meal-plan": [plannedMeal({ entry_id: 3, plan_date: "2026-07-29" })],
         "GET /api/meal-plan/cost": planCost({
           days: [{ plan_date: "2026-07-29", total: 6.2, priced: 9, total_lines: 11 }],
-          entries: [{ entry_id: 3, total: 6.2, priced: 9, total_lines: 11 }],
+          entries: [{ key: "e3", total: 6.2, priced: 9, total_lines: 11 }],
         }),
       });
       renderApp("/planner");

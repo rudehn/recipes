@@ -206,10 +206,16 @@ class MealPlanEntryUpdate(BaseModel):
     servings: int | None = Field(default=None, ge=1)
 
 
-class MealPlanEntryOut(BaseModel):
+class PlannedMealOut(BaseModel):
+    """A meal on the plan, named by `key` for as long as it is shown.
+
+    `entry_id` is the stored row behind it, for the writes that take one.
+    """
+
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    key: str
+    entry_id: int | None
     plan_date: date
     meal: Meal
     servings: int | None
@@ -427,7 +433,7 @@ class EntryCost(BaseModel):
     meal with an ingredient nothing priced costs at least this, not this.
     """
 
-    entry_id: int
+    key: str
     total: float
     priced: int
     total_lines: int

@@ -9,27 +9,23 @@ from ..models import MealPlanEntry, Recipe
 from ..schemas import (
     CopyWeekRequest,
     MealPlanEntryIn,
-    MealPlanEntryOut,
     MealPlanEntryUpdate,
     PlanCost,
+    PlannedMealOut,
 )
+from ..services import plan
 from ..services.kroger import costing
 
 router = APIRouter(prefix="/meal-plan", tags=["meal-plan"])
 
 
-@router.get("", response_model=list[MealPlanEntryOut])
+@router.get("", response_model=list[PlannedMealOut])
 async def list_entries(
     start: date, end: date, session: AsyncSession = Depends(get_session)
 ):
     if end < start:
         raise HTTPException(status_code=422, detail="end must be on or after start")
-    result = await session.execute(
-        select(MealPlanEntry)
-        .where(MealPlanEntry.plan_date >= start, MealPlanEntry.plan_date <= end)
-        .order_by(MealPlanEntry.plan_date, MealPlanEntry.id)
-    )
-    return result.scalars().all()
+    return await plan.planned_meals(session, start, end)
 
 
 @router.get("/cost", response_model=PlanCost | None)
@@ -44,7 +40,7 @@ async def plan_cost(start: date, end: date, session: AsyncSession = Depends(get_
     return await costing.plan_cost(session, start, end)
 
 
-@router.post("", response_model=MealPlanEntryOut, status_code=201)
+@router.post("", response_model=PlannedMealOut, status_code=201)
 async def create_entry(
     data: MealPlanEntryIn, session: AsyncSession = Depends(get_session)
 ):
@@ -59,10 +55,10 @@ async def create_entry(
     session.add(entry)
     await session.commit()
     await session.refresh(entry)
-    return entry
+    return plan.from_entry(entry)
 
 
-@router.patch("/{entry_id}", response_model=MealPlanEntryOut)
+@router.patch("/{entry_id}", response_model=PlannedMealOut)
 async def update_entry(
     entry_id: int,
     data: MealPlanEntryUpdate,
@@ -74,10 +70,10 @@ async def update_entry(
     entry.servings = data.servings
     await session.commit()
     await session.refresh(entry)
-    return entry
+    return plan.from_entry(entry)
 
 
-@router.post("/copy-week", response_model=list[MealPlanEntryOut])
+@router.post("/copy-week", response_model=list[PlannedMealOut])
 async def copy_week(
     data: CopyWeekRequest, session: AsyncSession = Depends(get_session)
 ):
@@ -128,7 +124,7 @@ async def copy_week(
     await session.commit()
     for copy in created:
         await session.refresh(copy)
-    return created
+    return [plan.from_entry(copy) for copy in created]
 
 
 @router.delete("/{entry_id}", status_code=204)

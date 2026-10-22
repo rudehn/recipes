@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { api, type DayCost, type EntryCost, type Meal, type MealPlanEntry } from "../api";
+import { api, type DayCost, type EntryCost, type Meal, type PlannedMeal } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { RecipePickerModal } from "../components/RecipeBits";
 import { Banner, Button, LinkButton, PageHead } from "../components/ui";
@@ -21,13 +21,13 @@ import {
 
 const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
 
-/** The entries of one day's one meal, keyed the way byCell holds them. */
-type Cells = Map<string, MealPlanEntry[]>;
+/** The meals of one day's one meal slot, keyed the way byCell holds them. */
+type Cells = Map<string, PlannedMeal[]>;
 
 /** What either layout can do to an entry already in a cell. */
 interface EntryActions {
-  onRemove: (id: number) => void;
-  onChangeServings: (entry: MealPlanEntry, delta: number) => void;
+  onRemove: (entryId: number) => void;
+  onChangeServings: (meal: PlannedMeal, delta: number) => void;
 }
 
 /** A figure and how much of it is priced, which a day and a meal both carry. */
@@ -36,7 +36,7 @@ type Costed = Pick<DayCost, "total" | "priced" | "total_lines">;
 /** What each day and each planned meal costs, for the layouts to look up. */
 interface Costs {
   days: Map<string, DayCost>;
-  entries: Map<number, EntryCost>;
+  entries: Map<string, EntryCost>;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
@@ -81,7 +81,7 @@ export default function PlannerPage() {
     action.run,
     // The saved entry in place of the loaded one, which also asks for the
     // cost again: the meal's figure follows its new count.
-    (saved) => setEntries((prev) => prev?.map((e) => (e.id === saved.id ? saved : e)) ?? prev),
+    (saved) => setEntries((prev) => prev?.map((e) => (e.key === saved.key ? saved : e)) ?? prev),
     // An earlier count in the burst may have landed, so the week is asked
     // for again rather than assumed to be what was loaded.
     reload,
@@ -99,7 +99,7 @@ export default function PlannerPage() {
   const costs = useMemo<Costs>(
     () => ({
       days: new Map(cost?.days.map((d) => [d.plan_date, d])),
-      entries: new Map(cost?.entries.map((e) => [e.entry_id, e])),
+      entries: new Map(cost?.entries.map((e) => [e.key, e])),
     }),
     [cost],
   );
@@ -112,12 +112,12 @@ export default function PlannerPage() {
     }
   }
 
-  async function removeEntry(id: number) {
-    if (await action.run(() => api.deleteMealPlanEntry(id))) reload();
+  async function removeEntry(entryId: number) {
+    if (await action.run(() => api.deleteMealPlanEntry(entryId))) reload();
   }
 
   async function copyLastWeek() {
-    let created: MealPlanEntry[] = [];
+    let created: PlannedMeal[] = [];
     const copied = await action.run(async () => {
       created = await api.copyWeek(toISODate(addDays(weekStart, -7)), toISODate(weekStart));
     });
@@ -350,23 +350,23 @@ function PlanCell({
   onChangeServings,
 }: {
   className: string;
-  entries: MealPlanEntry[];
-  costs: Map<number, EntryCost>;
+  entries: PlannedMeal[];
+  costs: Map<string, EntryCost>;
   onAdd: () => void;
 } & EntryActions) {
   return (
     <div className={className}>
       {entries.map((e) => {
         const servings = e.servings ?? e.recipe.servings;
-        const cost = costs.get(e.id);
+        const cost = costs.get(e.key);
         return (
-          <div key={e.id} className="plan-entry">
+          <div key={e.key} className="plan-entry">
             <div className="plan-entry-main">
               <Link to={`/recipes/${e.recipe.id}`}>{e.recipe.title}</Link>
               <button
                 className="remove"
                 aria-label={`Remove ${e.recipe.title}`}
-                onClick={() => onRemove(e.id)}
+                onClick={() => e.entry_id !== null && onRemove(e.entry_id)}
               >
                 ✕
               </button>
@@ -431,8 +431,8 @@ function PlanFigure({ cost }: { cost: Costed }) {
  * A count as it is stored. The recipe's own count is null, so a later edit to
  * the recipe flows through to the meals planned from it.
  */
-const asStored = (entry: MealPlanEntry, count: number) =>
-  count === entry.recipe.servings ? null : count;
+const asStored = (meal: PlannedMeal, count: number) =>
+  count === meal.recipe.servings ? null : count;
 
 /**
  * Planned servings, stepped a tap at a time and saved one write at a time.
@@ -449,15 +449,15 @@ const asStored = (entry: MealPlanEntry, count: number) =>
  */
 function usePlannedServings(
   run: Action["run"],
-  onSaved: (saved: MealPlanEntry) => void,
+  onSaved: (saved: PlannedMeal) => void,
   onFailed: () => void,
 ) {
   // The count each meal has been stepped to and not yet saved. The ref is
   // what the next tap counts from, so taps between two renders still add up;
   // the state is the same map, for drawing.
-  const stepped = useRef(new Map<number, number>());
-  const [counts, setCounts] = useState<ReadonlyMap<number, number>>(() => new Map());
-  const saving = useRef(new Set<number>());
+  const stepped = useRef(new Map<string, number>());
+  const [counts, setCounts] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const saving = useRef(new Set<string>());
 
   // The page's newest callbacks, since a write can outlive the render that
   // sent it: one that fails after moving to another week reloads that week.
@@ -466,49 +466,52 @@ function usePlannedServings(
     callbacks.current = { onSaved, onFailed };
   });
 
-  function set(id: number, count: number | undefined) {
+  function set(key: string, count: number | undefined) {
     const next = new Map(stepped.current);
-    if (count === undefined) next.delete(id);
-    else next.set(id, count);
+    if (count === undefined) next.delete(key);
+    else next.set(key, count);
     stepped.current = next;
     setCounts(next);
   }
 
-  async function save(entry: MealPlanEntry) {
-    saving.current.add(entry.id);
-    const result: { saved?: MealPlanEntry } = {};
+  async function save(meal: PlannedMeal, entryId: number) {
+    const key = meal.key;
+    saving.current.add(key);
+    const result: { saved?: PlannedMeal } = {};
     let sent: number | undefined;
     let ok = true;
     // Looked at again after every write: a tap made while it was out goes next.
-    while (ok && stepped.current.get(entry.id) !== sent) {
-      const count = stepped.current.get(entry.id)!;
+    while (ok && stepped.current.get(key) !== sent) {
+      const count = stepped.current.get(key)!;
       sent = count;
       ok = await run(async () => {
-        result.saved = await api.updateMealPlanServings(entry.id, asStored(entry, count));
+        result.saved = await api.updateMealPlanServings(entryId, asStored(meal, count));
       });
     }
-    saving.current.delete(entry.id);
+    saving.current.delete(key);
     // In the same tick as the callback, so the count never flickers back to
     // the loaded one between the two.
-    set(entry.id, undefined);
+    set(key, undefined);
     if (ok && result.saved) callbacks.current.onSaved(result.saved);
     else callbacks.current.onFailed();
   }
 
-  function step(entry: MealPlanEntry, delta: number) {
-    const base = stepped.current.get(entry.id) ?? entry.servings ?? entry.recipe.servings;
+  function step(meal: PlannedMeal, delta: number) {
+    // Only a stored row has servings of its own to write.
+    if (meal.entry_id === null) return;
+    const base = stepped.current.get(meal.key) ?? meal.servings ?? meal.recipe.servings;
     if (base == null) return;
-    set(entry.id, Math.max(1, base + delta));
-    if (!saving.current.has(entry.id)) void save(entry);
+    set(meal.key, Math.max(1, base + delta));
+    if (!saving.current.has(meal.key)) void save(meal, meal.entry_id);
   }
 
-  /** The entries with every count still being saved shown as it will be. */
+  /** The meals with every count still being saved shown as it will be. */
   const shown = useCallback(
-    (entries: MealPlanEntry[]) =>
+    (meals: PlannedMeal[]) =>
       counts.size === 0
-        ? entries
-        : entries.map((e) => {
-            const count = counts.get(e.id);
+        ? meals
+        : meals.map((e) => {
+            const count = counts.get(e.key);
             return count === undefined ? e : { ...e, servings: asStored(e, count) };
           }),
     [counts],

@@ -72,12 +72,12 @@ async def test_patch_entry_servings(client):
     entry = await plan(client, "2026-07-20", "dinner", curry["id"])
     assert entry["servings"] is None
 
-    resp = await client.patch(f"/api/meal-plan/{entry['id']}", json={"servings": 6})
+    resp = await client.patch(f"/api/meal-plan/{entry['entry_id']}", json={"servings": 6})
     assert resp.status_code == 200, resp.text
     assert resp.json()["servings"] == 6
 
     # Reset back to the recipe default.
-    resp = await client.patch(f"/api/meal-plan/{entry['id']}", json={"servings": None})
+    resp = await client.patch(f"/api/meal-plan/{entry['entry_id']}", json={"servings": None})
     assert resp.json()["servings"] is None
 
     assert (

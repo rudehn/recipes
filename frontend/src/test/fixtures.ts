@@ -21,7 +21,6 @@ import type {
   ItemPrice,
   LeftOut,
   Meal,
-  MealPlanEntry,
   MergeSuggestion,
   Page,
   PantryItem,
@@ -29,6 +28,7 @@ import type {
   PastedRecipeDraft,
   PastePlan,
   PlanCost,
+  PlannedMeal,
   Recipe,
   RecipeDraft,
   RecipeFacets,
@@ -112,9 +112,11 @@ export function pastedRecipeDraft(overrides: Partial<PastedRecipeDraft> = {}): P
   };
 }
 
-export function mealPlanEntry(overrides: Partial<MealPlanEntry> = {}): MealPlanEntry {
+export function plannedMeal(overrides: Partial<PlannedMeal> = {}): PlannedMeal {
+  const entry_id = overrides.entry_id === undefined ? id() : overrides.entry_id;
   return {
-    id: id(),
+    key: `e${entry_id}`,
+    entry_id,
     plan_date: "2026-07-27",
     meal: "dinner" as Meal,
     servings: null,

@@ -577,9 +577,13 @@ async def test_each_planned_meal_is_costed_on_its_own_as_well_as_in_its_day(clie
     body = await plan_cost(client)
 
     # Keyed, since `seed` plans an empty recipe on the same day.
-    by_entry = {entry["entry_id"]: entry for entry in body["entries"]}
-    assert by_entry[loaf_id] == {"entry_id": loaf_id, "total": 0.57, "priced": 1, "total_lines": 1}
-    assert by_entry[rice_id] == {"entry_id": rice_id, "total": 0.14, "priced": 1, "total_lines": 2}
+    by_entry = {entry["key"]: entry for entry in body["entries"]}
+    assert by_entry[f"e{loaf_id}"] == {
+        "key": f"e{loaf_id}", "total": 0.57, "priced": 1, "total_lines": 1
+    }
+    assert by_entry[f"e{rice_id}"] == {
+        "key": f"e{rice_id}", "total": 0.14, "priced": 1, "total_lines": 2
+    }
     assert body["days"] == [
         {"plan_date": str(DAY), "total": 0.71, "priced": 2, "total_lines": 3}
     ]
