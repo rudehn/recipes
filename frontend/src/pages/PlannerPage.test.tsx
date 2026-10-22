@@ -1604,8 +1604,10 @@ describe("PlannerPage", () => {
 
     /* Beside the title the menu took a third of a grid card's width from
        every line of it, so "Weeknight" broke mid-word and a ↻ was left on a
-       line of its own. */
-    it("gives a meal's title its card's whole width, with its menu on the line under it", async () => {
+       line of its own. It shares the stepper's line there instead; with no
+       stepper, a line of its own would be an empty one, so it keeps to the
+       title's. */
+    it("puts a grid meal's menu on its stepper's line, or its title's when it has no stepper", async () => {
       mockBackend({
         "GET /api/meal-plan": [
           plannedMeal({ plan_date: "2026-07-30", recipe: curry }),
@@ -1618,15 +1620,37 @@ describe("PlannerPage", () => {
       renderApp("/planner");
 
       const link = await screen.findByRole("link", { name: "Weeknight chicken curry" });
-      expect(link.parentElement).toHaveClass("plan-entry");
-      const menu = screen.getByRole("button", { name: "Actions for Weeknight chicken curry" });
-      expect(menu.closest(".plan-entry-meta")).toContainElement(
-        screen.getByRole("button", { name: "More servings" }),
+      expect(link.parentElement).not.toContainElement(
+        screen.getByRole("button", { name: "Actions for Weeknight chicken curry" }),
       );
-      // A recipe that says nothing of servings still has its menu there.
       expect(
-        screen.getByRole("button", { name: "Actions for Plain rice" }).closest(".plan-entry-meta"),
-      ).not.toBeNull();
+        screen
+          .getByRole("button", { name: "Actions for Weeknight chicken curry" })
+          .closest(".plan-entry-meta"),
+      ).toContainElement(screen.getByRole("button", { name: "More servings" }));
+
+      const rice = screen.getByRole("link", { name: "Plain rice" });
+      expect(rice.parentElement).toContainElement(
+        screen.getByRole("button", { name: "Actions for Plain rice" }),
+      );
+      expect(rice.closest(".plan-entry")!.querySelector(".plan-entry-meta")).toBeNull();
+    });
+
+    /* The agenda's titles have the room the grid's do not, and a menu at the
+       end of the stepper's line would hold the cost off the card's edge. */
+    it("keeps an agenda meal's menu on its title's line", async () => {
+      setViewportWidth(PHONE + 1);
+      mockBackend({ "GET /api/meal-plan": [plannedMeal({ plan_date: "2026-07-30", recipe: curry })] });
+      renderApp("/planner");
+
+      const link = await screen.findByRole("link", { name: "Weeknight chicken curry" });
+      expect(link.parentElement).toContainElement(
+        screen.getByRole("button", { name: "Actions for Weeknight chicken curry" }),
+      );
+      expect(screen.getByRole("button", { name: "More servings" }).closest(".plan-entry-meta"))
+        .not.toContainElement(
+          screen.getByRole("button", { name: "Actions for Weeknight chicken curry" }),
+        );
     });
 
     it("marks a repeated meal and leaves a one-off plain", async () => {

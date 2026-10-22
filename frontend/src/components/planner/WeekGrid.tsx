@@ -60,6 +60,7 @@ export function WeekGrid({
               <PlanCell
                 key={iso}
                 className={`plan-cell${isToday(d) ? " today" : ""}`}
+                narrow
                 entries={byCell.get(cellKey(iso, meal)) ?? []}
                 costs={costs.entries}
                 dimmed={dimmed}

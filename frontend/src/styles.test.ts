@@ -326,11 +326,17 @@ describe("a row on the Ingredients page", () => {
 
 /**
  * The planner's week grid at its narrowest. A card there has about 100px of
- * text, and a title's longest word can be longer: it breaks where a
- * dictionary would, with a hyphen, rather than anywhere at all.
+ * text, less beside a menu, and a flex item will not shrink below its longest
+ * word, so "Hashbrown" once pushed the menu out of its card. Allowed to
+ * shrink, the title breaks long words where a dictionary would, with a
+ * hyphen, rather than anywhere at all.
  */
 describe("a planned meal's title", () => {
   const rule = /\.plan-entry a\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
+
+  it("may be narrower than its longest word", () => {
+    expect(rule).toMatch(/min-width:\s*0/);
+  });
 
   it("hyphenates a word that cannot fit, and breaks one only as a last resort", () => {
     expect(rule).toMatch(/hyphens:\s*auto/);

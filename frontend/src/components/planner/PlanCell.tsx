@@ -51,6 +51,7 @@ function MealTitle({ meal }: { meal: PlannedMeal }) {
  */
 export function PlanCell({
   className,
+  narrow = false,
   onOpen,
   target,
   drop,
@@ -69,6 +70,11 @@ export function PlanCell({
   onCreateLabel,
 }: {
   className: string;
+  /**
+   * A week grid's column, where a title needs the card's whole width: there
+   * a meal's menu shares its stepper's line rather than its title's.
+   */
+  narrow?: boolean;
   entries: PlannedMeal[];
   costs: Map<string, EntryCost>;
   dimmed: Set<string>;
@@ -140,6 +146,20 @@ export function PlanCell({
           .join(" ");
         // Out of reach under the cell's target, by Tab as well as by press.
         const inert = target ? { inert: "" } : {};
+        const menu = (
+          <MealMenu
+            meal={e}
+            labels={labels}
+            onCreateLabel={onCreateLabel}
+            onSetLabels={onSetLabels}
+            onRemove={onRemove}
+            onRepeat={onRepeat}
+          />
+        );
+        // Beside the title, unless a narrow card's title needs the width and
+        // there is a stepper's line to share. A line of the menu's own would
+        // look empty: where there is a pointer the menu shows only on hover.
+        const menuOnMeta = narrow && servings != null;
         if (onOpen) {
           // Not dragged: a phone has no drag to place with, and a press on
           // the meal is for its sheet.
@@ -180,49 +200,46 @@ export function PlanCell({
             className={classes}
             {...inert}
           >
-            {/* Not a drag of its own: a link dragged is its address, which a
-                drop elsewhere would open. The card is dragged. */}
-            <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
-              <MealTitle meal={e} />
-            </Link>
-            <LabelPills labels={e.labels} />
-            {/* The servings, what they cost and the menu, on the line under
-                the title, so the title has the card's whole width. A recipe
-                that says nothing of servings has no stepper here, and still
-                has its cost and its menu. */}
-            <div className="plan-entry-meta">
-              {servings != null && (
-                <div className="serv">
-                  <button
-                    aria-label="Fewer servings"
-                    onClick={() => onChangeServings(e, -1)}
-                  >
-                    −
-                  </button>
-                  <span
-                    className={e.servings != null ? "overridden" : ""}
-                    title={`${servings} serving${servings === 1 ? "" : "s"}`}
-                  >
-                    ×{servings}
-                  </span>
-                  <button
-                    aria-label="More servings"
-                    onClick={() => onChangeServings(e, 1)}
-                  >
-                    +
-                  </button>
-                </div>
-              )}
-              {priced(cost) && <PlanFigure cost={cost} />}
-              <MealMenu
-                meal={e}
-                labels={labels}
-                onCreateLabel={onCreateLabel}
-                onSetLabels={onSetLabels}
-                onRemove={onRemove}
-                onRepeat={onRepeat}
-              />
+            <div className="plan-entry-title">
+              {/* Not a drag of its own: a link dragged is its address, which
+                  a drop elsewhere would open. The card is dragged. */}
+              <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
+                <MealTitle meal={e} />
+              </Link>
+              {!menuOnMeta && menu}
             </div>
+            <LabelPills labels={e.labels} />
+            {/* The servings and what they cost, on the line under the title.
+                A recipe that says nothing of servings has no stepper here,
+                and still has a cost. */}
+            {(servings != null || priced(cost)) && (
+              <div className="plan-entry-meta">
+                {servings != null && (
+                  <div className="serv">
+                    <button
+                      aria-label="Fewer servings"
+                      onClick={() => onChangeServings(e, -1)}
+                    >
+                      −
+                    </button>
+                    <span
+                      className={e.servings != null ? "overridden" : ""}
+                      title={`${servings} serving${servings === 1 ? "" : "s"}`}
+                    >
+                      ×{servings}
+                    </span>
+                    <button
+                      aria-label="More servings"
+                      onClick={() => onChangeServings(e, 1)}
+                    >
+                      +
+                    </button>
+                  </div>
+                )}
+                {priced(cost) && <PlanFigure cost={cost} />}
+                {menuOnMeta && menu}
+              </div>
+            )}
             {asking.has(e.key) && servings != null && (
               <ScopePrompt
                 day={e.plan_date}

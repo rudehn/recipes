@@ -2291,19 +2291,30 @@ body.has-install-hint .page {
   line-height: var(--leading-snug);
 }
 
-/* The title has its card's whole width - about 100px of text at the grid's
-   narrowest - and a word longer than that breaks where a dictionary would,
-   with a hyphen; break-word is only the backstop for one no dictionary
-   knows, and unlike "anywhere" it never breaks a word that would have fit. */
+/* The title, and the meal's menu where it is beside it (see PlanCell). */
+.plan-entry-title {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-6);
+}
+
+/* A flex item will not shrink below its longest word: beside the menu,
+   "Hashbrown" once pushed it out of its card. Allowed to shrink, a word that
+   cannot fit breaks where a dictionary would, with a hyphen; break-word is
+   only the backstop for one no dictionary knows, and unlike "anywhere" it
+   never breaks a word that would have fit. */
 .plan-entry a {
+  flex: 1;
+  min-width: 0;
   hyphens: auto;
   overflow-wrap: break-word;
 }
 
-/* The servings, what they cost and the meal's menu, on the line under the
-   title. The cost keeps to the right edge whether or not a stepper sits to
-   its left, and wraps under the stepper rather than squeezing it if the two
-   cannot fit; the menu keeps to the right edge too, after the cost. */
+/* The servings and what they cost, on the line under the title. The cost
+   keeps to the right edge whether or not a stepper sits to its left, and
+   wraps under the stepper rather than squeezing it if the two cannot fit.
+   In the grid the menu is here too, at the stepper line's end, so a narrow
+   card's title has its whole width. */
 .plan-entry-meta {
   display: flex;
   align-items: center;
@@ -2312,8 +2323,6 @@ body.has-install-hint .page {
 }
 
 .plan-entry-meta .meal-menu { margin-left: auto; }
-
-.plan-entry-meta .plan-cost + .meal-menu { margin-left: 0; }
 
 /* The size and green of the count beside it: one line about this meal, not
    a second thing competing with its name. */
@@ -2335,8 +2344,6 @@ body.has-install-hint .page {
   text-align: right;
   order: 1;
 }
-
-.week-grid .plan-entry-meta .plan-cost + .meal-menu { margin-left: auto; }
 
 .serv {
   display: flex;
