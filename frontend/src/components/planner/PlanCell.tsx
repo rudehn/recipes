@@ -8,13 +8,7 @@ import { PlanFigure } from "./PlanFigure";
 import { ScopePrompt } from "./ScopePrompt";
 import { ServingsStepper } from "./ServingsStepper";
 import { priced, type EntryActions } from "./plan";
-import {
-  isPlacingDrag,
-  startDrag,
-  type CellDrop,
-  type CellTarget,
-  type Placing,
-} from "./placing";
+import { isPlacingDrag, startDrag, type CellDrop, type CellTarget } from "./placing";
 
 /**
  * A meal's title, after its ↻ if it repeats.
@@ -56,20 +50,13 @@ export function PlanCell({
   onOpen,
   target,
   drop,
-  onDrag,
   entries,
   costs,
   dimmed,
   asking,
   labels,
+  actions,
   onAdd,
-  onRemove,
-  onChangeServings,
-  onAnswerServings,
-  onSetLabels,
-  onRepeat,
-  onCreateLabel,
-  onPlacing,
 }: {
   className: string;
   /**
@@ -82,20 +69,20 @@ export function PlanCell({
   dimmed: Set<string>;
   asking: ReadonlySet<string>;
   labels: Label[];
+  actions: EntryActions;
   onAdd: () => void;
   /** What a press on the cell does while something is being placed. */
   target: CellTarget | null;
   /** What a drop on the cell does while something is dragged; null where it cannot go. */
   drop: CellDrop | null;
-  /** Starts dragging one of the cell's meals, or ends the drag with null. */
-  onDrag: (placing: Placing | null) => void;
   /**
    * Where a meal's controls are kept in a sheet of their own rather than on
    * it (a phone): opens that sheet. The meal is then its title, labels and
    * ↻ only, and a press anywhere on it is this.
    */
   onOpen?: (meal: PlannedMeal) => void;
-} & EntryActions) {
+}) {
+  const { onChangeServings, onAnswerServings, onDrag } = actions;
   // Whether what is dragged is over this cell. Let go of as soon as there is
   // no drag, so a drag that ended without leaving the cell leaves no mark.
   const [over, setOver] = useState(false);
@@ -152,11 +139,11 @@ export function PlanCell({
           <MealMenu
             meal={e}
             labels={labels}
-            onCreateLabel={onCreateLabel}
-            onSetLabels={onSetLabels}
-            onRemove={onRemove}
-            onRepeat={onRepeat}
-            onPlacing={onPlacing}
+            onCreateLabel={actions.onCreateLabel}
+            onSetLabels={actions.onSetLabels}
+            onRemove={actions.onRemove}
+            onRepeat={actions.onRepeat}
+            onPlacing={actions.onPlacing}
           />
         );
         // Beside the title, unless a narrow card's title needs the width and

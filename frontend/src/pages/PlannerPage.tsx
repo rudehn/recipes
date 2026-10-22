@@ -21,6 +21,7 @@ import {
   writeFilter,
   type ChangeTarget,
   type Costs,
+  type EntryActions,
   type LabelFilter,
   type MealChange,
 } from "../components/planner/plan";
@@ -317,6 +318,19 @@ export default function PlannerPage() {
     return label;
   }
 
+  // What every cell can do to its meals. The writes report their own
+  // failures, so a cell has nothing to wait for.
+  const actions: EntryActions = {
+    onRemove: (target) => void removeEntry(target),
+    onChangeServings: servings.step,
+    onAnswerServings: (meal, scope) => void servings.answer(meal, scope),
+    onSetLabels: setLabels,
+    onRepeat: (meal, weekdays) => void repeat(meal, weekdays),
+    onCreateLabel: createLabel,
+    onPlacing: choosePlacing,
+    onDrag: drag,
+  };
+
   /*
    * Seven columns of meals, with the Picks strip beside them, need about
    * 1140px before each meal's title has room for its words, and a phone has
@@ -593,19 +607,12 @@ export default function PlannerPage() {
               dimmed={dimmed}
               asking={servings.asking}
               labels={labels ?? []}
+              actions={actions}
               placing={placing}
               onAdd={setPicker}
               onPlace={place}
               dragging={dragging}
-              onDrag={drag}
               onDrop={drop}
-              onRemove={removeEntry}
-              onChangeServings={servings.step}
-              onAnswerServings={servings.answer}
-              onSetLabels={setLabels}
-              onRepeat={repeat}
-              onCreateLabel={createLabel}
-              onPlacing={choosePlacing}
               onOpen={phone ? (meal) => setSheetKey(meal.key) : undefined}
               reveal={placedOn}
             />
@@ -617,19 +624,12 @@ export default function PlannerPage() {
               dimmed={dimmed}
               asking={servings.asking}
               labels={labels ?? []}
+              actions={actions}
               placing={placing}
               onAdd={setPicker}
               onPlace={place}
               dragging={dragging}
-              onDrag={drag}
               onDrop={drop}
-              onRemove={removeEntry}
-              onChangeServings={servings.step}
-              onAnswerServings={servings.answer}
-              onSetLabels={setLabels}
-              onRepeat={repeat}
-              onCreateLabel={createLabel}
-              onPlacing={choosePlacing}
             />
           )}
         </div>

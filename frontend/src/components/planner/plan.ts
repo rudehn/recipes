@@ -169,7 +169,8 @@ export interface MealChange {
 }
 
 /**
- * What either layout can do to an entry already in a cell.
+ * What either layout can do to an entry already in a cell, handed to every
+ * cell as one object.
  *
  * A repeated meal is changed through its repeat, for its own day or from it
  * on, so the changes that can be either take a ChangeTarget.
@@ -187,6 +188,8 @@ export interface EntryActions {
   onCreateLabel: (name: string) => Promise<Label>;
   /** Starts placing a meal (moving or copying it) by a press on a cell. */
   onPlacing: (placing: Placing) => void;
+  /** Starts dragging a meal off the plan, or ends a drag with null. */
+  onDrag: (placing: Placing | null) => void;
 }
 
 /** A figure and how much of it is priced, which a day and a meal both carry. */
@@ -204,7 +207,7 @@ export const money = (n: number) => `$${n.toFixed(2)}`;
 export const priced = (cost: Costed | undefined): cost is Costed =>
   cost !== undefined && cost.priced > 0;
 
-export interface LayoutProps extends EntryActions {
+export interface LayoutProps {
   days: Date[];
   byCell: Cells;
   costs: Costs;
@@ -214,6 +217,8 @@ export interface LayoutProps extends EntryActions {
   asking: ReadonlySet<string>;
   /** Every label, for the meals' checklists. */
   labels: Label[];
+  /** What can be done to the meals in the cells. */
+  actions: EntryActions;
   /** Opens the picker on the day and meal that asked for it. */
   onAdd: (cell: CellRef) => void;
   /** What is being placed, while the cells are its targets; null otherwise. */
@@ -222,8 +227,6 @@ export interface LayoutProps extends EntryActions {
   onPlace: (cell: CellRef) => void;
   /** What is being dragged over the plan, while it is; null otherwise. */
   dragging: Placing | null;
-  /** Starts dragging a meal off the plan, or ends a drag with null. */
-  onDrag: (placing: Placing | null) => void;
   /** Puts what is being dragged on the cell it was let go on; Alt held copies a meal. */
   onDrop: (cell: CellRef, altKey: boolean) => void;
 }

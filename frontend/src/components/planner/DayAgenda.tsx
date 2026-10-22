@@ -21,18 +21,11 @@ export function DayAgenda({
   dimmed,
   asking,
   labels,
+  actions,
   onAdd,
-  onRemove,
-  onChangeServings,
-  onAnswerServings,
-  onSetLabels,
-  onRepeat,
-  onCreateLabel,
-  onPlacing,
   placing,
   onPlace,
   dragging,
-  onDrag,
   onDrop,
   loadedWeek,
   onOpen,
@@ -104,18 +97,11 @@ export function DayAgenda({
                   dimmed={dimmed}
                   asking={asking}
                   labels={labels}
+                  actions={actions}
                   onAdd={() => onAdd({ date: iso, meal })}
                   target={cellTarget(placing, { date: iso, meal }, onPlace)}
                   drop={cellDrop(dragging, { date: iso, meal }, onDrop)}
-                  onDrag={onDrag}
                   onOpen={onOpen}
-                  onRemove={onRemove}
-                  onChangeServings={onChangeServings}
-                  onAnswerServings={onAnswerServings}
-                  onSetLabels={onSetLabels}
-                  onRepeat={onRepeat}
-                  onCreateLabel={onCreateLabel}
-                  onPlacing={onPlacing}
                 />
               </div>
             ))}
