@@ -20,7 +20,8 @@ import {
  * Every choice here takes effect from the meal's own day on, so nothing asks
  * Just this day or From this day on: a repeated meal's choices say so
  * instead, and Just this day on one ends the repeat after its day. For the
- * same reason a day that has passed offers nothing.
+ * same reason a day that has passed offers nothing. Days that leave out the
+ * meal's own weekday leave its meal on its own day, as a one-off.
  */
 export function RepeatMenu({
   day,
@@ -78,6 +79,11 @@ export function RepeatMenu({
             ? "Choose at least one day"
             : // A custom set that is one of the patterns reads as that pattern.
               `${repeatName(day, chosen)}${since}`}
+          {/* The meal the days are chosen from keeps its own day either
+              way, as a one-off where the days leave it out. */}
+          {chosen.length > 0 && !custom.has(own) && (
+            <span className="repeat-summary-note">This {WEEKDAY_NAMES[own]} stays as it is</span>
+          )}
         </p>
         <Button size="small" disabled={chosen.length === 0} onClick={() => onChoose(chosen)}>
           Save

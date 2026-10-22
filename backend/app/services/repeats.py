@@ -65,11 +65,16 @@ def _refuse_past(day: date, today: date) -> None:
         raise PastDay("That day has passed.")
 
 
+def _falls_on(mask: int, day: date) -> bool:
+    """Whether a weekday mask has `day`'s weekday."""
+    return bool(mask & (1 << day.weekday()))
+
+
 def occurs_on(repeat: MealRepeat, day: date) -> bool:
     """Whether the repeat falls on `day`. Its skips are the caller's to apply."""
     if day < repeat.starts_on or (repeat.ends_on is not None and day > repeat.ends_on):
         return False
-    return bool(repeat.weekdays & (1 << day.weekday()))
+    return _falls_on(repeat.weekdays, day)
 
 
 async def start_repeat(
@@ -78,21 +83,25 @@ async def start_repeat(
     """Turn a planned meal into a repeat that begins on its day.
 
     The meal becomes the repeat's first occurrence, so the row itself goes.
-    A day that has passed is history and does not start anything.
+    Days that leave out the meal's own weekday leave the meal where it is, as
+    a one-off: the owner chose them from that meal, and losing it would be a
+    surprise. A day that has passed is history and does not start anything.
     """
     if entry.from_repeat_id is not None:
         # The day is already a repeat's; it changes through that repeat.
         raise ValueError("This meal already repeats.")
     _refuse_past(entry.plan_date, today)
+    mask = _weekday_mask(weekdays)
     repeat = MealRepeat(
         recipe_id=entry.recipe_id,
         meal=entry.meal,
-        weekdays=_weekday_mask(weekdays),
+        weekdays=mask,
         servings=entry.servings,
         labels=list(entry.labels),
         starts_on=entry.plan_date,
     )
-    await session.delete(entry)
+    if _falls_on(mask, entry.plan_date):
+        await session.delete(entry)
     session.add(repeat)
     await session.flush()
     return repeat
@@ -148,10 +157,17 @@ async def change_from(
     off, changing only the fields it is given, so a change from Wednesday
     covers a change already made from Friday. Returns the row that holds the
     repeat from `day`.
+
+    New days that leave out `day`'s own weekday leave its meal there, as it
+    is, as a one-off: the owner changed the days from that meal, and losing
+    it would be a surprise.
     """
-    await _linked_entry(session, repeat, day)
+    entry = await _linked_entry(session, repeat, day)
     _refuse_past(day, today)
     mask = UNSET if weekdays is UNSET else _weekday_mask(weekdays)
+    if mask is not UNSET and not _falls_on(mask, day):
+        _keep_as_one_off(session, repeat, day, entry)
+        await session.flush()
     later = await _later_rows(session, repeat)
     await _forget_changes_from(session, [repeat, *later], day)
     if day <= repeat.starts_on:
@@ -195,10 +211,9 @@ async def stop_after(
     """End the repeat after `day`, keeping that day's meal as a one-off."""
     entry = await _linked_entry(session, repeat, day)
     _refuse_past(day, today)
-    entry = entry or _replace_day(session, repeat, day)
-    entry.from_repeat_id = None
+    kept = _keep_as_one_off(session, repeat, day, entry)
     await _end_before(session, repeat, day)
-    return entry
+    return kept
 
 
 async def move_day(
@@ -257,6 +272,19 @@ def _replace_day(session: AsyncSession, repeat: MealRepeat, day: date) -> MealPl
     )
     session.add(entry)
     return entry
+
+
+def _keep_as_one_off(
+    session: AsyncSession, repeat: MealRepeat, day: date, entry: MealPlanEntry | None
+) -> MealPlanEntry:
+    """Leave the repeat's meal on `day` there as a one-off, unlinked from it.
+
+    `entry` is the day's own row, if it has one, which keeps what was changed
+    on that day alone. Unlinked, nothing the repeat does later reaches it.
+    """
+    kept = entry or _replace_day(session, repeat, day)
+    kept.from_repeat_id = None
+    return kept
 
 
 async def _day_row(session: AsyncSession, repeat: MealRepeat, day: date) -> MealPlanEntry:

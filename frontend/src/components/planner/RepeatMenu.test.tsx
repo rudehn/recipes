@@ -111,6 +111,17 @@ describe("RepeatMenu", () => {
     ).toEqual(["Tuesday"]);
   });
 
+  it("says the meal's own day stays as it is when Custom leaves it out", async () => {
+    const { onChoose, user } = open({ day: TUESDAY, current: null });
+    await user.click(screen.getByRole("button", { name: "Custom…" }));
+    expect(screen.queryByText(/stays as it is/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Tuesday" }));
+    await user.click(screen.getByRole("button", { name: "Monday" }));
+    expect(screen.getByText("This Tuesday stays as it is")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(onChoose).toHaveBeenCalledExactlyOnceWith([0]);
+  });
+
   it("will not save Custom with no day chosen", async () => {
     const { onChoose, user } = open({ day: TUESDAY, current: null });
     await user.click(screen.getByRole("button", { name: "Custom…" }));

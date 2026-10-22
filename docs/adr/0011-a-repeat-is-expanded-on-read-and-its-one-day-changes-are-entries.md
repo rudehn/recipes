@@ -25,6 +25,7 @@ That change reaches them too, setting only the fields it was given: a change of 
 
 Removing or stopping a repeat from a day ends it the day before, along with every row that carries it on, and deletes it when that day is its first.
 Moving a repeated day to another cell skips the day and leaves the meal at its new place as a one-off, unlinked.
+Days chosen from a meal that leave out that meal's own weekday, whether starting a repeat or changing its days from a day on, leave that day's meal where it is as an unlinked one-off.
 
 ## Why
 

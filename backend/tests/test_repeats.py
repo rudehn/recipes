@@ -467,11 +467,47 @@ async def test_a_changed_day_cannot_start_a_repeat_of_its_own(client):
     assert resp.json()["detail"] == "This meal already repeats."
 
 
-async def test_a_repeat_may_leave_out_its_own_first_day(client):
+async def test_a_repeat_that_leaves_out_its_own_day_keeps_that_day_as_a_one_off(client):
+    # The meal the owner chose the days from stays where it is: the days
+    # chosen are where it goes next, not a reason to lose this one.
     entry = await plan(client, "2026-10-27", "dinner", await oats(client))  # a Tuesday
     resp = await start_repeat(client, entry["entry_id"], [0], TODAY)
     assert resp.status_code == 201, resp.text
-    assert await planned_dates(client, "2026-10-26", "2026-11-08") == ["2026-11-02"]
+    assert resp.json()["starts_on"] == "2026-10-27"
+    meals = await listed(client, "2026-10-26", "2026-11-08")
+    assert [(m["plan_date"], m["entry_id"], m["repeat"] is None) for m in meals] == [
+        ("2026-10-27", entry["entry_id"], True),
+        ("2026-11-02", None, False),
+    ]
+
+
+async def test_new_days_that_leave_out_the_day_they_are_made_on_keep_its_meal(client):
+    rid = await repeat_oats(client)
+    # Wednesday's own servings stay with it, as they are.
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    await ok(await change_from(client, rid, "2026-10-28", weekdays=[0, 4]))
+    meals = await listed(client, "2026-10-26", "2026-11-08")
+    assert [
+        (m["plan_date"], m["servings"], m["repeat"] and m["repeat"]["id"]) for m in meals
+    ] == [
+        ("2026-10-26", None, rid), ("2026-10-27", None, rid),
+        ("2026-10-28", 3, None),
+        ("2026-10-30", None, meals[3]["repeat"]["id"]),
+        ("2026-11-02", None, meals[3]["repeat"]["id"]),
+        ("2026-11-06", None, meals[3]["repeat"]["id"]),
+    ]
+    # A one-off now: a later change from Monday on does not reach it.
+    await ok(await change_from(client, rid, "2026-10-26", servings=2))
+    (wed,) = await listed(client, "2026-10-28", "2026-10-28")
+    assert (wed["servings"], wed["repeat"]) == (3, None)
+
+
+async def test_new_days_from_a_repeats_first_day_keep_that_days_meal(client):
+    rid = await repeat_oats(client)  # from Monday 10-26, every day
+    await ok(await change_from(client, rid, "2026-10-26", weekdays=[2]))
+    meals = await listed(client, "2026-10-26", "2026-11-08")
+    assert [(m["plan_date"], m["repeat"] and m["repeat"]["id"]) for m in meals] == [
+        ("2026-10-26", None), ("2026-10-28", rid), ("2026-11-04", rid)]
 
 
 async def test_deleting_a_recipe_takes_its_repeats_changes_with_it(client):

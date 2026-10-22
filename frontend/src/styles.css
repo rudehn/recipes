@@ -2621,6 +2621,11 @@ body.has-install-hint .page {
   color: var(--muted);
 }
 
+.repeat-summary-note {
+  display: block;
+  margin-top: var(--space-2);
+}
+
 /* Just this day / From this day on, in the popover or under a meal whose
    servings wait on it. A list of choices like the menu's, so a grid column's
    width stacks them rather than squeezing them. */
