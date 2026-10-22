@@ -61,6 +61,8 @@ def weigh(name: str, quantity: float | None, unit: str | None) -> float | None:
         ("salt", 1, "pinch", 0.375),
         # Kosher salt is table salt's nutrition at two thirds of its weight.
         ("kosher salt", 1, "tsp", 5.0),
+        # USDA's cup of flaxseed is whole seeds; ground is 7 g a tablespoon.
+        ("ground flaxseed", 0.5, "cup", 56),
     ],
 )
 def test_an_amount_is_weighed(name, quantity, unit, expected):
@@ -99,6 +101,35 @@ def test_an_amount_that_cannot_be_weighed_is_not_guessed(name, quantity, unit):
         ("sour cream", 171257),
         ("ground ginger", 170926),
         ("sweet potato", 168482),
+        # Other spellings of a food with an entry.
+        ("corn starch", 169698),
+        ("ground pepper", 170931),
+        ("fresh cracked black pepper", 170931),
+        ("Worcestershire", 171610),
+        ("reduced sodium soy sauce", 172473),
+        ("rubbed sage", 170935),
+        ("garlic granules", 171325),
+        ("cooking oil", 172370),
+        ("uncured bacon", 168277),
+        # USDA's own entry for the narrower food.
+        ("93% lean ground turkey", 172850),
+        ("95% lean ground beef", 171790),
+        ("reduced sodium beef broth", 172889),
+        ("light mayonnaise", 173594),
+        ("frozen mixed vegetables", 170471),
+        ("frozen corn", 168398),
+        ("broccoli florets", 170379),
+        ("shredded hash browns (thawed)", 170043),
+        ("crumbled cotija cheese", 170898),
+        ("ground chorizo", 173859),
+        ("avocado oil", 173573),
+        ("ground flaxseed", 169414),
+        ("horseradish", 173472),
+        ("reduced fat shredded Mexican cheese", 172216),
+        # Cooked rice is cooked white rice, never raw: the state word stays in
+        # front while the harmless words behind it are walked past.
+        ("hot cooked rice", 168878),
+        ("cooked jasmine rice", 168878),
     ],
 )
 def test_an_ingredient_finds_its_default(name, expected):
@@ -119,8 +150,8 @@ def test_an_ingredient_finds_its_default(name, expected):
         "dried black beans",
         "part-skim mozzarella",
         # Cooking changes the food; see nutrition_key.
-        "cooked rice",
         "chicken breasts, cooked and shredded",
+        "cooked brown rice",
     ],
 )
 def test_a_near_miss_has_no_default(name):

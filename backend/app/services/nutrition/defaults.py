@@ -45,7 +45,7 @@ class Default:
 HARMLESS_WORDS = frozenset({
     "all", "purpose", "extra", "virgin", "pure", "unbleached", "bleached",
     "yellow", "red", "green", "sharp", "mild", "plain", "firm",
-    "boneless", "skinless", "organic",
+    "boneless", "skinless", "organic", "uncured",
     "jasmine", "basmati", "long", "grain",
     "russet", "yukon", "gold", "idaho", "roma", "plum", "vine", "vidalia",
     "spanish", "hass", "english", "persian", "seedless", "cremini", "button",
@@ -82,6 +82,7 @@ DEFAULTS: dict[str, Default] = {
     "self-rising-flour": Default(168895),
     "cornmeal": Default(168867),
     "cornstarch": Default(169698),
+    "corn-starch": Default(169698),
     "sugar": Default(169655),
     "granulated-sugar": Default(169655),
     "white-sugar": Default(169655),
@@ -111,10 +112,12 @@ DEFAULTS: dict[str, Default] = {
     "unsalted-butter": Default(173430),
     "oil": Default(172370),
     "vegetable-oil": Default(172370),
+    "cooking-oil": Default(172370),
     "canola-oil": Default(172336),
     "olive-oil": Default(171413),
     "coconut-oil": Default(171412),
     "sesame-oil": Default(171016),
+    "avocado-oil": Default(173573),
     "shortening": Default(173584),
     "lard": Default(171401),
     # Eggs and dairy
@@ -152,6 +155,10 @@ DEFAULTS: dict[str, Default] = {
     "goat-cheese": Default(173435),
     "monterey-jack": Default(170844),
     "monterey-jack-cheese": Default(170844),
+    "cotija": Default(170898),
+    "cotija-cheese": Default(170898),
+    "mexican-cheese": Default(171288),
+    "reduced-fat-mexican-cheese": Default(172216),
     # Salt, pepper and dried spices. Ground spices by their full name: see
     # HARMLESS_WORDS for why "ground" is not skipped over.
     "salt": Default(173468),
@@ -160,6 +167,9 @@ DEFAULTS: dict[str, Default] = {
     "kosher-salt": Default(173468, grams_per_cup=240.0),
     "black-pepper": Default(170931),
     "ground-black-pepper": Default(170931),
+    "ground-pepper": Default(170931),
+    "fresh-cracked-black-pepper": Default(170931),
+    "fresh-ground-black-pepper": Default(170931),
     "cumin": Default(170923),
     "ground-cumin": Default(170923),
     "chili-powder": Default(171319),
@@ -170,6 +180,8 @@ DEFAULTS: dict[str, Default] = {
     "cinnamon": Default(171320),
     "ground-cinnamon": Default(171320),
     "garlic-powder": Default(171325),
+    "granulated-garlic": Default(171325),
+    "garlic-granule": Default(171325),
     "onion-powder": Default(171327),
     "dried-thyme": Default(170938),
     "dried-basil": Default(171317),
@@ -190,6 +202,7 @@ DEFAULTS: dict[str, Default] = {
     "fennel-seed": Default(171323),
     "dried-sage": Default(170935),
     "ground-sage": Default(170935),
+    "rubbed-sage": Default(170935),
     # USDA weighs a teaspoon of crumbled leaves, not a leaf. A dried bay leaf
     # is about a fifth of a gram.
     "bay-leaf": Default(170917, piece_grams=0.2),
@@ -240,10 +253,12 @@ DEFAULTS: dict[str, Default] = {
     "celery-stalk": Default(169988, piece="stalk"),
     "celery-rib": Default(169988, piece="stalk"),
     "potato": Default(170026),
+    "hash-brown": Default(170043),
     "sweet-potato": Default(168482, piece="sweetpotato"),
     "spinach": Default(168462),
     "baby-spinach": Default(168462),
     "broccoli": Default(170379),
+    "broccoli-floret": Default(170379),
     "cauliflower": Default(169986),
     "mushroom": Default(169251),
     "zucchini": Default(169291),
@@ -255,8 +270,10 @@ DEFAULTS: dict[str, Default] = {
     "kale": Default(168421),
     "corn": Default(169998),
     "corn-kernel": Default(169998),
+    "frozen-corn": Default(168398),
     "pea": Default(170419),
     "frozen-pea": Default(170016),
+    "frozen-mixed-vegetable": Default(170471),
     "green-bean": Default(169961),
     "asparagus": Default(168389),
     "eggplant": Default(169228),
@@ -292,11 +309,21 @@ DEFAULTS: dict[str, Default] = {
     "ground-chicken": Default(171116),
     "ground-beef": Default(174036),
     "lean-ground-beef": Default(174030),
+    "80-lean-ground-beef": Default(174036),
+    "85-lean-ground-beef": Default(171796),
+    "90-lean-ground-beef": Default(174030),
+    "93-lean-ground-beef": Default(173110),
+    "95-lean-ground-beef": Default(171790),
+    "97-lean-ground-beef": Default(173111),
     "ground-turkey": Default(171505),
+    "85-lean-ground-turkey": Default(174493),
+    "93-lean-ground-turkey": Default(172850),
     "ground-pork": Default(167902),
     "ground-lamb": Default(174370),
     "bacon": Default(168277, piece="slice"),
     "italian-sausage": Default(171631, piece="link"),
+    "chorizo": Default(173859),
+    "ground-chorizo": Default(173859),
     "pork-tenderloin": Default(168249),
     "pork-shoulder": Default(167843),
     "beef-chuck": Default(171206),
@@ -311,6 +338,9 @@ DEFAULTS: dict[str, Default] = {
     "rice": Default(168877),
     "white-rice": Default(168877),
     "brown-rice": Default(169703),
+    # Cooked, as some recipes measure it, is a third the food a cup of dry is.
+    "cooked-rice": Default(168878),
+    "cooked-white-rice": Default(168878),
     "pasta": Default(169736),
     "spaghetti": Default(169736),
     "penne": Default(169736),
@@ -352,6 +382,9 @@ DEFAULTS: dict[str, Default] = {
     "cashew": Default(170162),
     "pine-nut": Default(170591),
     "sesame-seed": Default(170150),
+    "flaxseed": Default(169414),
+    # USDA weighs its cup whole; ground is 7 g a tablespoon.
+    "ground-flaxseed": Default(169414, grams_per_cup=112.0),
     "coconut": Default(168586),
     "peanut-butter": Default(174266),
     # Liquids, sauces and condiments
@@ -359,15 +392,21 @@ DEFAULTS: dict[str, Default] = {
     "chicken-broth": Default(174536),
     "chicken-stock": Default(174536),
     "low-sodium-chicken-broth": Default(172888),
+    "reduced-sodium-chicken-broth": Default(172888),
     "beef-broth": Default(171538),
     "beef-stock": Default(171538),
+    "low-sodium-beef-broth": Default(172889),
+    "reduced-sodium-beef-broth": Default(172889),
     "coconut-milk": Default(170173),
     "soy-sauce": Default(174277),
     "low-sodium-soy-sauce": Default(172473),
+    "reduced-sodium-soy-sauce": Default(172473),
     "fish-sauce": Default(174531),
     "oyster-sauce": Default(174529),
     "hoisin-sauce": Default(172886),
     "worcestershire-sauce": Default(171610),
+    "worcestershire": Default(171610),
+    "horseradish": Default(173472),
     "hot-sauce": Default(174527),
     "sriracha": Default(171186),
     "ketchup": Default(168556),
@@ -375,6 +414,8 @@ DEFAULTS: dict[str, Default] = {
     "yellow-mustard": Default(172234),
     "mayonnaise": Default(171009),
     "mayo": Default(171009),
+    "light-mayonnaise": Default(173594),
+    "light-mayo": Default(173594),
     "salsa": Default(174524),
     "marinara": Default(171192),
     "marinara-sauce": Default(171192),
@@ -396,13 +437,17 @@ def default_for(key: str) -> Default | None:
 
     Walks from the whole key to shorter tails, stopping as soon as a word it
     would skip is not harmless: "extra-virgin-olive-oil" reaches "olive-oil",
-    and "almond-flour" never reaches "flour".
+    and "almond-flour" never reaches "flour". State words in front stay in
+    front, so "cooked-jasmine-rice" reaches "cooked-rice" and never "rice".
     """
     tokens = [t for t in key.split("-") if t]
+    state = []
+    while tokens and tokens[0] in STATE_WORDS:
+        state.append(tokens.pop(0))
     for start in range(len(tokens)):
         if start and tokens[start - 1] not in HARMLESS_WORDS:
             return None
-        found = DEFAULTS.get("-".join(tokens[start:]))
+        found = DEFAULTS.get("-".join([*state, *tokens[start:]]))
         if found is not None:
             return found
     return None
