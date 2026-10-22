@@ -38,6 +38,30 @@ def test_words_that_change_what_is_bought_are_never_dropped():
     )
 
 
+def test_ground_is_dropped_only_from_a_spice_sold_ground_anyway():
+    """Ground ginger is not ginger root, ground red pepper is cayenne rather
+    than a bell pepper, and ground beef is not a roast. Cumin, though, is
+    ground cumin at the shop unless the recipe says seeds."""
+    assert find(
+        [
+            *["ground-ginger", "ginger", "ground-red-pepper", "red-pepper"],
+            *["ground-mustard", "mustard", "ground-beef", "beef"],
+            *["ground-cumin", "cumin", "ground-black-pepper", "black-pepper"],
+            *["salt-and-ground-pepper", "salt-and-pepper"],
+        ]
+    ) == [
+        Pair("ground-black-pepper", "black-pepper", "describing", True),
+        Pair("ground-cumin", "cumin", "describing", True),
+        Pair("salt-and-ground-pepper", "salt-and-pepper", "describing", True),
+    ]
+
+
+def test_a_name_that_only_says_its_sauce_is_a_pair():
+    assert find(["worcestershire", "worcestershire-sauce"]) == [
+        Pair("worcestershire", "worcestershire-sauce", "synonym", False)
+    ]
+
+
 def test_spacing_alone_is_a_pair():
     assert find(["corn-starch", "cornstarch"]) == [
         Pair("corn-starch", "cornstarch", "spacing", False)
@@ -45,9 +69,9 @@ def test_spacing_alone_is_a_pair():
 
 
 def test_the_closest_general_name_wins():
-    assert find(["lean-ground-beef", "ground-beef", "beef"]) == [
-        Pair("ground-beef", "beef", "describing", True),
-        Pair("lean-ground-beef", "ground-beef", "describing", True),
+    assert find(["extra-virgin-olive-oil", "virgin-olive-oil", "olive-oil"]) == [
+        Pair("extra-virgin-olive-oil", "virgin-olive-oil", "describing", True),
+        Pair("virgin-olive-oil", "olive-oil", "describing", True),
     ]
 
 

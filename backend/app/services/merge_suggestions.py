@@ -19,11 +19,20 @@ from ..schemas import MergeReason
 # from lint's DESCRIPTORS and nutrition's HARMLESS_WORDS and cut to the ones
 # that hold at the shop as well as in the pan.
 SAME_TO_BUY = frozenset({
-    "ground", "fresh", "boneless", "skinless", "lean", "extra-lean", "organic",
+    "fresh", "boneless", "skinless", "lean", "extra-lean", "organic",
     "all", "purpose", "unbleached", "bleached", "pure", "extra", "virgin",
     "yellow", "russet", "yukon", "gold", "idaho", "roma", "plum", "vine",
     "hass", "english", "persian", "seedless", "cremini", "button", "flat",
     "leaf", "curly", "plain", "jasmine", "basmati", "long", "grain",
+})
+
+# Spices sold ground unless a recipe says seeds or sticks, so "ground" can be
+# dropped in front of these and nothing else. Elsewhere it changes what is
+# bought: ground ginger is not ginger root, ground red pepper is cayenne
+# rather than a bell pepper, and ground beef is not a roast.
+GROUND_BY_DEFAULT = frozenset({
+    "allspice", "black-pepper", "cardamom", "cayenne", "cayenne-pepper",
+    "cinnamon", "cumin", "nutmeg", "paprika", "pepper", "turmeric", "white-pepper",
 })
 
 # Words that count an ingredient rather than name it. `canonical_key` only
@@ -33,11 +42,12 @@ COUNTING = frozenset({
     "stalk", "stalks", "head", "heads",
 })
 
-# Two names for one thing that share no words.
+# Two names for one thing that no rule above connects.
 SYNONYMS = frozenset(
     frozenset(pair)
     for pair in [
         ("mayo", "mayonnaise"),
+        ("worcestershire", "worcestershire-sauce"),
         ("scallion", "green-onion"),
         ("garbanzo-bean", "chickpea"),
         ("powdered-sugar", "confectioners-sugar"),
@@ -59,7 +69,13 @@ class Pair:
 def _closest_general(key: str, keyset: set[str]) -> tuple[str, MergeReason] | None:
     """The key left by dropping the fewest describing or counting words."""
     tokens = key.split("-")
-    droppable = [i for i, t in enumerate(tokens) if t in SAME_TO_BUY or t in COUNTING]
+    droppable = [
+        i
+        for i, t in enumerate(tokens)
+        if t in SAME_TO_BUY
+        or t in COUNTING
+        or (t == "ground" and "-".join(tokens[i + 1 :]) in GROUND_BY_DEFAULT)
+    ]
     for size in range(1, len(droppable) + 1):
         for dropped in combinations(droppable, size):
             rest = [t for i, t in enumerate(tokens) if i not in dropped]
