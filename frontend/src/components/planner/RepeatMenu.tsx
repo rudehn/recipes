@@ -1,24 +1,16 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "../ui";
-import { dayName, weekdayOf } from "./plan";
-
-const WEEKDAY_NAMES = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
-const short = (weekday: number) => WEEKDAY_NAMES[weekday].slice(0, 3);
-
-const WEEKDAYS = [0, 1, 2, 3, 4];
-const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
-
-const same = (a: number[] | null, b: number[] | null) =>
-  a === b || (a !== null && b !== null && a.length === b.length && a.every((d, i) => d === b[i]));
+import {
+  EVERY_DAY,
+  WEEKDAY_NAMES,
+  dayName,
+  repeatName,
+  repeatPatterns,
+  sameWeekdays,
+  shortWeekday,
+  weekdayOf,
+} from "./plan";
 
 /**
  * The days a meal repeats on. `current` is the repeat's weekdays (0 is
@@ -49,16 +41,8 @@ export function RepeatMenu({
   const [custom, setCustom] = useState<Set<number> | null>(null);
   const since = current === null ? "" : ` from ${dayName(day)} on`;
 
-  const patterns: { name: string; weekdays: number[] | null }[] = [
-    { name: "Just this day", weekdays: null },
-    { name: `Every ${WEEKDAY_NAMES[own]}`, weekdays: [own] },
-    { name: "Weekdays", weekdays: WEEKDAYS },
-    { name: "Every day", weekdays: EVERY_DAY },
-  ];
-  const isCustom = !patterns.some((p) => same(p.weekdays, current));
-  // A custom set that is one of the patterns reads as that pattern.
-  const named = (weekdays: number[]) =>
-    patterns.find((p) => same(p.weekdays, weekdays))?.name ?? weekdays.map(short).join(", ");
+  const patterns = repeatPatterns(own);
+  const isCustom = !patterns.some((p) => sameWeekdays(p.weekdays, current));
   const view = custom === null ? "patterns" : "custom";
 
   // Whichever view is showing starts with its first choice focused.
@@ -85,14 +69,15 @@ export function RepeatMenu({
               aria-pressed={custom.has(weekday)}
               onClick={() => toggle(weekday)}
             >
-              {short(weekday)}
+              {shortWeekday(weekday)}
             </button>
           ))}
         </div>
         <p className="repeat-summary">
           {chosen.length === 0
             ? "Choose at least one day"
-            : `${named(chosen)}${since}`}
+            : // A custom set that is one of the patterns reads as that pattern.
+              `${repeatName(day, chosen)}${since}`}
         </p>
         <Button size="small" disabled={chosen.length === 0} onClick={() => onChoose(chosen)}>
           Save
@@ -130,7 +115,7 @@ export function RepeatMenu({
             key={p.name}
             type="button"
             className="repeat-choice"
-            aria-pressed={same(p.weekdays, current)}
+            aria-pressed={sameWeekdays(p.weekdays, current)}
             disabled={past}
             onClick={() => onChoose(p.weekdays)}
           >

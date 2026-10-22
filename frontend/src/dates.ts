@@ -29,6 +29,7 @@ export function isToday(d: Date): boolean {
 }
 
 const DAY_FMT = new Intl.DateTimeFormat("en-US", { weekday: "short" });
+const WEEKDAY_FMT = new Intl.DateTimeFormat("en-US", { weekday: "long" });
 const DATE_FMT = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 const RANGE_FMT = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -38,6 +39,11 @@ const RANGE_FMT = new Intl.DateTimeFormat("en-US", {
 
 export function formatDay(d: Date): string {
   return DAY_FMT.format(d);
+}
+
+/** The weekday in full: "Thursday". */
+export function formatWeekday(d: Date): string {
+  return WEEKDAY_FMT.format(d);
 }
 
 export function formatDate(d: Date): string {

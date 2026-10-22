@@ -3042,6 +3042,9 @@ body.has-install-hint .page {
   border-radius: var(--radius-md);
   /* Keeps the tinted day header inside the rounded corner. */
   overflow: hidden;
+  /* Opened at today, the day's header lands clear of the sticky topbar
+     rather than under it, as the Picks strip keeps clear of it (88px). */
+  scroll-margin-top: 88px;
 }
 
 .agenda-day > .day-head {
@@ -3104,6 +3107,279 @@ body.has-install-hint .page {
   border-radius: 0;
   min-height: 0;
   padding: 0;
+}
+
+/* ------------------------------------------ a phone's meal and its sheets --- */
+
+/*
+ * On a phone a meal is its title, labels and ↻, and the whole card is the
+ * button that opens its sheet: the button's own box is only its title, so a
+ * layer of it is stretched over the card, pills and all.
+ */
+.plan-entry.opens-sheet {
+  position: relative;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: var(--space-8) var(--space-12);
+}
+
+.plan-entry-open {
+  text-align: left;
+  font-weight: inherit;
+  hyphens: auto;
+  overflow-wrap: break-word;
+}
+
+.plan-entry-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* The card presses, not the title the button is drawn as. */
+.plan-entry-open:active { opacity: 1; }
+
+.plan-entry-open:active::after {
+  background: color-mix(in srgb, var(--green-ink) 8%, transparent);
+}
+
+.plan-entry-open:focus-visible { outline: none; }
+
+.plan-entry-open:focus-visible::after { box-shadow: var(--ring); }
+
+/* Everything a meal's menu and stepper did, in one place: a row per thing,
+   its name on the left, as a settings list reads. */
+.meal-sheet {
+  /* The names' column, which a note under a row lines up with too. */
+  --meal-sheet-key: 72px;
+  display: flex;
+  flex-direction: column;
+}
+
+.meal-sheet-title {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 0.2em;
+  overflow-wrap: break-word;
+  padding-bottom: var(--space-12);
+}
+
+.meal-sheet-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-8) var(--space-12);
+  min-height: calc(var(--tap) + var(--space-12));
+  padding-block: var(--space-6);
+  border-top: 1px solid var(--line-soft);
+}
+
+.meal-sheet-key {
+  flex: 0 0 var(--meal-sheet-key);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--muted);
+}
+
+/* The figure keeps to the right edge, as in a cell. */
+.meal-sheet-row .plan-cost { margin-left: auto; }
+
+.meal-sheet .serv {
+  gap: var(--space-12);
+  font-size: var(--text-md);
+}
+
+.meal-sheet .serv button {
+  width: var(--tap);
+  height: var(--tap);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-lg);
+}
+
+.meal-sheet .serv span {
+  min-width: 3ch;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Its name sits level with the first line of chips, not halfway down them. */
+.meal-sheet-for { align-items: flex-start; }
+
+.meal-sheet-for .meal-sheet-key { line-height: 36px; }
+
+/* The chips wrap under one another beside their name, rather than under it. */
+.meal-sheet-labels {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.meal-sheet-labels .tag-pill {
+  min-height: 36px;
+  padding: var(--space-4) var(--space-12);
+  font-size: var(--text-sm);
+}
+
+.meal-sheet-new {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.meal-sheet-naming {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.meal-sheet-naming input {
+  width: 160px;
+  min-height: 36px;
+  padding-block: var(--space-4);
+  border-radius: var(--radius-pill);
+}
+
+.meal-sheet-error {
+  font-size: var(--text-xs);
+  color: var(--danger);
+}
+
+/* A row that is a button: the whole width opens the days to repeat on. */
+.meal-sheet-repeat {
+  width: 100%;
+  flex-wrap: nowrap;
+  text-align: left;
+}
+
+.meal-sheet-value {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+}
+
+.meal-sheet-chevron {
+  color: var(--muted);
+  font-size: var(--text-lg);
+}
+
+.meal-sheet-repeat[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.meal-sheet-repeat[aria-disabled="true"] .meal-sheet-value,
+.meal-sheet-repeat[aria-disabled="true"] .meal-sheet-chevron { color: var(--muted); }
+
+.meal-sheet-note {
+  margin: calc(var(--space-4) * -1) 0 var(--space-8) calc(var(--meal-sheet-key) + var(--space-12));
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.meal-sheet-remove {
+  display: flex;
+  padding-top: var(--space-12);
+  border-top: 1px solid var(--line-soft);
+}
+
+.meal-sheet-remove .btn,
+.place-sheet-actions .btn {
+  flex: 1;
+  justify-content: center;
+}
+
+.meal-sheet-back { margin-top: var(--space-12); }
+
+/* The Picks panel as a sheet: the sheet is already its surface and border.
+   It keeps one height while a search narrows, like the recipe picker. */
+.modal:has(.picks-sheet-body) { height: min(88vh, 640px); }
+
+.picks-sheet-body .picks-panel {
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+/* Where a pick goes: seven days and four meals, each a chip, one of each
+   chosen. */
+.place-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.place-sheet-key {
+  margin: var(--space-8) 0 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--muted);
+}
+
+.place-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.place-meals {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+}
+
+.place-chip {
+  min-height: var(--tap);
+  padding: var(--space-6) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.place-chip[aria-pressed="true"] {
+  background: var(--selected);
+  border-color: var(--selected);
+  color: var(--selected-ink);
+}
+
+.place-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 56px;
+}
+
+.place-day-date {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  opacity: 0.75;
+}
+
+.place-sheet-error {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--danger);
+}
+
+.place-sheet-actions {
+  display: flex;
+  margin-top: var(--space-12);
 }
 
 /* ---------- Modal ---------- */
@@ -5223,6 +5499,19 @@ body.has-install-hint .page {
   }
 
   .agenda-meal .meal-label { padding-top: 0; }
+
+  /* No Picks strip beside the week: the Picks button in the header opens
+     them in a sheet instead (see PlannerPage). */
+  .planner-body { grid-template-columns: minmax(0, 1fr); }
+
+  /* The filter's chips run to the screen's edges as they scroll, rather than
+     being cut off at the page's margin, and start and end in line with it. */
+  .label-filter-chips {
+    max-width: calc(100% + 2 * var(--space-16));
+    margin-inline: calc(-1 * var(--space-16));
+    padding-inline: var(--space-16);
+    scrollbar-width: none;
+  }
 
   /* -------------------------------------------------------- groceries --- */
 

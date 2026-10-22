@@ -50,8 +50,12 @@ export function PicksPanel({
   meals: PlannedMeal[];
   placing: Placing | null;
   onPlacing: (placing: Placing | null) => void;
-  /** Starts dragging a recipe onto the plan, or ends the drag with null. */
-  onDrag: (placing: Placing | null) => void;
+  /**
+   * Starts dragging a recipe onto the plan, or ends the drag with null. Left
+   * out where nothing is dragged (a phone's sheet, over the plan it would be
+   * dropped on), and the rows are then only pressed.
+   */
+  onDrag?: (placing: Placing | null) => void;
 }) {
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
   const [draft, setDraft] = useState("");
@@ -86,10 +90,11 @@ export function PicksPanel({
   const choosing = (r: RecipeSummary) => placing?.kind === "recipe" && placing.recipe.id === r.id;
   const press = (r: RecipeSummary) => onPlacing(choosing(r) ? null : { kind: "recipe", recipe: r });
   // A row is dragged whole, from its picture, title or button alike.
-  const dragRow = (r: RecipeSummary) => ({
-    draggable: true,
-    onDragStart: (event: DragEvent) => startDrag(event, { kind: "recipe", recipe: r }, onDrag),
-  });
+  const dragRow = (r: RecipeSummary) =>
+    onDrag && {
+      draggable: true,
+      onDragStart: (event: DragEvent) => startDrag(event, { kind: "recipe", recipe: r }, onDrag),
+    };
 
   async function add(recipe: RecipeSummary) {
     let saved: PlanPick | undefined;

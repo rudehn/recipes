@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type PlannedMeal } from "../api";
+import { api, type PlannedMeal, type RecipeSummary } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
+import { MealSheet } from "../components/planner/MealSheet";
 import { PicksPanel } from "../components/planner/PicksPanel";
+import { PlaceSheet } from "../components/planner/PlaceSheet";
 import { WeekGrid } from "../components/planner/WeekGrid";
 import { LabelFilterBar } from "../components/planner/LabelFilter";
 import {
@@ -18,6 +21,7 @@ import {
   type ChangeTarget,
   type Costs,
   type LabelFilter,
+  type MealChange,
 } from "../components/planner/plan";
 import {
   copies,
@@ -29,8 +33,8 @@ import {
 } from "../components/planner/placing";
 import { usePlannedServings } from "../components/planner/usePlannedServings";
 import { RecipePickerModal } from "../components/RecipeBits";
-import { Banner, Button, LinkButton, PageHead } from "../components/ui";
-import { PICKS_PANEL, WEEK_GRID, below } from "../layout";
+import { Banner, Button, LinkButton, Modal, PageHead } from "../components/ui";
+import { PHONE, PICKS_PANEL, WEEK_GRID, below } from "../layout";
 import { useAction } from "../useAction";
 import { useLoad } from "../useLoad";
 import { useMediaQuery } from "../useMediaQuery";
@@ -238,35 +242,51 @@ export default function PlannerPage() {
     if (await action.run(write)) reload();
   }
 
-  async function setLabels(target: ChangeTarget, labelIds: number[]) {
+  /**
+   * Changes a meal's servings, labels or both in one write, which is how a
+   * phone's meal sheet sends what it collected. Answers whether it went
+   * through.
+   */
+  async function changeMeal(
+    target: ChangeTarget,
+    { servings, labelIds }: MealChange,
+  ): Promise<boolean> {
+    const fields = {
+      ...(servings !== undefined && { servings }),
+      ...(labelIds !== undefined && { label_ids: labelIds }),
+    };
+    // The counts beside the labels are asked for again after a label change.
+    const labelled = () => labelIds !== undefined && reloadLabels();
     if (target.length === 2) {
       const [meal, scope] = target;
-      if (
-        await action.run(() =>
-          api.changeRepeatDay(meal.repeat.id, meal.plan_date, { scope, label_ids: labelIds }),
-        )
-      ) {
+      const ok = await action.run(() =>
+        api.changeRepeatDay(meal.repeat.id, meal.plan_date, { scope, ...fields }),
+      );
+      if (ok) {
         reload();
-        reloadLabels();
+        labelled();
       }
-      return;
+      return ok;
     }
     const [meal] = target;
-    if (meal.entry_id === null) return;
+    if (meal.entry_id === null) return false;
     const entryId = meal.entry_id;
     let saved: PlannedMeal | undefined;
     const ok = await action.run(async () => {
-      saved = await api.updateMealPlanEntry(entryId, { label_ids: labelIds });
+      saved = await api.updateMealPlanEntry(entryId, fields);
     });
-    // The saved entry in place of the loaded one, and the counts beside the
-    // labels are asked for again.
+    // The saved entry in place of the loaded one.
     if (ok && saved) {
       setEntries((prev) => prev?.map((e) => (e.key === saved!.key ? saved! : e)) ?? prev);
-      reloadLabels();
+      labelled();
     } else {
       reload();
     }
+    return ok;
   }
+
+  const setLabels = (target: ChangeTarget, labelIds: number[]) =>
+    void changeMeal(target, { labelIds });
 
   /**
    * A one-off starts repeating from its day; a repeat's days change from this
@@ -314,6 +334,44 @@ export default function PlannerPage() {
   const picksDock = useRef<HTMLDivElement>(null);
   const picksId = useId();
   const overlaid = folded && picksOpen;
+
+  /*
+   * A phone has room for neither the strip (56px of a 375px screen, with its
+   * gap) nor a meal's controls on the meal. The picks open in a sheet from a
+   * button instead, and a meal opens a sheet of its own controls.
+   */
+  const phone = useMediaQuery(below(PHONE));
+  const [picksSheet, setPicksSheet] = useState(false);
+  // The pick being placed from the Picks sheet.
+  const [toPlace, setToPlace] = useState<RecipeSummary | null>(null);
+  // The meal whose sheet is open, by key, so the sheet shows each change to
+  // it as it lands, and goes once the meal does.
+  const [sheetKey, setSheetKey] = useState<string | null>(null);
+  const sheetMeal =
+    phone && sheetKey !== null
+      ? (shown(entries ?? []).find((e) => e.key === sheetKey) ?? null)
+      : null;
+
+  /**
+   * A pick chosen in the Picks sheet is placed from a sheet of its own. The
+   * Picks sheet is taken down first, handing focus back to its button, so
+   * the next one hands it back there too rather than to a row now gone.
+   */
+  function choosePick(next: Placing | null) {
+    if (next?.kind !== "recipe") return;
+    flushSync(() => setPicksSheet(false));
+    setToPlace(next.recipe);
+  }
+
+  async function placePick(cell: CellRef) {
+    if (!toPlace) return false;
+    const ok = await addMeal(cell, toPlace.id);
+    if (ok) {
+      setToPlace(null);
+      reload();
+    }
+    return ok;
+  }
 
   /** Starts or stops placing; a folded panel is put away so every cell can be chosen. */
   function choosePlacing(next: Placing | null) {
@@ -413,6 +471,11 @@ export default function PlannerPage() {
               Next →
             </Button>
           </div>
+          {phone && (
+            <Button size="small" onClick={() => setPicksSheet(true)}>
+              Picks
+            </Button>
+          )}
           <LinkButton
             variant="primary"
             size="small"
@@ -465,36 +528,42 @@ export default function PlannerPage() {
           unless the page has nothing and no prospect of any. */}
       {!(error && entries === null) && (
         <div
-          className={["planner-body", folded && "picks-collapsed", dragging && "dragging"]
+          className={[
+            "planner-body",
+            folded && !phone && "picks-collapsed",
+            dragging && "dragging",
+          ]
             .filter(Boolean)
             .join(" ")}
         >
-          <div className="picks-dock" ref={picksDock}>
-            {folded && (
-              <button
-                type="button"
-                className="picks-toggle"
-                aria-expanded={picksOpen}
-                aria-controls={picksId}
-                onClick={() => setPicksOpen((open) => !open)}
-              >
-                Picks
-              </button>
-            )}
-            {/* Kept while folded away, so a search there is still there
-                when it opens again. */}
-            <div className="picks-sheet" id={picksId} hidden={folded && !picksOpen}>
-              <PicksPanel
-                week={week}
-                // Only the week's own meals: the last week's stay up while
-                // this one loads, and say nothing about this week's picks.
-                meals={loadedWeek === week ? (entries ?? []) : []}
-                placing={placing}
-                onPlacing={choosePlacing}
-                onDrag={drag}
-              />
+          {!phone && (
+            <div className="picks-dock" ref={picksDock}>
+              {folded && (
+                <button
+                  type="button"
+                  className="picks-toggle"
+                  aria-expanded={picksOpen}
+                  aria-controls={picksId}
+                  onClick={() => setPicksOpen((open) => !open)}
+                >
+                  Picks
+                </button>
+              )}
+              {/* Kept while folded away, so a search there is still there
+                  when it opens again. */}
+              <div className="picks-sheet" id={picksId} hidden={folded && !picksOpen}>
+                <PicksPanel
+                  week={week}
+                  // Only the week's own meals: the last week's stay up while
+                  // this one loads, and say nothing about this week's picks.
+                  meals={loadedWeek === week ? (entries ?? []) : []}
+                  placing={placing}
+                  onPlacing={choosePlacing}
+                  onDrag={drag}
+                />
+              </div>
             </div>
-          </div>
+          )}
           {agenda ? (
             <DayAgenda
               loadedWeek={loadedWeek}
@@ -516,6 +585,7 @@ export default function PlannerPage() {
               onSetLabels={setLabels}
               onRepeat={repeat}
               onCreateLabel={createLabel}
+              onOpen={phone ? (meal) => setSheetKey(meal.key) : undefined}
             />
           ) : (
             <WeekGrid
@@ -551,6 +621,45 @@ export default function PlannerPage() {
             Cancel
           </Button>
         </div>
+      )}
+
+      {sheetMeal && (
+        <MealSheet
+          key={sheetMeal.key}
+          meal={sheetMeal}
+          cost={costs.entries.get(sheetMeal.key)}
+          labels={labels ?? []}
+          onCreateLabel={createLabel}
+          onStepServings={servings.step}
+          onChange={changeMeal}
+          onRemove={removeEntry}
+          onRepeat={repeat}
+          onClose={() => setSheetKey(null)}
+        />
+      )}
+
+      {phone && picksSheet && (
+        <Modal title="Picks" onClose={() => setPicksSheet(false)}>
+          <div className="modal-body picks-sheet-body">
+            <PicksPanel
+              week={week}
+              meals={loadedWeek === week ? (entries ?? []) : []}
+              placing={null}
+              onPlacing={choosePick}
+            />
+          </div>
+        </Modal>
+      )}
+
+      {phone && toPlace && (
+        <PlaceSheet
+          key={toPlace.id}
+          recipe={toPlace}
+          days={days}
+          error={action.error}
+          onPlace={placePick}
+          onClose={() => setToPlace(null)}
+        />
       )}
 
       {picker && (

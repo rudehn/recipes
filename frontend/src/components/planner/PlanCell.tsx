@@ -27,6 +27,7 @@ import {
  */
 export function PlanCell({
   className,
+  onOpen,
   target,
   drop,
   onDrag,
@@ -56,6 +57,12 @@ export function PlanCell({
   drop: CellDrop | null;
   /** Starts dragging one of the cell's meals, or ends the drag with null. */
   onDrag: (placing: Placing | null) => void;
+  /**
+   * Where a meal's controls are kept in a sheet of their own rather than on
+   * it (a phone): opens that sheet. The meal is then its title, labels and
+   * ↻ only, and a press anywhere on it is this.
+   */
+  onOpen?: (meal: PlannedMeal) => void;
 } & EntryActions) {
   // Whether what is dragged is over this cell. Let go of as soon as there is
   // no drag, so a drag that ended without leaving the cell leaves no mark.
@@ -102,6 +109,36 @@ export function PlanCell({
       {entries.map((e) => {
         const servings = e.servings ?? e.recipe.servings;
         const cost = costs.get(e.key);
+        const classes = ["plan-entry", e.repeat && "repeated", dimmed.has(e.key) && "dimmed"]
+          .filter(Boolean)
+          .join(" ");
+        // Drawn lighter, and marked: the routine, so the meals chosen for this
+        // week stand out from it. Inside the title's first line rather than a
+        // column beside it, which would take its width from every line of a
+        // title with little to spare.
+        const mark = e.repeat && (
+          <span className="repeat-mark" role="img" aria-label="Repeats">
+            ↻
+          </span>
+        );
+        if (onOpen) {
+          // Not dragged: a phone has no drag to place with, and a press on
+          // the meal is for its sheet.
+          return (
+            <div key={e.key} className={`${classes} opens-sheet`}>
+              <button
+                type="button"
+                className="plan-entry-open"
+                aria-haspopup="dialog"
+                onClick={() => onOpen(e)}
+              >
+                {mark}
+                <span>{e.recipe.title}</span>
+              </button>
+              <LabelPills labels={e.labels} />
+            </div>
+          );
+        }
         return (
           <div
             key={e.key}
@@ -122,27 +159,13 @@ export function PlanCell({
               if (event.target !== event.currentTarget) return;
               startDrag(event, { kind: "meal", meal: e, copy: false }, onDrag);
             }}
-            className={[
-              "plan-entry",
-              e.repeat && "repeated",
-              dimmed.has(e.key) && "dimmed",
-            ]
-              .filter(Boolean)
-              .join(" ")}
+            className={classes}
           >
             <div className="plan-entry-main">
               {/* Not a drag of its own: a link dragged is its address,
                   which a drop elsewhere would open. The card is dragged. */}
               <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
-                {/* Drawn lighter, and marked: the routine, so the meals chosen
-                    for this week stand out from it. Inside the title's first
-                    line rather than a column beside it, which would take its
-                    width from every line of a title with little to spare. */}
-                {e.repeat && (
-                  <span className="repeat-mark" role="img" aria-label="Repeats">
-                    ↻
-                  </span>
-                )}
+                {mark}
                 <span>{e.recipe.title}</span>
               </Link>
               <MealMenu

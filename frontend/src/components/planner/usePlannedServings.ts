@@ -7,7 +7,7 @@ import type { Action } from "../../useAction";
  * A count as it is stored. The recipe's own count is null, so a later edit to
  * the recipe flows through to the meals planned from it.
  */
-const asStored = (meal: PlannedMeal, count: number) =>
+export const asStored = (meal: PlannedMeal, count: number) =>
   count === meal.recipe.servings ? null : count;
 
 /** How long a repeated meal's taps must rest before they are asked about. */

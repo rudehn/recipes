@@ -78,6 +78,46 @@ export const isPast = (iso: string, today: Date = new Date()) =>
 /** A day's weekday as a repeat counts them: 0 is Monday, 6 is Sunday. */
 export const weekdayOf = (iso: string) => (fromISODate(iso).getDay() + 6) % 7;
 
+/** The weekdays' names, in a repeat's order: Monday is 0. */
+export const WEEKDAY_NAMES = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+/** A weekday in three letters: "Wed". */
+export const shortWeekday = (weekday: number) => WEEKDAY_NAMES[weekday].slice(0, 3);
+
+const WEEKDAYS = [0, 1, 2, 3, 4];
+export const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+
+/** Whether two sets of weekdays (or two nulls, for no repeat) are the same. */
+export const sameWeekdays = (a: number[] | null, b: number[] | null) =>
+  a === b || (a !== null && b !== null && a.length === b.length && a.every((d, i) => d === b[i]));
+
+/** The named choices for a meal on `own` weekday, in the Repeat menu's order. */
+export const repeatPatterns = (own: number): { name: string; weekdays: number[] | null }[] => [
+  { name: "Just this day", weekdays: null },
+  { name: `Every ${WEEKDAY_NAMES[own]}`, weekdays: [own] },
+  { name: "Weekdays", weekdays: WEEKDAYS },
+  { name: "Every day", weekdays: EVERY_DAY },
+];
+
+/**
+ * What a meal on `day` repeating on `weekdays` (null for not at all) is
+ * called: one of the Repeat menu's choices, or the days themselves in short.
+ */
+export function repeatName(day: string, weekdays: number[] | null): string {
+  return (
+    repeatPatterns(weekdayOf(day)).find((p) => sameWeekdays(p.weekdays, weekdays))?.name ??
+    (weekdays ?? []).map(shortWeekday).join(", ")
+  );
+}
+
 /** A day the way a repeat's choices name it: "Wed, Oct 28". */
 export const dayName = (iso: string) => {
   const d = fromISODate(iso);
@@ -102,6 +142,15 @@ export function changeTarget(meal: PlannedMeal, scope?: Scope): ChangeTarget {
     throw new Error(`A change to a repeated meal needs a scope (${meal.key}).`);
   }
   return [{ ...meal, repeat: meal.repeat }, scope];
+}
+
+/**
+ * A change to a meal made in one write: its servings (null for the recipe's
+ * own count) and its labels, whichever of the two is given.
+ */
+export interface MealChange {
+  servings?: number | null;
+  labelIds?: number[];
 }
 
 /**

@@ -1,10 +1,13 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal, RecipeSummary } from "../api";
 import { PLACING_TYPE } from "../components/planner/placing";
 import { SETTLE_MS } from "../components/planner/usePlannedServings";
-import { PICKS_PANEL, WEEK_GRID } from "../layout";
+import { PHONE, PICKS_PANEL, WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
 import { plannedMeal, page, planCost, recipeSummary } from "../test/fixtures";
 import { renderApp } from "../test/render";
@@ -606,7 +609,8 @@ describe("PlannerPage", () => {
       expect(document.querySelector(".plan-entry")).not.toBeNull();
 
       // A failed servings write asks for the same week again.
-      await user.click(screen.getAllByRole("button", { name: "More servings" })[0]);
+      await user.click(screen.getByRole("button", { name: "Weeknight chicken curry" }));
+      await user.click(await screen.findByRole("button", { name: "More servings" }));
       await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
       release();
       await screen.findByText("Server Error");
@@ -641,6 +645,424 @@ describe("PlannerPage", () => {
 
       expect(document.querySelector(".week-grid")).not.toBeNull();
       expect(document.querySelector(".day-agenda")).toBeNull();
+    });
+
+    /*
+     * On a phone a meal in the list is its title, its labels and its ↻, and
+     * a tap opens a sheet holding everything else: the stepper and the menu
+     * took a third of a 375px card for the few times they are wanted.
+     */
+    describe("on a phone", () => {
+      const dad = { id: 1, name: "Dad" };
+      const kids = { id: 2, name: "Kids" };
+      const curry = recipeSummary({ id: 5, title: "Weeknight chicken curry", servings: 4 });
+      const labelRows = [
+        { ...dad, meals: 1 },
+        { ...kids, meals: 0 },
+      ];
+
+      /** A day of repeat 1, every day, with no row of its own. */
+      const repeatDay = (day: string) =>
+        plannedMeal({
+          entry_id: null,
+          key: `r1-${day}`,
+          plan_date: day,
+          recipe: curry,
+          repeat: { id: 1, weekdays: [0, 1, 2, 3, 4, 5, 6], starts_on: "2026-07-20", ends_on: null },
+        });
+
+      const sheet = (name: string) => screen.findByRole("dialog", { name });
+
+      it("opens a meal's sheet with its servings, labels, repeat and remove", async () => {
+        setViewportWidth(375);
+        const meal = plannedMeal({
+          entry_id: 3,
+          plan_date: "2026-07-30",
+          recipe: curry,
+          labels: [dad],
+        });
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [meal],
+          "GET /api/meal-plan/cost": planCost({
+            entries: [{ key: "e3", total: 6.2, priced: 9, total_lines: 9 }],
+          }),
+          "PATCH /api/meal-plan/:id": (req: MockRequest) => ({ ...meal, ...(req.body as object) }),
+          "DELETE /api/meal-plan/:id": undefined,
+        });
+        const { user } = renderApp("/planner");
+
+        // The list has the title and the labels, and no controls of the meal's own.
+        const open = await screen.findByRole("button", { name: "Weeknight chicken curry" });
+        const card = open.closest<HTMLElement>(".plan-entry")!;
+        expect(within(card).getByText("Dad")).toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: "More servings" })).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /^Actions for/ })).not.toBeInTheDocument();
+
+        await user.click(open);
+        const dialog = await sheet("Thursday dinner");
+        expect(within(dialog).getByRole("link", { name: "Weeknight chicken curry" })).toHaveAttribute(
+          "href",
+          "/recipes/5",
+        );
+        expect(
+          await within(dialog).findByRole("img", { name: "$6.20, 9 of 9 ingredients priced" }),
+        ).toBeInTheDocument();
+        expect(within(dialog).getByRole("button", { name: /^Repeat/ })).toHaveTextContent(
+          "Just this day",
+        );
+        expect(within(dialog).getByRole("button", { name: "Remove from Thursday" })).toBeVisible();
+
+        // A one-off's servings save as they are tapped, as in a cell.
+        await user.click(within(dialog).getByRole("button", { name: "More servings" }));
+        expect(within(dialog).getByText("×5")).toBeInTheDocument();
+        await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({ servings: 5 });
+
+        // Its labels are one write, when the sheet closes.
+        const forRow = within(dialog).getByRole("group", { name: "For" });
+        expect(within(forRow).getByRole("button", { name: "Dad" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await user.click(within(forRow).getByRole("button", { name: "Kids" }));
+        await user.click(within(forRow).getByRole("button", { name: "Dad" }));
+        await user.click(within(forRow).getByRole("button", { name: "Dad" }));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1);
+        await user.click(within(dialog).getByRole("button", { name: "Close" }));
+
+        await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(2));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")[1].body).toEqual({
+          label_ids: [1, 2],
+        });
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+        await user.click(screen.getByRole("button", { name: "Weeknight chicken curry" }));
+        await user.click(
+          within(await sheet("Thursday dinner")).getByRole("button", {
+            name: "Remove from Thursday",
+          }),
+        );
+        await waitFor(() => expect(backend.requestsTo("DELETE /api/meal-plan/:id")).toHaveLength(1));
+        expect(backend.requestsTo("DELETE /api/meal-plan/:id")[0].path).toBe("/api/meal-plan/3");
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("makes a label from the sheet and puts it on the meal", async () => {
+        setViewportWidth(375);
+        const meal = plannedMeal({ entry_id: 3, plan_date: "2026-07-30", recipe: curry });
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "POST /api/labels": { id: 9, name: "Guests" },
+          "GET /api/meal-plan": [meal],
+          "PATCH /api/meal-plan/:id": (req: MockRequest) => ({ ...meal, ...(req.body as object) }),
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(await screen.findByRole("button", { name: "Weeknight chicken curry" }));
+        const dialog = await sheet("Thursday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "+ New" }));
+        // Escape here only puts the field away, and leaves the sheet open.
+        await user.keyboard("{Escape}");
+        expect(dialog).toBeInTheDocument();
+        await user.click(within(dialog).getByRole("button", { name: "+ New" }));
+        await user.type(within(dialog).getByRole("textbox", { name: "New label" }), "Guests{Enter}");
+
+        expect(
+          await within(dialog).findByRole("button", { name: "Guests", pressed: true }),
+        ).toBeInTheDocument();
+        expect(backend.requestsTo("POST /api/labels")[0].body).toEqual({ name: "Guests" });
+        await user.click(within(dialog).getByRole("button", { name: "Close" }));
+        await waitFor(() => expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(1));
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")[0].body).toEqual({ label_ids: [9] });
+      });
+
+      it("labels a repeated meal from the sheet with one question when it closes", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+          "PATCH /api/meal-plan/:id": undefined,
+        });
+        const { user } = renderApp("/planner");
+
+        // In the list, its ↻ and title.
+        const open = await screen.findByRole("button", { name: /Weeknight chicken curry$/ });
+        expect(within(open).getByRole("img", { name: "Repeats" })).toHaveTextContent("↻");
+        await user.click(open);
+        const dialog = await sheet("Thursday dinner");
+        expect(within(dialog).getByRole("button", { name: /^Repeat/ })).toHaveTextContent(
+          "Every day",
+        );
+        await user.click(within(dialog).getByRole("button", { name: "More servings" }));
+        await user.click(within(dialog).getByRole("button", { name: "More servings" }));
+        await user.click(within(dialog).getByRole("button", { name: "Dad" }));
+        await user.click(within(dialog).getByRole("button", { name: "Kids" }));
+        expect(within(dialog).getByText("×6")).toBeInTheDocument();
+        // Changing the days waits for these to be saved, since it is a change
+        // of its own from this day on.
+        expect(within(dialog).getByRole("button", { name: /^Repeat/ })).toHaveAttribute(
+          "aria-disabled",
+          "true",
+        );
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+
+        await user.click(within(dialog).getByRole("button", { name: "Close" }));
+        expect(
+          within(dialog).getByRole("group", { name: "Which days get these changes?" }),
+        ).toBeInTheDocument();
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+        await user.click(within(dialog).getByRole("button", { name: "From Thu, Jul 30 on" }));
+
+        await waitFor(() =>
+          expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(1),
+        );
+        const [request] = backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day");
+        expect(request.path).toBe("/api/meal-plan/repeats/1/days/2026-07-30");
+        expect(request.body).toEqual({
+          scope: "from",
+          servings: 6,
+          label_ids: [1, 2],
+          today: "2026-07-29",
+        });
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("closes a repeated meal's sheet without a question when nothing changed", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/labels": labelRows,
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(
+          await screen.findByRole("button", { name: /Weeknight chicken curry$/ }),
+        );
+        const dialog = await sheet("Thursday dinner");
+        // A count stepped and back, and a label ticked and unticked, is no change.
+        await user.click(within(dialog).getByRole("button", { name: "More servings" }));
+        await user.click(within(dialog).getByRole("button", { name: "Fewer servings" }));
+        await user.click(within(dialog).getByRole("button", { name: "Kids" }));
+        await user.click(within(dialog).getByRole("button", { name: "Kids" }));
+        await user.keyboard("{Escape}");
+
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+      });
+
+      it("asks which days a repeated meal is removed from, and Cancel keeps it", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "DELETE /api/meal-plan/repeats/:id/days/:day": undefined,
+          "DELETE /api/meal-plan/:id": undefined,
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(
+          await screen.findByRole("button", { name: /Weeknight chicken curry$/ }),
+        );
+        const dialog = await sheet("Thursday dinner");
+        await user.click(within(dialog).getByRole("button", { name: "Remove from Thursday" }));
+        await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+        // Back on the sheet, with nothing removed.
+        expect(within(dialog).getByRole("button", { name: "Remove from Thursday" })).toBeVisible();
+
+        await user.click(within(dialog).getByRole("button", { name: "Remove from Thursday" }));
+        await user.click(within(dialog).getByRole("button", { name: "Just this day" }));
+
+        await waitFor(() =>
+          expect(backend.requestsTo("DELETE /api/meal-plan/repeats/:id/days/:day")).toHaveLength(
+            1,
+          ),
+        );
+        const [request] = backend.requestsTo("DELETE /api/meal-plan/repeats/:id/days/:day");
+        expect(request.path).toBe("/api/meal-plan/repeats/1/days/2026-07-30");
+        expect(request.searchParams.get("scope")).toBe("day");
+        expect(backend.requestsTo("DELETE /api/meal-plan/:id")).toHaveLength(0);
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("repeats a meal from its sheet, and not on a day that has passed", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/meal-plan": [
+            plannedMeal({ entry_id: 3, plan_date: "2026-07-30", recipe: curry }),
+            plannedMeal({
+              entry_id: 4,
+              plan_date: "2026-07-27",
+              recipe: recipeSummary({ id: 6, title: "Banana bread" }),
+            }),
+          ],
+          "POST /api/meal-plan/:id/repeat": {
+            id: 1,
+            weekdays: [3],
+            starts_on: "2026-07-30",
+            ends_on: null,
+          },
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(await screen.findByRole("button", { name: "Banana bread" }));
+        let dialog = await sheet("Monday dinner");
+        const past = within(dialog).getByRole("button", { name: /^Repeat/ });
+        expect(past).toHaveAttribute("aria-disabled", "true");
+        await user.click(past);
+        expect(within(dialog).queryByRole("button", { name: /^Every/ })).not.toBeInTheDocument();
+        await user.click(within(dialog).getByRole("button", { name: "Close" }));
+
+        await user.click(screen.getByRole("button", { name: "Weeknight chicken curry" }));
+        dialog = await sheet("Thursday dinner");
+        await user.click(within(dialog).getByRole("button", { name: /^Repeat/ }));
+        await user.click(within(dialog).getByRole("button", { name: "Every Thursday" }));
+
+        await waitFor(() =>
+          expect(backend.requestsTo("POST /api/meal-plan/:id/repeat")).toHaveLength(1),
+        );
+        expect(backend.requestsTo("POST /api/meal-plan/:id/repeat")[0].path).toBe(
+          "/api/meal-plan/3/repeat",
+        );
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      });
+
+      it("places a pick on a day and meal from the picks sheet", async () => {
+        setViewportWidth(375);
+        const backend = mockBackend({
+          "GET /api/labels": [{ ...kids, meals: 0 }],
+          "GET /api/meal-plan": [],
+          "GET /api/meal-plan/picks": [{ id: 105, week_start: "2026-07-27", recipe: curry }],
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner?label=2");
+        await screen.findByText("Jul 27 – Aug 2, 2026");
+
+        // A button, not the strip's toggle: no strip to open beside the week.
+        const open = screen.getByRole("button", { name: "Picks" });
+        expect(open).not.toHaveAttribute("aria-expanded");
+        await user.click(open);
+        const picks = await sheet("Picks");
+        await user.click(
+          await within(picks).findByRole("button", { name: /^Weeknight chicken curry/ }),
+        );
+
+        const place = await sheet("Place Weeknight chicken curry");
+        const day = within(place).getByRole("group", { name: "Day" });
+        expect(within(day).getAllByRole("button").map((b) => b.textContent?.[0])).toEqual([
+          "M",
+          "T",
+          "W",
+          "T",
+          "F",
+          "S",
+          "S",
+        ]);
+        // Today, in this week, and dinner.
+        expect(within(day).getByRole("button", { name: "Wednesday, Jul 29" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        const meal = within(place).getByRole("group", { name: "Meal" });
+        expect(within(meal).getByRole("button", { name: "Dinner" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+
+        await user.click(within(day).getByRole("button", { name: "Friday, Jul 31" }));
+        await user.click(within(meal).getByRole("button", { name: "Lunch" }));
+        expect(within(day).getByRole("button", { name: "Wednesday, Jul 29" })).toHaveAttribute(
+          "aria-pressed",
+          "false",
+        );
+        await user.click(within(place).getByRole("button", { name: "Place" }));
+
+        await waitFor(() => expect(backend.requestsTo("POST /api/meal-plan")).toHaveLength(1));
+        expect(backend.requestsTo("POST /api/meal-plan")[0].body).toEqual({
+          plan_date: "2026-07-31",
+          meal: "lunch",
+          recipe_id: 5,
+          label_ids: [2],
+        });
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+        await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
+      });
+
+      it("chooses no day for a pick in a week without today", async () => {
+        setViewportWidth(375);
+        mockBackend({
+          "GET /api/meal-plan": [],
+          "GET /api/meal-plan/picks": [{ id: 105, week_start: "2026-08-03", recipe: curry }],
+        });
+        const { user } = renderApp("/planner");
+        await user.click(await screen.findByRole("button", { name: "Next week" }));
+        await screen.findByText("Aug 3 – Aug 9, 2026");
+
+        await user.click(screen.getByRole("button", { name: "Picks" }));
+        await user.click(
+          await within(await sheet("Picks")).findByRole("button", {
+            name: /^Weeknight chicken curry/,
+          }),
+        );
+        const place = await sheet("Place Weeknight chicken curry");
+        expect(within(place).queryByRole("button", { pressed: true, name: /day,/ })).toBeNull();
+        expect(within(place).getByRole("button", { name: "Place" })).toBeDisabled();
+        await user.click(within(place).getByRole("button", { name: "Tuesday, Aug 4" }));
+        expect(within(place).getByRole("button", { name: "Place" })).toBeEnabled();
+      });
+
+      it("keeps the label filter's row from widening the page at 375px", async () => {
+        // jsdom lays nothing out, so this holds the stylesheet's half of the
+        // bargain: the chips' row is what scrolls, sideways, and no chip in
+        // it gives up its width or wraps to push the page out instead.
+        setViewportWidth(375);
+        const style = document.createElement("style");
+        style.textContent = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+        document.head.append(style);
+        try {
+          const many = ["Dad", "Mom", "Kids", "Meal prep", "Packed lunches", "Guests"];
+          mockBackend({
+            "GET /api/labels": many.map((name, i) => ({ id: i + 1, name, meals: 0 })),
+            "GET /api/meal-plan": [],
+          });
+          renderApp("/planner?label=6");
+
+          const row = await screen.findByRole("group", { name: "Show meals for" });
+          await within(row).findByRole("button", { name: "Guests", pressed: true });
+          expect(within(row).getAllByRole("button")).toHaveLength(7);
+          expect(getComputedStyle(row).overflowX).toBe("auto");
+          expect(getComputedStyle(row).maxWidth).toBe("100%");
+          for (const chip of within(row).getAllByRole("button")) {
+            expect(getComputedStyle(chip).flex).toMatch(/^(none|0 0 auto)$/);
+            expect(getComputedStyle(chip).whiteSpace).toBe("nowrap");
+          }
+        } finally {
+          style.remove();
+        }
+      });
+    });
+
+    /* A tablet's agenda has the room the phone does not, and keeps each
+       meal's own controls and the Picks strip beside the week. */
+    it("keeps the meals' own controls and the Picks strip above a phone's width", async () => {
+      setViewportWidth(PHONE + 1);
+      mockBackend({
+        "GET /api/meal-plan": [plannedMeal({ entry_id: 3, plan_date: "2026-07-30" })],
+      });
+      renderApp("/planner");
+
+      expect(await screen.findByRole("button", { name: "More servings" })).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "Actions for Weeknight chicken curry" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Weeknight chicken curry" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Picks" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(document.querySelector(".day-agenda")).not.toBeNull();
     });
   });
 
@@ -853,7 +1275,7 @@ describe("PlannerPage", () => {
           entries: [{ key: "e3", total: 6.2, priced: 9, total_lines: 11 }],
         }),
       });
-      renderApp("/planner");
+      const { user } = renderApp("/planner");
 
       // Wednesday, the third card, and today.
       await screen.findByText("Weeknight chicken curry");
@@ -865,9 +1287,11 @@ describe("PlannerPage", () => {
         }),
       ).toBeInTheDocument();
       expect(within(head).getByText("Today")).toBeVisible();
-      const meal = wednesday.querySelector<HTMLElement>(".plan-entry")!;
+      // On a phone the meal's own figure is in its sheet, beside its servings.
+      await user.click(within(wednesday).getByRole("button", { name: "Weeknight chicken curry" }));
+      const sheet = await screen.findByRole("dialog", { name: "Wednesday dinner" });
       expect(
-        within(meal).getByRole("img", { name: "at least $6.20, 9 of 11 ingredients priced" }),
+        within(sheet).getByRole("img", { name: "at least $6.20, 9 of 11 ingredients priced" }),
       ).toBeInTheDocument();
     });
   });
@@ -1611,8 +2035,8 @@ describe("PlannerPage", () => {
       expect(screen.queryByRole("button", { name: "Picks" })).not.toBeInTheDocument();
     });
 
-    it("keeps picks within reach over the agenda", async () => {
-      setViewportWidth(375);
+    it("keeps picks within reach over a tablet's agenda", async () => {
+      setViewportWidth(PHONE + 1);
       const backend = mockBackend({
         "GET /api/meal-plan": [],
         "GET /api/meal-plan/picks": [pick(curry)],

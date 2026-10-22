@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import type { PlannedMeal } from "../../api";
 import { formatDate, formatDay, isToday, toISODate } from "../../dates";
 import { PlanCell } from "./PlanCell";
 import { PlanFigure } from "./PlanFigure";
@@ -33,9 +34,12 @@ export function DayAgenda({
   onDrag,
   onDrop,
   loadedWeek,
+  onOpen,
 }: LayoutProps & {
   /** The Monday (ISO) of the week whose meals were last loaded, if any. */
   loadedWeek: string | null;
+  /** Opens a meal's sheet, where its controls are kept off the list (a phone). */
+  onOpen?: (meal: PlannedMeal) => void;
 }) {
   // Set on today's card when the shown week has one.
   const todayCard = useRef<HTMLElement>(null);
@@ -88,6 +92,7 @@ export function DayAgenda({
                   target={cellTarget(placing, { date: iso, meal }, onPlace)}
                   drop={cellDrop(dragging, { date: iso, meal }, onDrop)}
                   onDrag={onDrag}
+                  onOpen={onOpen}
                   onRemove={onRemove}
                   onChangeServings={onChangeServings}
                   onAnswerServings={onAnswerServings}
