@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { api, type PlannedMeal, type Scope } from "../../api";
 import type { Action } from "../../useAction";
+import { classify } from "./plan";
 
 /**
  * A count as it is stored. The recipe's own count is null, so a later edit to
@@ -152,16 +153,15 @@ export function usePlannedServings(
     const base =
       stepped.current.get(meal.key) ?? meal.servings ?? meal.recipe.servings;
     if (base == null) return;
-    if (meal.repeat !== null) {
+    const known = classify(meal);
+    if (known.repeat !== null) {
       if (!stepped.current.has(meal.key)) before.current.set(meal.key, meal.servings);
       set(meal.key, Math.max(1, base + delta));
       settle(meal);
       return;
     }
-    // A one-off meal is always a stored row.
-    if (meal.entry_id === null) return;
     set(meal.key, Math.max(1, base + delta));
-    if (!saving.current.has(meal.key)) void save(meal, meal.entry_id);
+    if (!saving.current.has(meal.key)) void save(meal, known.entry_id);
   }
 
   /**

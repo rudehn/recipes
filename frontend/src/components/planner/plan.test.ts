@@ -7,6 +7,7 @@ import {
   byCell,
   cellKey,
   changeTarget,
+  classify,
   filterFromParams,
   isPast,
   labelsForNew,
@@ -124,5 +125,22 @@ describe("changeTarget", () => {
   it("refuses a repeated meal with no scope, rather than choosing one for it", () => {
     const meal = plannedMeal({ entry_id: null, key: "r1-2026-07-27", repeat });
     expect(() => changeTarget(meal)).toThrow(/needs a scope/);
+  });
+});
+
+describe("classify", () => {
+  it("answers a one-off with its row, and a repeated meal as it is", () => {
+    const oneOff = plannedMeal({ entry_id: 3 });
+    const repeated = plannedMeal({
+      entry_id: null,
+      key: "r1-2026-07-27",
+      repeat: { id: 1, weekdays: [0], starts_on: "2026-07-27", ends_on: null },
+    });
+    expect(classify(oneOff)).toEqual(oneOff);
+    expect(classify(repeated)).toEqual(repeated);
+  });
+
+  it("refuses a one-off with no row, which the server never answers", () => {
+    expect(() => classify(plannedMeal({ entry_id: null, key: "x" }))).toThrow(/is always a row/);
   });
 });

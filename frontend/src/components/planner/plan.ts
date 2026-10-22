@@ -124,8 +124,22 @@ export const dayName = (iso: string) => {
   return `${formatDay(d)}, ${formatDate(d)}`;
 };
 
-export type OneOffMeal = PlannedMeal & { repeat: null };
+/** A meal planned once, which is always a row of its own. */
+export type OneOffMeal = PlannedMeal & { repeat: null; entry_id: number };
+/** A day of a repeat; a day changed on its own also has a row. */
 export type RepeatedMeal = PlannedMeal & { repeat: Repeat };
+
+/**
+ * A meal as what it is, a one-off or a day of a repeat, for the code that
+ * treats the two apart. A one-off without a row is a mistake, and throws.
+ */
+export function classify(meal: PlannedMeal): OneOffMeal | RepeatedMeal {
+  if (meal.repeat !== null) return { ...meal, repeat: meal.repeat };
+  if (meal.entry_id === null) {
+    throw new Error(`A one-off meal is always a row (${meal.key}).`);
+  }
+  return { ...meal, repeat: null, entry_id: meal.entry_id };
+}
 
 /**
  * A meal, and which of its days a change to it covers. A one-off has only its
@@ -137,11 +151,12 @@ export type ChangeTarget = [meal: OneOffMeal] | [meal: RepeatedMeal, scope: Scop
 
 /** The target of a change to `meal`; a repeated meal without a scope is a mistake, and throws. */
 export function changeTarget(meal: PlannedMeal, scope?: Scope): ChangeTarget {
-  if (meal.repeat === null) return [{ ...meal, repeat: null }];
+  const known = classify(meal);
+  if (known.repeat === null) return [known];
   if (scope === undefined) {
     throw new Error(`A change to a repeated meal needs a scope (${meal.key}).`);
   }
-  return [{ ...meal, repeat: meal.repeat }, scope];
+  return [known, scope];
 }
 
 /**

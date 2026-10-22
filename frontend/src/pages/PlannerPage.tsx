@@ -13,6 +13,7 @@ import { LabelFilterBar } from "../components/planner/LabelFilter";
 import {
   EVERYTHING,
   byCell,
+  classify,
   filterFromParams,
   labelsForNew,
   money,
@@ -208,15 +209,10 @@ export default function PlannerPage() {
       const copy = { servings: meal.servings, labelIds: meal.labels.map((l) => l.id) };
       return written(await addMeal(cell, meal.recipe.id, copy));
     }
-    let write: () => Promise<unknown>;
-    if (meal.repeat) {
-      const repeatId = meal.repeat.id;
-      write = () => api.moveRepeatDay(repeatId, meal.plan_date, cell.date, cell.meal);
-    } else {
-      const entryId = meal.entry_id;
-      if (entryId === null) return false;
-      write = () => api.updateMealPlanEntry(entryId, { plan_date: cell.date, meal: cell.meal });
-    }
+    const known = classify(meal);
+    const write = known.repeat
+      ? () => api.moveRepeatDay(known.repeat.id, known.plan_date, cell.date, cell.meal)
+      : () => api.updateMealPlanEntry(known.entry_id, { plan_date: cell.date, meal: cell.meal });
     return written(await action.run(write));
   }
 
@@ -240,15 +236,10 @@ export default function PlannerPage() {
    */
 
   async function removeEntry(target: ChangeTarget) {
-    let write: () => Promise<void>;
-    if (target.length === 2) {
-      const [meal, scope] = target;
-      write = () => api.removeRepeatDay(meal.repeat.id, meal.plan_date, scope);
-    } else {
-      const [{ entry_id }] = target;
-      if (entry_id === null) return;
-      write = () => api.deleteMealPlanEntry(entry_id);
-    }
+    const write =
+      target.length === 2
+        ? () => api.removeRepeatDay(target[0].repeat.id, target[0].plan_date, target[1])
+        : () => api.deleteMealPlanEntry(target[0].entry_id);
     if (await action.run(write)) reload();
   }
 
@@ -278,12 +269,10 @@ export default function PlannerPage() {
       }
       return ok;
     }
-    const [meal] = target;
-    if (meal.entry_id === null) return false;
-    const entryId = meal.entry_id;
+    const [{ entry_id }] = target;
     let saved: PlannedMeal | undefined;
     const ok = await action.run(async () => {
-      saved = await api.updateMealPlanEntry(entryId, fields);
+      saved = await api.updateMealPlanEntry(entry_id, fields);
     });
     // The saved entry in place of the loaded one.
     if (ok && saved) {
@@ -306,17 +295,18 @@ export default function PlannerPage() {
   async function repeat(meal: PlannedMeal, weekdays: number[] | null) {
     const current = meal.repeat?.weekdays ?? null;
     if (weekdays === null ? current === null : current?.join() === weekdays.join()) return;
+    const known = classify(meal);
     let write: () => Promise<unknown>;
-    if (!meal.repeat) {
-      if (meal.entry_id === null || weekdays === null) return;
-      const entryId = meal.entry_id;
-      write = () => api.startRepeat(entryId, weekdays);
+    if (!known.repeat) {
+      // Just this day on a one-off is what it already is, caught above.
+      if (weekdays === null) return;
+      write = () => api.startRepeat(known.entry_id, weekdays);
     } else {
-      const repeatId = meal.repeat.id;
+      const repeatId = known.repeat.id;
       write =
         weekdays === null
-          ? () => api.stopRepeat(repeatId, meal.plan_date)
-          : () => api.changeRepeatDay(repeatId, meal.plan_date, { scope: "from", weekdays });
+          ? () => api.stopRepeat(repeatId, known.plan_date)
+          : () => api.changeRepeatDay(repeatId, known.plan_date, { scope: "from", weekdays });
     }
     if (await action.run(write)) reload();
   }
