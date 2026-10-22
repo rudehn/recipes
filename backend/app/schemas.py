@@ -229,6 +229,37 @@ class StartRepeat(BaseModel):
     today: date
 
 
+class RepeatDayChange(BaseModel):
+    """A change to a repeated meal on one day, or from that day on.
+
+    A field left out stays as it is; null servings are the recipe's own
+    count. The days change only from a day on, since a single date has no
+    weekdays to change.
+    """
+
+    scope: Literal["day", "from"]
+    # The owner's today: a change from a day on is refused for a past day.
+    today: date
+    servings: int | None = Field(default=None, ge=1)
+    weekdays: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _days_change_from_a_day_on(self):
+        if self.scope == "day" and "weekdays" in self.model_fields_set:
+            raise ValueError("The days of a repeat change from a day on, not for one day.")
+        return self
+
+
+class StopRepeat(BaseModel):
+    # The owner's today: a repeat is not stopped on a day that has passed.
+    today: date
+
+
+class MoveRepeatDay(BaseModel):
+    plan_date: date
+    meal: Meal
+
+
 class PlannedMealOut(BaseModel):
     """A meal on the plan, named by `key` for as long as it is shown.
 

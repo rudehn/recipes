@@ -4,8 +4,15 @@ Repeats are expanded when the plan is read, so the list, the grocery list,
 the cost and the "cooked" ordering must all see the same days.
 """
 
+from datetime import date
+
+from sqlalchemy import select
 from test_meal_plan_and_grocery import grocery, make_recipe
 from test_plan_reads import plan
+
+from app.db import session_factory
+from app.models import MealPlanEntry, MealRepeat, MealRepeatSkip
+from app.services.plan import last_planned, planned_meals
 
 
 async def oats(client, ingredients=()):
@@ -128,3 +135,364 @@ async def test_deleting_a_recipe_takes_its_repeats_with_it(client):
     resp = await client.get("/api/recipes", params={"sort": "cooked", "today": "2026-11-30"})
     assert resp.status_code == 200
     assert [r["id"] for r in resp.json()["items"]] == [keep]
+
+
+# Changing a repeat. The owner's today is a Wednesday; the repeat under change
+# is oats for breakfast every day from the Monday after.
+
+TODAY = "2026-10-21"
+EVERY_DAY = [0, 1, 2, 3, 4, 5, 6]
+
+
+async def repeat_oats(client, starts_on="2026-10-26", weekdays=EVERY_DAY, today=TODAY):
+    entry = await plan(client, starts_on, "breakfast", await oats(client))
+    resp = await start_repeat(client, entry["entry_id"], weekdays, today)
+    assert resp.status_code == 201, resp.text
+    return resp.json()["id"]
+
+
+def day_url(repeat_id, day):
+    return f"/api/meal-plan/repeats/{repeat_id}/days/{day}"
+
+
+async def change_day(client, repeat_id, day, today=TODAY, **fields):
+    return await client.patch(
+        day_url(repeat_id, day), json={"scope": "day", "today": today, **fields}
+    )
+
+
+async def change_from(client, repeat_id, day, today=TODAY, **fields):
+    return await client.patch(
+        day_url(repeat_id, day), json={"scope": "from", "today": today, **fields}
+    )
+
+
+async def remove(client, repeat_id, day, scope, today=TODAY):
+    return await client.delete(
+        day_url(repeat_id, day), params={"scope": scope, "today": today}
+    )
+
+
+async def stop(client, repeat_id, day, today=TODAY):
+    return await client.post(f"{day_url(repeat_id, day)}/stop", json={"today": today})
+
+
+async def move(client, repeat_id, day, plan_date, meal):
+    return await client.post(
+        f"{day_url(repeat_id, day)}/move", json={"plan_date": plan_date, "meal": meal}
+    )
+
+
+async def servings_by_day(client, start, end):
+    return [(m["plan_date"], m["servings"]) for m in await listed(client, start, end)]
+
+
+async def ok(resp, status=204):
+    assert resp.status_code == status, resp.text
+    return resp
+
+
+async def test_the_owners_example_mon_wed_fri_from_next_wednesday(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-28", weekdays=[0, 2, 4], today=TODAY))
+    assert await planned_dates(client, "2026-10-26", "2026-11-01") == [
+        "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-30"]
+    assert await planned_dates(client, "2026-11-02", "2026-11-08") == [
+        "2026-11-02", "2026-11-04", "2026-11-06"]
+
+
+async def test_just_this_day_removal_leaves_the_rest(client):
+    rid = await repeat_oats(client)
+    await ok(await remove(client, rid, "2026-10-28", "day"))
+    assert await planned_dates(client, "2026-10-26", "2026-10-30") == [
+        "2026-10-26", "2026-10-27", "2026-10-29", "2026-10-30"]
+    # The week after is whole: only that one date changed.
+    assert len(await planned_dates(client, "2026-11-02", "2026-11-08")) == 7
+
+
+async def test_just_this_day_servings_override_only_that_day(client):
+    rid = await repeat_oats(client)
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    meals = await listed(client, "2026-10-27", "2026-10-29")
+    assert [m["servings"] for m in meals] == [None, 3, None]
+    tue, wed, thu = meals
+    assert wed["entry_id"] is not None
+    assert wed["key"] == f"e{wed['entry_id']}"
+    assert wed["repeat"]["id"] == rid
+    assert (tue["entry_id"], thu["entry_id"]) == (None, None)
+
+    # A second change edits the same day's meal rather than adding one, and
+    # leaving servings out leaves them as they are.
+    await ok(await change_day(client, rid, "2026-10-28", servings=4))
+    await ok(await change_day(client, rid, "2026-10-28"))
+    (wed,) = await listed(client, "2026-10-28", "2026-10-28")
+    assert wed["servings"] == 4
+    # Null is the recipe's own count, which is a change of its own.
+    await ok(await change_day(client, rid, "2026-10-28", servings=None))
+    (wed,) = await listed(client, "2026-10-28", "2026-10-28")
+    assert (wed["servings"], wed["repeat"]["id"]) == (None, rid)
+
+
+async def test_from_this_day_on_replaces_earlier_one_day_changes(client):
+    rid = await repeat_oats(client)
+    await ok(await remove(client, rid, "2026-10-29", "day"))
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    await ok(await change_from(client, rid, "2026-10-26", servings=2))
+    meals = await listed(client, "2026-10-26", "2026-11-01")
+    assert [(m["plan_date"], m["servings"]) for m in meals] == [
+        (f"2026-10-{d}", 2) for d in range(26, 32)] + [("2026-11-01", 2)]
+    assert all(m["entry_id"] is None for m in meals)
+
+
+async def test_from_this_day_on_keeps_the_one_day_changes_before_it(client):
+    rid = await repeat_oats(client)
+    await ok(await remove(client, rid, "2026-10-27", "day"))
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    await ok(await change_day(client, rid, "2026-10-30", servings=5))
+    await ok(await change_from(client, rid, "2026-10-29", servings=2))
+    assert await servings_by_day(client, "2026-10-26", "2026-11-01") == [
+        ("2026-10-26", None), ("2026-10-28", 3), ("2026-10-29", 2), ("2026-10-30", 2),
+        ("2026-10-31", 2), ("2026-11-01", 2)]
+
+
+async def test_from_its_first_day_a_repeat_changes_in_place(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-26", weekdays=[0]))
+    meals = await listed(client, "2026-10-26", "2026-11-08")
+    assert [(m["plan_date"], m["repeat"]["id"]) for m in meals] == [
+        ("2026-10-26", rid), ("2026-11-02", rid)]
+
+
+async def test_from_this_day_on_changes_only_what_it_is_given(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-26", servings=3))
+    # Days only: the servings carry over to the new part.
+    await ok(await change_from(client, rid, "2026-10-28", weekdays=[2, 4]))
+    assert await servings_by_day(client, "2026-10-26", "2026-11-01") == [
+        ("2026-10-26", 3), ("2026-10-27", 3), ("2026-10-28", 3), ("2026-10-30", 3)]
+    (wed, _) = await listed(client, "2026-10-28", "2026-10-30")
+    # Null servings go back to the recipe's own count; the days stay.
+    await ok(await change_from(client, wed["repeat"]["id"], "2026-10-30", servings=None))
+    assert await servings_by_day(client, "2026-10-28", "2026-11-08") == [
+        ("2026-10-28", 3), ("2026-10-30", None), ("2026-11-04", None), ("2026-11-06", None)]
+
+
+async def test_a_moved_day_stays_where_it_was_put(client):
+    rid = await repeat_oats(client)
+    await ok(await change_day(client, rid, "2026-10-29", servings=4))
+    moved = await ok(await move(client, rid, "2026-10-29", "2026-10-31", "lunch"), 200)
+    assert moved.json()["repeat"] is None
+    assert (moved.json()["plan_date"], moved.json()["meal"]) == ("2026-10-31", "lunch")
+    assert "2026-10-29" not in await planned_dates(client, "2026-10-26", "2026-11-01")
+
+    await ok(await change_from(client, rid, "2026-10-26", servings=2))
+    meals = await listed(client, "2026-10-29", "2026-10-31")
+    by_place = {(m["plan_date"], m["meal"]): m for m in meals}
+    lunch = by_place[("2026-10-31", "lunch")]
+    assert (lunch["entry_id"], lunch["servings"], lunch["repeat"]) == (
+        moved.json()["entry_id"], 4, None)
+    thu = by_place[("2026-10-29", "breakfast")]
+    assert (thu["servings"], thu["repeat"]["id"]) == (2, rid)
+
+
+async def test_a_day_moves_with_the_repeats_servings(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-26", servings=2))
+    moved = await ok(await move(client, rid, "2026-10-27", "2026-10-27", "dinner"), 200)
+    assert (moved.json()["servings"], moved.json()["repeat"]) == (2, None)
+    meals = await listed(client, "2026-10-27", "2026-10-27")
+    assert [(m["meal"], m["repeat"] is None) for m in meals] == [("dinner", True)]
+
+
+async def test_two_splits_on_one_repeat(client):
+    # Review Focus 3: a change from Friday on, then a change from the
+    # Wednesday before it. The Wednesday change covers both parts.
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-30", servings=3))
+    await ok(await change_from(client, rid, "2026-10-28", weekdays=[0, 2, 4]))
+    assert await servings_by_day(client, "2026-10-26", "2026-11-01") == [
+        ("2026-10-26", None), ("2026-10-27", None), ("2026-10-28", None), ("2026-10-30", 3)]
+    assert await servings_by_day(client, "2026-11-02", "2026-11-08") == [
+        ("2026-11-02", 3), ("2026-11-04", 3), ("2026-11-06", 3)]
+    # Nothing before Wednesday moved: Monday and Tuesday are the first part's,
+    # which still begins on its own day.
+    mon, tue = await listed(client, "2026-10-26", "2026-10-27")
+    assert mon["repeat"] == tue["repeat"]
+    assert (mon["repeat"]["id"], mon["repeat"]["starts_on"], mon["repeat"]["ends_on"]) == (
+        rid, "2026-10-26", "2026-10-27")
+
+
+async def test_removing_from_a_day_takes_the_later_parts_with_it(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-30", servings=3))
+    await ok(await remove(client, rid, "2026-10-28", "from"))
+    assert await planned_dates(client, "2026-10-26", "2026-11-30") == [
+        "2026-10-26", "2026-10-27"]
+
+
+async def test_from_this_day_on_is_refused_for_a_past_day(client):
+    rid = await repeat_oats(client, starts_on="2026-10-19", today="2026-10-19")
+    before = await listed(client, "2026-10-19", "2026-10-25")
+
+    resp = await change_from(client, rid, "2026-10-20", servings=2, today="2026-10-21")
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "That day has passed."
+    assert (await remove(client, rid, "2026-10-20", "from", today="2026-10-21")).status_code == 422
+    assert (await stop(client, rid, "2026-10-20", today="2026-10-21")).status_code == 422
+    assert await listed(client, "2026-10-19", "2026-10-25") == before
+
+    # Today itself is not past.
+    await ok(await change_from(client, rid, "2026-10-21", servings=2, today="2026-10-21"))
+
+
+async def test_just_this_day_still_works_on_a_past_day(client):
+    rid = await repeat_oats(client, starts_on="2026-10-19", today="2026-10-19")
+    await ok(await change_day(client, rid, "2026-10-19", servings=3, today="2026-10-21"))
+    await ok(await remove(client, rid, "2026-10-20", "day", today="2026-10-21"))
+    moved = await move(client, rid, "2026-10-21", "2026-10-20", "dinner")
+    await ok(moved, 200)
+    assert await servings_by_day(client, "2026-10-19", "2026-10-22") == [
+        ("2026-10-19", 3), ("2026-10-20", None), ("2026-10-22", None)]
+    assert [m["meal"] for m in await listed(client, "2026-10-20", "2026-10-20")] == ["dinner"]
+
+
+async def test_stop_after_keeps_the_day_as_a_one_off(client):
+    rid = await repeat_oats(client)
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    await ok(await change_from(client, rid, "2026-10-30", servings=2))
+
+    resp = await ok(await stop(client, rid, "2026-10-28"), 200)
+    kept = resp.json()
+    assert (kept["plan_date"], kept["meal"], kept["servings"], kept["repeat"]) == (
+        "2026-10-28", "breakfast", 3, None)
+
+    meals = await listed(client, "2026-10-26", "2026-11-30")
+    assert [(m["plan_date"], m["repeat"] and m["repeat"]["id"]) for m in meals] == [
+        ("2026-10-26", rid), ("2026-10-27", rid), ("2026-10-28", None)]
+    assert meals[2]["entry_id"] == kept["entry_id"]
+
+
+async def test_stopping_on_a_plain_day_keeps_the_repeats_servings(client):
+    rid = await repeat_oats(client)
+    await ok(await change_from(client, rid, "2026-10-26", servings=2))
+    kept = (await ok(await stop(client, rid, "2026-10-27"), 200)).json()
+    assert (kept["servings"], kept["repeat"]) == (2, None)
+    assert await planned_dates(client, "2026-10-26", "2026-11-30") == [
+        "2026-10-26", "2026-10-27"]
+
+
+async def test_removing_from_the_first_day_deletes_the_repeat(client):
+    rid = await repeat_oats(client)
+    await ok(await remove(client, rid, "2026-10-26", "from"))
+    assert await listed(client, "2026-10-19", "2026-11-30") == []
+    # The repeat is gone, not just empty.
+    assert (await change_day(client, rid, "2026-10-27", servings=2)).status_code == 404
+    async with session_factory() as session:
+        assert (await session.execute(select(MealRepeat))).scalars().all() == []
+
+
+async def test_stopping_on_the_first_day_leaves_only_that_day(client):
+    rid = await repeat_oats(client)
+    kept = (await ok(await stop(client, rid, "2026-10-26"), 200)).json()
+    meals = await listed(client, "2026-10-19", "2026-11-30")
+    assert [(m["plan_date"], m["entry_id"], m["repeat"]) for m in meals] == [
+        ("2026-10-26", kept["entry_id"], None)]
+
+
+async def test_a_day_the_repeat_does_not_have_is_404(client):
+    rid = await repeat_oats(client, weekdays=[0, 2])  # Mondays and Wednesdays
+    await ok(await remove(client, rid, "2026-11-02", "day"))
+    await ok(await remove(client, rid, "2026-11-09", "from"))
+    missing = [
+        "2026-10-19",  # a Monday before it starts
+        "2026-10-27",  # a Tuesday
+        "2026-11-02",  # removed for just that day
+        "2026-11-09",  # after it ends
+    ]
+    for day in missing:
+        for resp in (
+            await change_day(client, rid, day, servings=2),
+            await change_from(client, rid, day, servings=2),
+            await remove(client, rid, day, "day"),
+            await remove(client, rid, day, "from"),
+            await stop(client, rid, day),
+            await move(client, rid, day, "2026-10-31", "lunch"),
+        ):
+            assert resp.status_code == 404, (day, resp.request.method, resp.text)
+    assert (await change_day(client, 9999, "2026-10-26", servings=2)).status_code == 404
+    assert await planned_dates(client, "2026-10-19", "2026-11-15") == [
+        "2026-10-26", "2026-10-28", "2026-11-04"]
+
+
+async def test_days_change_only_from_a_day_on(client):
+    rid = await repeat_oats(client)
+    resp = await change_day(client, rid, "2026-10-28", weekdays=[0])
+    assert resp.status_code == 422
+    for weekdays in ([], [7]):
+        resp = await change_from(client, rid, "2026-10-28", weekdays=weekdays)
+        assert resp.status_code == 422
+    assert (await change_from(client, rid, "2026-10-28", servings=0)).status_code == 422
+    assert (await remove(client, rid, "2026-10-28", "week")).status_code == 422
+    assert len(await planned_dates(client, "2026-10-26", "2026-11-01")) == 7
+
+
+async def test_a_repeat_ends_on_its_last_day_included(client):
+    rid = await repeat_oats(client)
+    await ok(await remove(client, rid, "2026-11-03", "from"))  # ends Mon 11-02
+    await ok(await change_from(client, rid, "2026-10-30", servings=2))  # first part ends Thu
+    meals = await listed(client, "2026-10-26", "2026-11-30")
+    assert [m["plan_date"] for m in meals] == [
+        "2026-10-26", "2026-10-27", "2026-10-28", "2026-10-29",
+        "2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02"]
+    thu, fri = meals[3], meals[4]
+    assert (thu["repeat"]["id"], thu["repeat"]["ends_on"], thu["servings"]) == (
+        rid, "2026-10-29", None)
+    assert (fri["repeat"]["starts_on"], fri["repeat"]["ends_on"], fri["servings"]) == (
+        "2026-10-30", "2026-11-02", 2)
+
+    recipe = thu["recipe"]["id"]
+    async with session_factory() as session:
+        last_day = await planned_meals(session, date(2026, 11, 2), date(2026, 11, 2))
+        assert [m.plan_date for m in last_day] == [date(2026, 11, 2)]
+        assert (await last_planned(session, date(2026, 12, 1)))[recipe] == date(2026, 11, 2)
+        assert (await last_planned(session, date(2026, 11, 2)))[recipe] == date(2026, 11, 2)
+
+
+async def test_a_changed_day_cannot_start_a_repeat_of_its_own(client):
+    rid = await repeat_oats(client)
+    await ok(await change_day(client, rid, "2026-10-28", servings=3))
+    (wed,) = await listed(client, "2026-10-28", "2026-10-28")
+    resp = await start_repeat(client, wed["entry_id"], [2], TODAY)
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "This meal already repeats."
+
+
+async def test_a_repeat_may_leave_out_its_own_first_day(client):
+    entry = await plan(client, "2026-10-27", "dinner", await oats(client))  # a Tuesday
+    resp = await start_repeat(client, entry["entry_id"], [0], TODAY)
+    assert resp.status_code == 201, resp.text
+    assert await planned_dates(client, "2026-10-26", "2026-11-08") == ["2026-11-02"]
+
+
+async def test_deleting_a_recipe_takes_its_repeats_changes_with_it(client):
+    rid = await repeat_oats(client)
+    recipe = (await listed(client, "2026-10-26", "2026-10-26"))[0]["recipe"]["id"]
+    await ok(await change_day(client, rid, "2026-10-27", servings=3))
+    await ok(await remove(client, rid, "2026-10-28", "day"))
+    await ok(await change_from(client, rid, "2026-10-30", servings=2))
+    (mon,) = await listed(client, "2026-11-02", "2026-11-02")
+    part = mon["repeat"]["id"]  # what the change from Friday split off
+    await ok(await change_day(client, part, "2026-11-02", servings=4))
+    await ok(await remove(client, part, "2026-11-03", "day"))
+    keep = (await make_recipe(client, "Toast", []))["id"]
+    toast = await plan(client, "2026-10-27", "lunch", keep)
+
+    assert (await client.delete(f"/api/recipes/{recipe}")).status_code == 204
+
+    meals = await listed(client, "2026-10-19", "2026-11-30")
+    assert [m["entry_id"] for m in meals] == [toast["entry_id"]]
+    async with session_factory() as session:
+        assert (await session.execute(select(MealRepeat))).scalars().all() == []
+        assert (await session.execute(select(MealRepeatSkip))).scalars().all() == []
+        entries = (await session.execute(select(MealPlanEntry))).scalars().all()
+        assert [e.id for e in entries] == [toast["entry_id"]]

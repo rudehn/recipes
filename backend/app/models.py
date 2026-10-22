@@ -217,6 +217,13 @@ class MealRepeat(Base):
     starts_on: Mapped[date] = mapped_column(Date)
     # Inclusive; null means it goes on.
     ends_on: Mapped[date | None] = mapped_column(Date)
+    # A change "from this day on" ends a repeat and carries it on in a new
+    # row; every row after the first names the first here, so a later change
+    # from an earlier day can find the rows that come after it. Null on the
+    # first row.
+    origin_id: Mapped[int | None] = mapped_column(
+        ForeignKey("meal_repeats.id", ondelete="CASCADE"), index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     recipe: Mapped[Recipe] = relationship(lazy="selectin")
