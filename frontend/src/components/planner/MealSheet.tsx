@@ -63,6 +63,7 @@ export function MealSheet({
   const [view, setView] = useState<View>("meal");
   const body = useRef<HTMLDivElement>(null);
   const forId = useId();
+  const noteId = useId();
   const repeated = meal.repeat !== null;
   const past = isPast(meal.plan_date);
   const weekday = formatWeekday(fromISODate(meal.plan_date));
@@ -210,6 +211,7 @@ export function MealSheet({
               className="meal-sheet-row meal-sheet-repeat"
               data-opens="repeat"
               aria-disabled={repeatBlocked !== null}
+              aria-describedby={repeatBlocked ? noteId : undefined}
               onClick={() => repeatBlocked === null && setView("repeat")}
             >
               <span className="meal-sheet-key">Repeat</span>
@@ -226,7 +228,7 @@ export function MealSheet({
               </span>
             </button>
             {repeatBlocked && (
-              <p className="meal-sheet-note">
+              <p className="meal-sheet-note" id={noteId}>
                 {repeatBlocked === "waiting"
                   ? "Close to save the changes above, then change its days."
                   : repeatBlocked}

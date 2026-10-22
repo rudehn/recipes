@@ -5,7 +5,7 @@ import { formatDate, formatDay, isToday, toISODate } from "../../dates";
 import { PlanCell } from "./PlanCell";
 import { PlanFigure } from "./PlanFigure";
 import { MEALS, cellKey, priced, type LayoutProps } from "./plan";
-import { cellDrop, cellTarget } from "./placing";
+import { cellDrop, cellTarget, type CellRef } from "./placing";
 
 /**
  * The same week as a stack of days, each listing its four meals.
@@ -35,14 +35,20 @@ export function DayAgenda({
   onDrop,
   loadedWeek,
   onOpen,
+  reveal = null,
 }: LayoutProps & {
   /** The Monday (ISO) of the week whose meals were last loaded, if any. */
   loadedWeek: string | null;
   /** Opens a meal's sheet, where its controls are kept off the list (a phone). */
   onOpen?: (meal: PlannedMeal) => void;
+  /**
+   * Where something was just put from a sheet, whose day is scrolled to.
+   * Each placing is a new one, so placing on the same day twice scrolls twice.
+   */
+  reveal?: CellRef | null;
 }) {
-  // Set on today's card when the shown week has one.
-  const todayCard = useRef<HTMLElement>(null);
+  // Each shown day's card, by its ISO date.
+  const cards = useRef(new Map<string, HTMLElement>());
   const weekOf = toISODate(days[0]);
   const scrolledFor = useRef<string | null>(null);
   // A phone's week opens at today, not at Monday: the days before it are
@@ -57,8 +63,14 @@ export function DayAgenda({
   useEffect(() => {
     if (loadedWeek !== weekOf || scrolledFor.current === weekOf) return;
     scrolledFor.current = weekOf;
-    todayCard.current?.scrollIntoView({ block: "start" });
+    cards.current.get(toISODate(new Date()))?.scrollIntoView({ block: "start" });
   }, [weekOf, loadedWeek]);
+
+  // A pick placed from the Picks sheet often lands days below the button
+  // that opened it, out of sight, where it would look as if nothing happened.
+  useEffect(() => {
+    if (reveal) cards.current.get(reveal.date)?.scrollIntoView({ block: "start" });
+  }, [reveal]);
 
   return (
     <div className="day-agenda">
@@ -69,7 +81,10 @@ export function DayAgenda({
         return (
           <section
             key={iso}
-            ref={today ? todayCard : undefined}
+            ref={(card) => {
+              if (card) cards.current.set(iso, card);
+              else cards.current.delete(iso);
+            }}
             className={`agenda-day${today ? " today" : ""}`}
           >
             <h2 className="day-head">

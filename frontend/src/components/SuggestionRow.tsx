@@ -1,9 +1,8 @@
 import type { ReactNode } from "react";
 
 import type { MergeSuggestion } from "../api";
+import { capitalized } from "../text";
 import { Button } from "./ui";
-
-const capitalized = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /**
  * A suggested merge, put as a question with its two answers.

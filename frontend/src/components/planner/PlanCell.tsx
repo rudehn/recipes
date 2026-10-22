@@ -16,6 +16,30 @@ import {
 } from "./placing";
 
 /**
+ * A meal's title, after its ↻ if it repeats.
+ *
+ * The mark is a box of its own (so a link's underline passes it by, and a
+ * screen reader hears "Repeats" as a word), and a line may break after a box.
+ * In a narrow card that left the ↻ alone on a line above the title, so the
+ * title starts with a word joiner, which holds the two together; the title is
+ * its own element inside, so it is still found by its words alone.
+ */
+function MealTitle({ meal }: { meal: PlannedMeal }) {
+  if (!meal.repeat) return <span>{meal.recipe.title}</span>;
+  return (
+    <>
+      <span className="repeat-mark" role="img" aria-label="Repeats">
+        ↻
+      </span>
+      <span>
+        {"\u2060"}
+        <span>{meal.recipe.title}</span>
+      </span>
+    </>
+  );
+}
+
+/**
  * One day's one meal: what is planned for it, and the way to plan more.
  *
  * While something is being placed the whole cell is the target: one button
@@ -109,31 +133,25 @@ export function PlanCell({
       {entries.map((e) => {
         const servings = e.servings ?? e.recipe.servings;
         const cost = costs.get(e.key);
+        // A repeated meal is drawn lighter, and marked: the routine, so the
+        // meals chosen for this week stand out from it.
         const classes = ["plan-entry", e.repeat && "repeated", dimmed.has(e.key) && "dimmed"]
           .filter(Boolean)
           .join(" ");
-        // Drawn lighter, and marked: the routine, so the meals chosen for this
-        // week stand out from it. Inside the title's first line rather than a
-        // column beside it, which would take its width from every line of a
-        // title with little to spare.
-        const mark = e.repeat && (
-          <span className="repeat-mark" role="img" aria-label="Repeats">
-            ↻
-          </span>
-        );
+        // Out of reach under the cell's target, by Tab as well as by press.
+        const inert = target ? { inert: "" } : {};
         if (onOpen) {
           // Not dragged: a phone has no drag to place with, and a press on
           // the meal is for its sheet.
           return (
-            <div key={e.key} className={`${classes} opens-sheet`}>
+            <div key={e.key} className={`${classes} opens-sheet`} {...inert}>
               <button
                 type="button"
                 className="plan-entry-open"
                 aria-haspopup="dialog"
                 onClick={() => onOpen(e)}
               >
-                {mark}
-                <span>{e.recipe.title}</span>
+                <MealTitle meal={e} />
               </button>
               <LabelPills labels={e.labels} />
             </div>
@@ -160,14 +178,42 @@ export function PlanCell({
               startDrag(event, { kind: "meal", meal: e, copy: false }, onDrag);
             }}
             className={classes}
+            {...inert}
           >
-            <div className="plan-entry-main">
-              {/* Not a drag of its own: a link dragged is its address,
-                  which a drop elsewhere would open. The card is dragged. */}
-              <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
-                {mark}
-                <span>{e.recipe.title}</span>
-              </Link>
+            {/* Not a drag of its own: a link dragged is its address, which a
+                drop elsewhere would open. The card is dragged. */}
+            <Link to={`/recipes/${e.recipe.id}`} draggable={false}>
+              <MealTitle meal={e} />
+            </Link>
+            <LabelPills labels={e.labels} />
+            {/* The servings, what they cost and the menu, on the line under
+                the title, so the title has the card's whole width. A recipe
+                that says nothing of servings has no stepper here, and still
+                has its cost and its menu. */}
+            <div className="plan-entry-meta">
+              {servings != null && (
+                <div className="serv">
+                  <button
+                    aria-label="Fewer servings"
+                    onClick={() => onChangeServings(e, -1)}
+                  >
+                    −
+                  </button>
+                  <span
+                    className={e.servings != null ? "overridden" : ""}
+                    title={`${servings} serving${servings === 1 ? "" : "s"}`}
+                  >
+                    ×{servings}
+                  </span>
+                  <button
+                    aria-label="More servings"
+                    onClick={() => onChangeServings(e, 1)}
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+              {priced(cost) && <PlanFigure cost={cost} />}
               <MealMenu
                 meal={e}
                 labels={labels}
@@ -177,37 +223,6 @@ export function PlanCell({
                 onRepeat={onRepeat}
               />
             </div>
-            <LabelPills labels={e.labels} />
-            {/* The servings and what they cost, the line under the title. A
-                recipe that says nothing of servings has no stepper here, and
-                still has a cost. */}
-            {(servings != null || priced(cost)) && (
-              <div className="plan-entry-meta">
-                {servings != null && (
-                  <div className="serv">
-                    <button
-                      aria-label="Fewer servings"
-                      onClick={() => onChangeServings(e, -1)}
-                    >
-                      −
-                    </button>
-                    <span
-                      className={e.servings != null ? "overridden" : ""}
-                      title={`${servings} serving${servings === 1 ? "" : "s"}`}
-                    >
-                      ×{servings}
-                    </span>
-                    <button
-                      aria-label="More servings"
-                      onClick={() => onChangeServings(e, 1)}
-                    >
-                      +
-                    </button>
-                  </div>
-                )}
-                {priced(cost) && <PlanFigure cost={cost} />}
-              </div>
-            )}
             {asking.has(e.key) && servings != null && (
               <ScopePrompt
                 day={e.plan_date}
@@ -219,13 +234,8 @@ export function PlanCell({
           </div>
         );
       })}
-      {/* Hidden rather than gone while the cell is a target, so the cell keeps
-          its size: in the agenda an empty one would otherwise fold to nothing. */}
-      <button
-        className="plan-add"
-        onClick={onAdd}
-        style={target ? { visibility: "hidden" } : undefined}
-      >
+      {/* Hidden while the cell is a target (see .drop-target .plan-add). */}
+      <button className="plan-add" onClick={onAdd}>
         + Add
       </button>
     </div>

@@ -168,6 +168,12 @@
      out three times is two chances to disagree. */
   --tap: 44px;
   --tabbar: 56px;
+  /* How far below the window's top something scrolled to has to land to be
+     clear of the sticky topbar - 73px at its tallest - with room to breathe.
+     A token for the same reason: the rows scrolled to, the sections linked
+     to and the planner's sticky Picks strip all have to agree on it, and
+     RecipeDetailPage reads it back to judge whether a row is in view. */
+  --topbar-clearance: 88px;
 
   /* ---------- Motion ---------- */
   --transition: 0.15s;
@@ -177,14 +183,14 @@
 
   /* ---------- Layering ---------- */
   --z-raised: 1;
+  /* A panel opened over the page's own content. Under the topbar, which the
+     page scrolls beneath, and under anything that floats over the page. */
+  --z-overlay: 10;
   --z-topbar: 20;
   /* Above the topbar, because on a short phone screen the two can meet, and
      below the modal, because a dialog is the thing being answered. */
   --z-hint: 30;
   --z-modal: 50;
-  /* A panel opened over the page's own content. Under the topbar, which the
-     page scrolls beneath, and under anything that floats over the page. */
-  --z-overlay: 10;
 
   /* ---------- Content measure ---------- */
   --width-page: 1120px;
@@ -1194,12 +1200,9 @@ input:focus, select:focus, textarea:focus {
   border-radius: var(--radius-sm);
   padding-inline: var(--space-10);
   margin-inline: calc(-1 * var(--space-10));
-  /* Clear of the sticky topbar - 73px at its tallest - plus room to breathe.
-     RecipeDetailPage reads this back to decide whether a row needs scrolling to
-     at all, so it is the one place the height that hides the top of the page is
-     written down. Not a spacing token for the same reason the checkbox above is
-     not one: it is one thing's measurement, not a rhythm the app shares. */
-  scroll-margin-top: 88px;
+  /* Clear of the sticky topbar. RecipeDetailPage reads this back to decide
+     whether a row needs scrolling to at all. */
+  scroll-margin-top: var(--topbar-clearance);
 }
 
 /* The tinted pill is its own edge, so the dashed rules that would run into it
@@ -2282,40 +2285,35 @@ body.has-install-hint .page {
   background: var(--green-soft);
   color: var(--green-ink);
   border-radius: var(--radius-xs);
-  padding: var(--space-4) var(--space-6) var(--space-4) var(--space-10);
+  padding: var(--space-4) var(--space-10);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
   line-height: var(--leading-snug);
 }
 
-.plan-entry-main {
-  display: flex;
-  align-items: center;
-  gap: var(--space-6);
-}
-
-/* A flex item will not shrink below its longest word, and at the grid's
-   narrowest a column is about 85px of text beside the menu button: left to
-   itself "Hashbrown" pushed the button 23px out of the card. Allowed to
-   shrink, a word that cannot fit breaks where a dictionary would, with a
-   hyphen; break-word is only the backstop for one no dictionary knows, and
-   unlike "anywhere" it never breaks a word that would have fit. */
+/* The title has its card's whole width - about 100px of text at the grid's
+   narrowest - and a word longer than that breaks where a dictionary would,
+   with a hyphen; break-word is only the backstop for one no dictionary
+   knows, and unlike "anywhere" it never breaks a word that would have fit. */
 .plan-entry a {
-  flex: 1;
-  min-width: 0;
   hyphens: auto;
   overflow-wrap: break-word;
 }
 
-/* The servings and what they cost, on the line under the title. The cost
-   keeps to the right edge whether or not a stepper sits to its left, and
-   wraps under the stepper rather than squeezing it if the two cannot fit. */
+/* The servings, what they cost and the meal's menu, on the line under the
+   title. The cost keeps to the right edge whether or not a stepper sits to
+   its left, and wraps under the stepper rather than squeezing it if the two
+   cannot fit; the menu keeps to the right edge too, after the cost. */
 .plan-entry-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-6);
 }
+
+.plan-entry-meta .meal-menu { margin-left: auto; }
+
+.plan-entry-meta .plan-cost + .meal-menu { margin-left: 0; }
 
 /* The size and green of the count beside it: one line about this meal, not
    a second thing competing with its name. */
@@ -2331,11 +2329,14 @@ body.has-install-hint .page {
    110px, and an entry is 100px at the widest the page gets. Left to wrap on
    its own, a short figure would share the line in one cell and a long one
    drop under it in the next, so in the grid it always takes the line under
-   the stepper. */
+   the stepper - and the menu, which is after it, stays on the stepper's. */
 .week-grid .plan-entry .plan-cost {
   flex-basis: 100%;
   text-align: right;
+  order: 1;
 }
+
+.week-grid .plan-entry-meta .plan-cost + .meal-menu { margin-left: auto; }
 
 .serv {
   display: flex;
@@ -2377,6 +2378,8 @@ body.has-install-hint .page {
   font-size: var(--text-base);
   line-height: 1;
   padding: var(--space-2) var(--space-4);
+  /* Its dots in line with the title's right edge, its hover wash past it. */
+  margin-right: calc(-1 * var(--space-4));
   border-radius: var(--radius-2xs);
 }
 
@@ -2452,6 +2455,10 @@ body.has-install-hint .page {
 }
 
 .label-checklist li label:hover { background: var(--surface-2); }
+
+/* The app's green, as every other checkbox in it is. */
+.label-checklist input[type="checkbox"],
+.label-filter-unlabelled input[type="checkbox"] { accent-color: var(--green); }
 
 .label-checklist-error {
   margin: 0;
@@ -2782,10 +2789,10 @@ body.has-install-hint .page {
 }
 
 /* The strip keeps its toggle in sight down a long plan, clear of the sticky
-   topbar the way .nutrition-lines rows are (88px). */
+   topbar. */
 .picks-collapsed .picks-dock {
   position: sticky;
-  top: 88px;
+  top: var(--topbar-clearance);
   z-index: var(--z-overlay);
 }
 
@@ -2798,7 +2805,7 @@ body.has-install-hint .page {
   left: calc(var(--picks-strip) + var(--space-16));
   width: var(--picks-panel);
   max-width: calc(100vw - var(--picks-strip) - 3 * var(--space-16));
-  max-height: calc(100vh - 88px - var(--space-16));
+  max-height: calc(100vh - var(--topbar-clearance) - var(--space-16));
   overflow-y: auto;
   box-shadow: var(--shadow-lift);
   border-radius: var(--radius-md);
@@ -2944,6 +2951,10 @@ body.has-install-hint .page {
   border-style: dashed;
 }
 
+/* Hidden rather than gone, so the cell keeps its size: in the agenda an
+   empty one would otherwise fold to nothing under its target. */
+.plan-cell.drop-target .plan-add { visibility: hidden; }
+
 .cell-target {
   position: absolute;
   inset: 0;
@@ -3043,8 +3054,8 @@ body.has-install-hint .page {
   /* Keeps the tinted day header inside the rounded corner. */
   overflow: hidden;
   /* Opened at today, the day's header lands clear of the sticky topbar
-     rather than under it, as the Picks strip keeps clear of it (88px). */
-  scroll-margin-top: 88px;
+     rather than under it. */
+  scroll-margin-top: var(--topbar-clearance);
 }
 
 .agenda-day > .day-head {
@@ -4475,7 +4486,7 @@ body.has-install-hint .page {
    same one. */
 .nutrition-section {
   margin-top: var(--space-32);
-  scroll-margin-top: 88px;
+  scroll-margin-top: var(--topbar-clearance);
 }
 
 /* The count stays one phrase beside the heading, however narrow the page. */

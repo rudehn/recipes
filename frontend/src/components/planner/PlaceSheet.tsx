@@ -2,11 +2,10 @@ import { useId, useState } from "react";
 
 import type { Meal, RecipeSummary } from "../../api";
 import { formatDate, formatWeekday, toISODate } from "../../dates";
+import { capitalized } from "../../text";
 import { Button, Modal } from "../ui";
 import { MEALS } from "./plan";
 import type { CellRef } from "./placing";
-
-const capitalized = (meal: Meal) => meal[0].toUpperCase() + meal.slice(1);
 
 /**
  * Where a pick goes, on a phone: a day of the week and a meal, as chips, then

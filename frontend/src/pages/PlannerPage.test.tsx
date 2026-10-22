@@ -806,6 +806,9 @@ describe("PlannerPage", () => {
           "aria-disabled",
           "true",
         );
+        expect(within(dialog).getByRole("button", { name: /^Repeat/ })).toHaveAccessibleDescription(
+          "Close to save the changes above, then change its days.",
+        );
         expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
 
         await user.click(within(dialog).getByRole("button", { name: "Close" }));
@@ -911,6 +914,7 @@ describe("PlannerPage", () => {
         let dialog = await sheet("Monday dinner");
         const past = within(dialog).getByRole("button", { name: /^Repeat/ });
         expect(past).toHaveAttribute("aria-disabled", "true");
+        expect(past).toHaveAccessibleDescription("That day has passed");
         await user.click(past);
         expect(within(dialog).queryByRole("button", { name: /^Every/ })).not.toBeInTheDocument();
         await user.click(within(dialog).getByRole("button", { name: "Close" }));
@@ -943,6 +947,7 @@ describe("PlannerPage", () => {
         // A button, not the strip's toggle: no strip to open beside the week.
         const open = screen.getByRole("button", { name: "Picks" });
         expect(open).not.toHaveAttribute("aria-expanded");
+        expect(open).toHaveAttribute("aria-haspopup", "dialog");
         await user.click(open);
         const picks = await sheet("Picks");
         await user.click(
@@ -990,6 +995,64 @@ describe("PlannerPage", () => {
         await waitFor(() => expect(backend.requestsTo("GET /api/meal-plan")).toHaveLength(2));
       });
 
+      /* The Picks button is at the top of the list, and the day a pick goes
+         to is often days below it: placed out of sight, it would look as if
+         nothing had happened. */
+      it("brings the day a pick was placed on into view", async () => {
+        setViewportWidth(375);
+        const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+        mockBackend({
+          "GET /api/meal-plan": [],
+          "GET /api/meal-plan/picks": [{ id: 105, week_start: "2026-07-27", recipe: curry }],
+          "POST /api/meal-plan": plannedMeal({ recipe: curry }),
+        });
+        const { user } = renderApp("/planner");
+        await screen.findByText("Jul 27 – Aug 2, 2026");
+        await waitFor(() => expect(scrolled).toHaveBeenCalled());
+
+        await user.click(screen.getByRole("button", { name: "Picks" }));
+        await user.click(
+          await within(await sheet("Picks")).findByRole("button", {
+            name: /^Weeknight chicken curry/,
+          }),
+        );
+        const place = await sheet("Place Weeknight chicken curry");
+        await user.click(within(place).getByRole("button", { name: "Sunday, Aug 2" }));
+        scrolled.mockClear();
+        await user.click(within(place).getByRole("button", { name: "Place" }));
+
+        await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+        await waitFor(() => expect(scrolled).toHaveBeenCalledTimes(1));
+        expect(scrolled).toHaveBeenCalledWith({ block: "start" });
+        expect(scrolled.mock.contexts[0]).toHaveTextContent(/^Sun\s*Aug 2/);
+      });
+
+      it("leaves the list where it is when a pick could not be placed", async () => {
+        setViewportWidth(375);
+        const scrolled = vi.spyOn(Element.prototype, "scrollIntoView");
+        mockBackend({
+          "GET /api/meal-plan": [],
+          "GET /api/meal-plan/picks": [{ id: 105, week_start: "2026-07-27", recipe: curry }],
+          "POST /api/meal-plan": () => new HttpError(500),
+        });
+        const { user } = renderApp("/planner");
+        await screen.findByText("Jul 27 – Aug 2, 2026");
+        await waitFor(() => expect(scrolled).toHaveBeenCalled());
+
+        await user.click(screen.getByRole("button", { name: "Picks" }));
+        await user.click(
+          await within(await sheet("Picks")).findByRole("button", {
+            name: /^Weeknight chicken curry/,
+          }),
+        );
+        const place = await sheet("Place Weeknight chicken curry");
+        scrolled.mockClear();
+        await user.click(within(place).getByRole("button", { name: "Place" }));
+
+        expect(await within(place).findByRole("alert")).toBeVisible();
+        expect(scrolled).not.toHaveBeenCalled();
+      });
+
       it("chooses no day for a pick in a week without today", async () => {
         setViewportWidth(375);
         mockBackend({
@@ -1013,10 +1076,12 @@ describe("PlannerPage", () => {
         expect(within(place).getByRole("button", { name: "Place" })).toBeEnabled();
       });
 
-      it("keeps the label filter's row from widening the page at 375px", async () => {
-        // jsdom lays nothing out, so this holds the stylesheet's half of the
-        // bargain: the chips' row is what scrolls, sideways, and no chip in
-        // it gives up its width or wraps to push the page out instead.
+      it("scrolls the label filter's chips within their row rather than squeezing or wrapping them", async () => {
+        // jsdom lays nothing out and applies no media query, so this holds the
+        // rule every width shares: the chips' row is what scrolls, sideways,
+        // and no chip in it gives up its width or wraps to push the page out
+        // instead. The phone's own rule, which runs the row to the screen's
+        // edges, is held in styles.test.ts.
         setViewportWidth(375);
         const style = document.createElement("style");
         style.textContent = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
@@ -1537,6 +1602,33 @@ describe("PlannerPage", () => {
       );
     }
 
+    /* Beside the title the menu took a third of a grid card's width from
+       every line of it, so "Weeknight" broke mid-word and a ↻ was left on a
+       line of its own. */
+    it("gives a meal's title its card's whole width, with its menu on the line under it", async () => {
+      mockBackend({
+        "GET /api/meal-plan": [
+          plannedMeal({ plan_date: "2026-07-30", recipe: curry }),
+          plannedMeal({
+            plan_date: "2026-07-31",
+            recipe: recipeSummary({ id: 6, title: "Plain rice", servings: null }),
+          }),
+        ],
+      });
+      renderApp("/planner");
+
+      const link = await screen.findByRole("link", { name: "Weeknight chicken curry" });
+      expect(link.parentElement).toHaveClass("plan-entry");
+      const menu = screen.getByRole("button", { name: "Actions for Weeknight chicken curry" });
+      expect(menu.closest(".plan-entry-meta")).toContainElement(
+        screen.getByRole("button", { name: "More servings" }),
+      );
+      // A recipe that says nothing of servings still has its menu there.
+      expect(
+        screen.getByRole("button", { name: "Actions for Plain rice" }).closest(".plan-entry-meta"),
+      ).not.toBeNull();
+    });
+
     it("marks a repeated meal and leaves a one-off plain", async () => {
       mockBackend({
         "GET /api/meal-plan": [
@@ -1553,6 +1645,12 @@ describe("PlannerPage", () => {
       const repeated = within(cell("dinner", 3)).getByText("Weeknight chicken curry");
       expect(repeated.closest(".plan-entry")).toHaveClass("repeated");
       expect(within(cell("dinner", 3)).getByLabelText("Repeats")).toHaveTextContent("↻");
+      // Joined to the title's first word, so a narrow card never leaves the
+      // ↻ alone on a line above it.
+      expect(within(cell("dinner", 3)).getByLabelText("Repeats").nextSibling).toHaveTextContent(
+        /^\u2060Weeknight chicken curry$/,
+        { normalizeWhitespace: false },
+      );
 
       const plain = screen.getByText("Plain rice").closest(".plan-entry")!;
       expect(plain).not.toHaveClass("repeated");
@@ -1897,6 +1995,40 @@ describe("PlannerPage", () => {
       await waitFor(() => expect(document.querySelector(".drop-target")).toBeNull());
     });
 
+    /* The cell's target lies over its meals, so a press cannot reach them;
+       Tab must not either, or it would walk through links and menus a press
+       cannot touch before reaching the next target. */
+    it("takes the meals under the targets out of reach while placing", async () => {
+      const style = document.createElement("style");
+      style.textContent = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
+      document.head.append(style);
+      try {
+        mockBackend({
+          "GET /api/meal-plan": [plannedMeal({ plan_date: "2026-07-29", recipe: bread })],
+          "GET /api/meal-plan/picks": [pick(curry)],
+        });
+        const { user } = renderApp("/planner");
+        const meal = (await screen.findByRole("link", { name: "Banana bread" })).closest(
+          ".plan-entry",
+        )!;
+        const add = within(cell("dinner", 2)).getByRole("button", { name: "+ Add" });
+        expect(meal).not.toHaveAttribute("inert");
+        expect(getComputedStyle(add).visibility).not.toBe("hidden");
+
+        await user.click(within(picks()).getByRole("button", { name: /^Weeknight chicken curry/ }));
+        expect(meal).toHaveAttribute("inert");
+        // Hidden rather than gone, so the cell keeps its size.
+        expect(getComputedStyle(add).visibility).toBe("hidden");
+        expect(add).not.toHaveAttribute("style");
+
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(meal).not.toHaveAttribute("inert");
+        expect(getComputedStyle(add).visibility).not.toBe("hidden");
+      } finally {
+        style.remove();
+      }
+    });
+
     it("places a pick with the selected label", async () => {
       const backend = mockBackend({
         "GET /api/labels": [{ id: 2, name: "Kids", meals: 0 }],
@@ -1933,7 +2065,6 @@ describe("PlannerPage", () => {
       // The meal is still shown, and only the cell answers a press.
       const wed = cell("dinner", 2);
       expect(within(wed).getByText("Banana bread")).toBeVisible();
-      expect(within(wed).queryByRole("button", { name: "+ Add" })).not.toBeInTheDocument();
       expect(
         within(wed).getByRole("button", { name: "Place Weeknight chicken curry on Wed dinner" }),
       ).toBeVisible();

@@ -325,18 +325,12 @@ describe("a row on the Ingredients page", () => {
 });
 
 /**
- * The planner's week grid at its narrowest. A column there is about 85px of
- * text beside the remove button, and a flex item will not shrink below its
- * longest word, so "Hashbrown" pushed the button 23px out of its card at
- * 901px. Allowed to shrink, the title breaks long words where a dictionary
- * would, with a hyphen, rather than anywhere at all.
+ * The planner's week grid at its narrowest. A card there has about 100px of
+ * text, and a title's longest word can be longer: it breaks where a
+ * dictionary would, with a hyphen, rather than anywhere at all.
  */
 describe("a planned meal's title", () => {
   const rule = /\.plan-entry a\s*\{([^}]*)\}/.exec(css)?.[1] ?? "";
-
-  it("may be narrower than its longest word", () => {
-    expect(rule).toMatch(/min-width:\s*0/);
-  });
 
   it("hyphenates a word that cannot fit, and breaks one only as a last resort", () => {
     expect(rule).toMatch(/hyphens:\s*auto/);
@@ -473,5 +467,58 @@ describe("a disabled button", () => {
     const states = css.match(/(?:^|\n)\.btn[^{\n]*:(?:hover|active)[^{\n]*/g) ?? [];
     expect(states.length).toBeGreaterThan(0);
     for (const selector of states) expect(selector).toContain(":not(:disabled)");
+  });
+});
+
+/**
+ * How far below the sticky topbar a thing scrolled to has to land. It was
+ * written out as 88px in four rules, one of which said it was the only one,
+ * and a fifth place to change would have been easy to miss.
+ */
+describe("the topbar's clearance", () => {
+  it("is written down once, as a token", () => {
+    expect(css.match(/--topbar-clearance:\s*88px;/g)).toHaveLength(1);
+    expect(css.match(/\b88px\b/g)).toHaveLength(1);
+  });
+
+  it("is what everything kept clear of the topbar uses", () => {
+    for (const selector of [
+      /\.nutrition-lines li\.highlighted\s*\{[^}]*scroll-margin-top:\s*var\(--topbar-clearance\)/,
+      /\.nutrition-section\s*\{[^}]*scroll-margin-top:\s*var\(--topbar-clearance\)/,
+      /\.agenda-day\s*\{[^}]*scroll-margin-top:\s*var\(--topbar-clearance\)/,
+      /\.picks-collapsed \.picks-dock\s*\{[^}]*top:\s*var\(--topbar-clearance\)/,
+      /\.picks-collapsed \.picks-sheet\s*\{[^}]*max-height:\s*calc\(100vh - var\(--topbar-clearance\)/,
+    ]) {
+      expect(css).toMatch(selector);
+    }
+  });
+});
+
+/**
+ * The planner's label filter on a phone. Its chips run to the screen's edges
+ * as they scroll, by a negative margin the row's padding pays back - and its
+ * width has to grow by exactly that margin, or the row would be wider than
+ * the screen and take the page sideways with it.
+ */
+describe("the label filter's row on a phone", () => {
+  const rule = /(?:^|[\s}])\.label-filter-chips\s*\{([^}]*)\}/.exec(mediaBlock(below(PHONE)))?.[1];
+
+  it("reaches past the page's margins by exactly what it is widened by", () => {
+    expect(rule, "the phone block has no .label-filter-chips rule").toBeDefined();
+    const margin = /margin-inline:\s*calc\(-1 \* (var\(--[\w-]+\))\)/.exec(rule!)?.[1];
+    expect(margin).toBeDefined();
+    expect(rule).toContain(`max-width: calc(100% + 2 * ${margin})`);
+    expect(rule).toContain(`padding-inline: ${margin}`);
+  });
+});
+
+/** Every checkbox in the app is its green, never the browser's blue. */
+describe("a checkbox on the planner", () => {
+  it("is the app's green", () => {
+    for (const owner of ["label-checklist", "label-filter-unlabelled"]) {
+      expect(css).toMatch(
+        new RegExp(`\\.${owner} input\\[type="checkbox"\\][^{]*\\{[^}]*accent-color:\\s*var\\(--green\\)`),
+      );
+    }
   });
 });

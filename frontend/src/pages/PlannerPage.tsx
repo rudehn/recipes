@@ -320,11 +320,10 @@ export default function PlannerPage() {
   /*
    * Seven columns of meals, with the Picks strip beside them, need about
    * 1140px before each meal's title has room for its words, and a phone has
-   * a third of that: the grid was 988px
-   * wide inside a 343px window, so two days were visible at a time and the
-   * sticky label column ate a third of what was left. Below that width the
-   * same week is a stack of days instead, which reads top to bottom like the
-   * rest of the app.
+   * a third of that: the grid was 988px wide inside a 343px window, so two
+   * days were visible at a time and the sticky label column ate a third of
+   * what was left. Below that width the same week is a stack of days
+   * instead, which reads top to bottom like the rest of the app.
    */
   const agenda = useMediaQuery(below(WEEK_GRID));
   // Where the Picks panel and the grid do not both fit, the panel folds to a
@@ -342,8 +341,9 @@ export default function PlannerPage() {
    */
   const phone = useMediaQuery(below(PHONE));
   const [picksSheet, setPicksSheet] = useState(false);
-  // The pick being placed from the Picks sheet.
+  // The pick being placed from the Picks sheet, and where the last one went.
   const [toPlace, setToPlace] = useState<RecipeSummary | null>(null);
+  const [placedOn, setPlacedOn] = useState<CellRef | null>(null);
   // The meal whose sheet is open, by key, so the sheet shows each change to
   // it as it lands, and goes once the meal does.
   const [sheetKey, setSheetKey] = useState<string | null>(null);
@@ -368,6 +368,7 @@ export default function PlannerPage() {
     const ok = await addMeal(cell, toPlace.id);
     if (ok) {
       setToPlace(null);
+      setPlacedOn(cell);
       reload();
     }
     return ok;
@@ -472,7 +473,7 @@ export default function PlannerPage() {
             </Button>
           </div>
           {phone && (
-            <Button size="small" onClick={() => setPicksSheet(true)}>
+            <Button size="small" aria-haspopup="dialog" onClick={() => setPicksSheet(true)}>
               Picks
             </Button>
           )}
@@ -586,6 +587,7 @@ export default function PlannerPage() {
               onRepeat={repeat}
               onCreateLabel={createLabel}
               onOpen={phone ? (meal) => setSheetKey(meal.key) : undefined}
+              reveal={placedOn}
             />
           ) : (
             <WeekGrid
