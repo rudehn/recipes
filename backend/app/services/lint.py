@@ -14,7 +14,9 @@ see `kroger.pricing.attach_prices`. The two halves share one vocabulary,
 import re
 from typing import Literal
 
-from .canonical import PREP_WORDS, canonical_key
+from .canonical import PREP_WORDS, _drop_parentheticals, _singularize, canonical_key
+from .grocery import normalize_unit
+from .kroger.units import COUNT, measure
 
 LineIssue = Literal[
     "amount_in_name", "no_amount", "check_line", "no_match", "unsized", "out_of_stock"
@@ -52,6 +54,16 @@ def _key_tokens(name: str) -> list[str]:
     return [t for t in canonical_key(name).split("-") if t]
 
 
+def _measured(unit: str | None) -> bool:
+    """Whether a row's unit is a weight or a volume, rather than a count or a
+    container whose size the row does not say."""
+    unit = normalize_unit(unit)
+    if unit is None:
+        return False
+    amount = measure(1, unit) or measure(1, _singularize(unit))
+    return amount is not None and amount.dimension != COUNT
+
+
 def ingredient_issue(name: str, quantity: float | None, unit: str | None) -> LineIssue | None:
     """The recipe-side problem with an ingredient row, most serious first."""
     text = name.strip()
@@ -61,9 +73,14 @@ def ingredient_issue(name: str, quantity: float | None, unit: str | None) -> Lin
 
     tokens = _key_tokens(text)
     unmeasured = any(phrase in lowered for phrase in _TO_TASTE_PHRASES)
+    # A note in parentheses is not the ingredient, as `canonical_key` drops it
+    # too: an "or" in one is a substitution, not a choice the row leaves open.
+    # A size in one is the amount again beside a weight or a volume, but may be
+    # the amount itself beside a count or a can.
+    outside = _drop_parentheticals(text)
     if (
-        _SIZE_IN_NAME.search(text)
-        or (_ALTERNATIVE.search(text) and not unmeasured)
+        _SIZE_IN_NAME.search(outside if _measured(unit) else text)
+        or (_ALTERNATIVE.search(outside) and not unmeasured)
         or text.endswith("*")
         or _VAGUE_START.match(text)
         or not tokens

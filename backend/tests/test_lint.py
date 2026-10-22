@@ -25,6 +25,16 @@ from app.services.lint import ingredient_issue
         # Nothing can price "or".
         ("broth or milk", 0.5, "cup", "check_line"),
         ("cream cheese or sour cream", 1, "cup", "check_line"),
+        # A note in parentheses is not the ingredient, here any more than in
+        # its key: an "or" there is a substitution, and a size beside a
+        # measured amount is the same amount converted.
+        ("butter (unsalted or salted will work)", 3, "tablespoons", None),
+        ("ground beef (85/15 or 80/20)", 1, "lb", None),
+        ("all-purpose flour ((42 g))", 0.33, "cup", None),
+        ("chicken broth (945 ml)", 4, "cups", None),
+        # Beside a count or a container, the size may be the amount.
+        ("black beans (15 oz)", 1, "can", "check_line"),
+        ("frozen waffle fries (22 ounces)", 1, None, "check_line"),
         # The wrong half of a line, or no ingredient at all.
         ("boneless", 1, None, "check_line"),
         ("firmly", 0.5, "cup", "check_line"),
