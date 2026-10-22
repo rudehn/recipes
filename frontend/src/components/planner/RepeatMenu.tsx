@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "../ui";
 import { dayName, weekdayOf } from "./plan";
@@ -43,6 +43,7 @@ export function RepeatMenu({
   onChoose: (weekdays: number[] | null) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const ids = useId();
   const own = weekdayOf(day);
   // The weekdays ticked in Custom…, or null while the patterns show.
   const [custom, setCustom] = useState<Set<number> | null>(null);
@@ -103,18 +104,40 @@ export function RepeatMenu({
   return (
     <div className="repeat-menu" role="group" aria-label="Repeat" ref={root}>
       {past && <p className="repeat-summary">That day has passed</p>}
-      {patterns.map((p) => (
-        <button
-          key={p.name}
-          type="button"
-          className="repeat-choice"
-          aria-pressed={same(p.weekdays, current)}
-          disabled={past}
-          onClick={() => onChoose(p.weekdays)}
-        >
-          {p.weekdays === null ? p.name : `${p.name}${since}`}
-        </button>
-      ))}
+      {patterns.map((p) =>
+        p.weekdays === null && current !== null ? (
+          // On a repeated meal this one ends the repeat, which its name alone
+          // does not say; the line under it does, as its description.
+          <button
+            key={p.name}
+            type="button"
+            className="repeat-choice"
+            aria-pressed={false}
+            aria-labelledby={`${ids}-name`}
+            aria-describedby={`${ids}-note`}
+            disabled={past}
+            onClick={() => onChoose(null)}
+          >
+            <span className="repeat-choice-text">
+              <span id={`${ids}-name`}>{p.name}</span>
+              <span id={`${ids}-note`} className="repeat-choice-note">
+                Stops repeating after {dayName(day)}
+              </span>
+            </span>
+          </button>
+        ) : (
+          <button
+            key={p.name}
+            type="button"
+            className="repeat-choice"
+            aria-pressed={same(p.weekdays, current)}
+            disabled={past}
+            onClick={() => onChoose(p.weekdays)}
+          >
+            {p.weekdays === null ? p.name : `${p.name}${since}`}
+          </button>
+        ),
+      )}
       <button
         type="button"
         className="repeat-choice"

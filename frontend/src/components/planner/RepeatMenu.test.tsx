@@ -14,18 +14,17 @@ function open(props: { day: string; current: number[] | null; past?: boolean }) 
   return { onChoose, user };
 }
 
-const choices = () => screen.getAllByRole("button").map((b) => b.textContent);
+/** The choices, in order, by the names they are announced with. */
+function expectChoices(names: string[]) {
+  const buttons = screen.getAllByRole("button");
+  expect(buttons).toHaveLength(names.length);
+  buttons.forEach((b, i) => expect(b).toHaveAccessibleName(names[i]));
+}
 
 describe("RepeatMenu", () => {
   it("offers the weekday of the meal's own day", () => {
     open({ day: TUESDAY, current: null });
-    expect(choices()).toEqual([
-      "Just this day",
-      "Every Tuesday",
-      "Weekdays",
-      "Every day",
-      "Custom…",
-    ]);
+    expectChoices(["Just this day", "Every Tuesday", "Weekdays", "Every day", "Custom…"]);
     expect(screen.getByRole("button", { name: "Just this day" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -34,7 +33,7 @@ describe("RepeatMenu", () => {
 
   it("says a repeated meal's days change from its day on, and marks the current ones", () => {
     open({ day: WEDNESDAY, current: [0, 1, 2, 3, 4] });
-    expect(choices()).toEqual([
+    expectChoices([
       "Just this day",
       "Every Wednesday from Wed, Jul 29 on",
       "Weekdays from Wed, Jul 29 on",
@@ -48,6 +47,22 @@ describe("RepeatMenu", () => {
       "aria-pressed",
       "false",
     );
+  });
+
+  it("says under a repeated meal's Just this day that it ends the repeat", () => {
+    open({ day: WEDNESDAY, current: [0, 1, 2, 3, 4] });
+    expect(screen.getByRole("button", { name: "Just this day" })).toHaveAccessibleDescription(
+      "Stops repeating after Wed, Jul 29",
+    );
+    expect(screen.getByText("Stops repeating after Wed, Jul 29")).toBeVisible();
+  });
+
+  it("gives a one-off's Just this day no line under it", () => {
+    open({ day: WEDNESDAY, current: null });
+    const just = screen.getByRole("button", { name: "Just this day" });
+    expect(just).toHaveTextContent(/^Just this day$/);
+    expect(just).not.toHaveAccessibleDescription();
+    expect(screen.queryByText(/Stops repeating/)).not.toBeInTheDocument();
   });
 
   it("answers a pattern's weekdays, and null for Just this day", async () => {

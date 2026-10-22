@@ -2553,6 +2553,17 @@ body.has-install-hint .page {
 
 .repeat-choice[aria-pressed="true"]::before { content: "✓"; }
 
+.repeat-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.repeat-choice-note {
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
 .repeat-weekdays {
   display: grid;
   grid-template-columns: repeat(7, 1fr);

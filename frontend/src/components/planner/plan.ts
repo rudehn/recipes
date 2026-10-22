@@ -1,4 +1,4 @@
-import type { DayCost, EntryCost, Label, Meal, PlannedMeal, Scope } from "../../api";
+import type { DayCost, EntryCost, Label, Meal, PlannedMeal, Repeat, Scope } from "../../api";
 import { formatDate, formatDay, fromISODate, toISODate } from "../../dates";
 
 export const MEALS: Meal[] = ["breakfast", "lunch", "dinner", "snack"];
@@ -83,20 +83,39 @@ export const dayName = (iso: string) => {
   return `${formatDay(d)}, ${formatDate(d)}`;
 };
 
+export type OneOffMeal = PlannedMeal & { repeat: null };
+export type RepeatedMeal = PlannedMeal & { repeat: Repeat };
+
+/**
+ * A meal, and which of its days a change to it covers. A one-off has only its
+ * own day. A repeated meal's change always carries the owner's answer to Just
+ * this day or From this day on, so no caller can apply either one for them by
+ * leaving it out.
+ */
+export type ChangeTarget = [meal: OneOffMeal] | [meal: RepeatedMeal, scope: Scope];
+
+/** The target of a change to `meal`; a repeated meal without a scope is a mistake, and throws. */
+export function changeTarget(meal: PlannedMeal, scope?: Scope): ChangeTarget {
+  if (meal.repeat === null) return [{ ...meal, repeat: null }];
+  if (scope === undefined) {
+    throw new Error(`A change to a repeated meal needs a scope (${meal.key}).`);
+  }
+  return [{ ...meal, repeat: meal.repeat }, scope];
+}
+
 /**
  * What either layout can do to an entry already in a cell.
  *
  * A repeated meal is changed through its repeat, for its own day or from it
- * on, so the changes that can be either carry the scope the owner chose; a
- * one-off meal's never do.
+ * on, so the changes that can be either take a ChangeTarget.
  */
 export interface EntryActions {
-  onRemove: (meal: PlannedMeal, scope?: Scope) => void;
+  onRemove: (target: ChangeTarget) => void;
   onChangeServings: (meal: PlannedMeal, delta: number) => void;
   /** The answer to a repeated meal's settled servings: its scope, or null to put them back. */
   onAnswerServings: (meal: PlannedMeal, scope: Scope | null) => void;
   /** Puts exactly these labels on a meal. */
-  onSetLabels: (meal: PlannedMeal, labelIds: number[], scope?: Scope) => void;
+  onSetLabels: (target: ChangeTarget, labelIds: number[]) => void;
   /** Repeats a meal on these weekdays from its day on; null for its day alone. */
   onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
   /** Makes a label, answering it, or rejecting with the reason it was refused. */

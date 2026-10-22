@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from
 
 import type { Label, PlannedMeal, Scope } from "../../api";
 import { LabelChecklist } from "./LabelChecklist";
-import { isPast } from "./plan";
+import { changeTarget, isPast, type ChangeTarget } from "./plan";
 import { RepeatMenu } from "./RepeatMenu";
 import { ScopePrompt } from "./ScopePrompt";
 
@@ -37,8 +37,8 @@ export function MealMenu({
   meal: PlannedMeal;
   labels: Label[];
   onCreateLabel: (name: string) => Promise<Label>;
-  onSetLabels: (meal: PlannedMeal, ids: number[], scope?: Scope) => void;
-  onRemove: (meal: PlannedMeal, scope?: Scope) => void;
+  onSetLabels: (target: ChangeTarget, ids: number[]) => void;
+  onRemove: (target: ChangeTarget) => void;
   onRepeat: (meal: PlannedMeal, weekdays: number[] | null) => void;
 }) {
   const [view, setView] = useState<"menu" | "labels" | "repeat" | "scope" | null>(null);
@@ -139,9 +139,11 @@ export function MealMenu({
     commit(next);
   }
 
+  /** Makes the change; a repeated meal's only ever with the owner's answer. */
   function commit(next: Pending, scope?: Scope) {
-    if (next.kind === "remove") onRemove(meal, scope);
-    else onSetLabels(meal, next.ids, scope);
+    const target = changeTarget(meal, scope);
+    if (next.kind === "remove") onRemove(target);
+    else onSetLabels(target, next.ids);
   }
 
   function onMenuKeyDown(event: React.KeyboardEvent) {

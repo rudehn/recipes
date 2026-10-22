@@ -1,7 +1,8 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Meal } from "../api";
+import { SETTLE_MS } from "../components/planner/usePlannedServings";
 import { WEEK_GRID } from "../layout";
 import { HttpError, mockBackend, type MockBackend, type MockRequest } from "../test/backend";
 import { plannedMeal, page, planCost, recipeSummary } from "../test/fixtures";
@@ -1295,58 +1296,91 @@ describe("PlannerPage", () => {
       expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
     });
 
-    it("asks once after a burst of servings taps on a repeated meal", async () => {
-      const backend = mockBackend({
-        "GET /api/meal-plan": [repeatDay("2026-07-30")],
-        "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
-        "PATCH /api/meal-plan/:id": undefined,
+    describe("servings", () => {
+      // The question waits for the taps to rest, which these tests decide
+      // rather than wait on. Only the timeouts are faked, since React
+      // schedules its work through setImmediate. Testing Library waits on a
+      // timeout after every event and only moves a fake clock it recognises as
+      // Jest's, so it is handed Vitest's under that name.
+      beforeEach(() => {
+        vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+        vi.setSystemTime(NOW);
+        vi.stubGlobal("jest", { advanceTimersByTime: (ms: number) => vi.advanceTimersByTime(ms) });
       });
-      const { user } = renderApp("/planner");
-      const more = await screen.findByRole("button", { name: "More servings" });
 
-      await user.click(more);
-      await user.click(more);
-      await user.click(more);
+      const settle = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
+      const question = () => screen.queryByRole("button", { name: "Just this day" });
 
-      // Shown at once, saved only once the question is answered.
-      expect(screen.getByText("×7")).toBeInTheDocument();
-      const day = await screen.findByRole(
-        "button",
-        { name: "Just this day" },
-        { timeout: 2000 },
-      );
-      expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
-      expect(screen.getByRole("button", { name: "From Thu, Jul 30 on" })).toBeInTheDocument();
+      it("asks once after a burst of servings taps on a repeated meal", async () => {
+        const backend = mockBackend({
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+          "PATCH /api/meal-plan/:id": undefined,
+        });
+        const { user } = renderApp("/planner");
+        const more = await screen.findByRole("button", { name: "More servings" });
 
-      await user.click(day);
+        await user.click(more);
+        await settle(SETTLE_MS - 300);
+        // A tap before the taps have rested starts the wait again.
+        await user.click(more);
+        await user.click(more);
 
-      await waitFor(() =>
-        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(1),
-      );
-      expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")[0].body).toEqual({
-        scope: "day",
-        servings: 7,
-        today: "2026-07-29",
+        // Shown at once, saved only once the question is answered.
+        expect(screen.getByText("×7")).toBeInTheDocument();
+        await settle(SETTLE_MS - 1);
+        expect(question()).not.toBeInTheDocument();
+        await settle(1);
+        expect(question()).toBeInTheDocument();
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+        expect(screen.getByRole("button", { name: "From Thu, Jul 30 on" })).toBeInTheDocument();
+
+        await user.click(question()!);
+
+        await waitFor(() =>
+          expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(1),
+        );
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")[0].body).toEqual({
+          scope: "day",
+          servings: 7,
+          today: "2026-07-29",
+        });
+        expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
+        expect(question()).not.toBeInTheDocument();
       });
-      expect(backend.requestsTo("PATCH /api/meal-plan/:id")).toHaveLength(0);
-      expect(screen.queryByRole("button", { name: "Just this day" })).not.toBeInTheDocument();
-    });
 
-    it("puts the count back when the servings question is cancelled", async () => {
-      const backend = mockBackend({
-        "GET /api/meal-plan": [repeatDay("2026-07-30")],
-        "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+      it("puts the count back when the servings question is cancelled", async () => {
+        const backend = mockBackend({
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+        });
+        const { user } = renderApp("/planner");
+
+        await user.click(await screen.findByRole("button", { name: "More servings" }));
+        expect(screen.getByText("×5")).toBeInTheDocument();
+        await settle(SETTLE_MS);
+        await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+        expect(screen.getByText("×4")).toBeInTheDocument();
+        expect(question()).not.toBeInTheDocument();
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
       });
-      const { user } = renderApp("/planner");
 
-      await user.click(await screen.findByRole("button", { name: "More servings" }));
-      expect(screen.getByText("×5")).toBeInTheDocument();
-      await user.click(
-        await screen.findByRole("button", { name: "Cancel" }, { timeout: 2000 }),
-      );
+      it("asks nothing when the taps end where they began", async () => {
+        const backend = mockBackend({
+          "GET /api/meal-plan": [repeatDay("2026-07-30")],
+          "PATCH /api/meal-plan/repeats/:id/days/:day": undefined,
+        });
+        const { user } = renderApp("/planner");
 
-      expect(screen.getByText("×4")).toBeInTheDocument();
-      expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+        await user.click(await screen.findByRole("button", { name: "More servings" }));
+        await user.click(screen.getByRole("button", { name: "Fewer servings" }));
+        await settle(SETTLE_MS);
+
+        expect(question()).not.toBeInTheDocument();
+        expect(screen.getByText("×4")).toBeInTheDocument();
+        expect(backend.requestsTo("PATCH /api/meal-plan/repeats/:id/days/:day")).toHaveLength(0);
+      });
     });
 
     it("does not offer From this day on for a past day", async () => {

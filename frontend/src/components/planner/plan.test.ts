@@ -6,6 +6,7 @@ import {
   MEALS,
   byCell,
   cellKey,
+  changeTarget,
   filterFromParams,
   isPast,
   labelsForNew,
@@ -104,5 +105,24 @@ describe("labelsForNew", () => {
   it("is the selected label, or none under Everything", () => {
     expect(labelsForNew({ label: 3, unlabelled: true })).toEqual([3]);
     expect(labelsForNew(EVERYTHING)).toEqual([]);
+  });
+});
+
+describe("changeTarget", () => {
+  const repeat = { id: 1, weekdays: [0], starts_on: "2026-07-27", ends_on: null };
+
+  it("is a one-off meal on its own", () => {
+    const meal = plannedMeal({ entry_id: 3 });
+    expect(changeTarget(meal)).toEqual([meal]);
+  });
+
+  it("carries a repeated meal's scope", () => {
+    const meal = plannedMeal({ entry_id: null, key: "r1-2026-07-27", repeat });
+    expect(changeTarget(meal, "from")).toEqual([meal, "from"]);
+  });
+
+  it("refuses a repeated meal with no scope, rather than choosing one for it", () => {
+    const meal = plannedMeal({ entry_id: null, key: "r1-2026-07-27", repeat });
+    expect(() => changeTarget(meal)).toThrow(/needs a scope/);
   });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { api, type Meal, type PlannedMeal, type Scope } from "../api";
+import { api, type Meal, type PlannedMeal } from "../api";
 import { LoadFailure } from "../components/LoadError";
 import { DayAgenda } from "../components/planner/DayAgenda";
 import { WeekGrid } from "../components/planner/WeekGrid";
@@ -14,6 +14,7 @@ import {
   money,
   shownMeals,
   writeFilter,
+  type ChangeTarget,
   type Costs,
   type LabelFilter,
 } from "../components/planner/plan";
@@ -143,20 +144,25 @@ export default function PlannerPage() {
    * is loaded again after any of them.
    */
 
-  async function removeEntry(meal: PlannedMeal, scope: Scope = "day") {
-    const { repeat, entry_id } = meal;
-    const write = repeat
-      ? () => api.removeRepeatDay(repeat.id, meal.plan_date, scope)
-      : entry_id !== null && (() => api.deleteMealPlanEntry(entry_id));
-    if (write && (await action.run(write))) reload();
+  async function removeEntry(target: ChangeTarget) {
+    let write: () => Promise<void>;
+    if (target.length === 2) {
+      const [meal, scope] = target;
+      write = () => api.removeRepeatDay(meal.repeat.id, meal.plan_date, scope);
+    } else {
+      const [{ entry_id }] = target;
+      if (entry_id === null) return;
+      write = () => api.deleteMealPlanEntry(entry_id);
+    }
+    if (await action.run(write)) reload();
   }
 
-  async function setLabels(meal: PlannedMeal, labelIds: number[], scope: Scope = "day") {
-    if (meal.repeat) {
-      const repeatId = meal.repeat.id;
+  async function setLabels(target: ChangeTarget, labelIds: number[]) {
+    if (target.length === 2) {
+      const [meal, scope] = target;
       if (
         await action.run(() =>
-          api.changeRepeatDay(repeatId, meal.plan_date, { scope, label_ids: labelIds }),
+          api.changeRepeatDay(meal.repeat.id, meal.plan_date, { scope, label_ids: labelIds }),
         )
       ) {
         reload();
@@ -164,6 +170,7 @@ export default function PlannerPage() {
       }
       return;
     }
+    const [meal] = target;
     if (meal.entry_id === null) return;
     const entryId = meal.entry_id;
     let saved: PlannedMeal | undefined;
