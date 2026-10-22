@@ -25,7 +25,7 @@ import {
   writeParams,
   type Search,
 } from "../recipeSearch";
-import { useDebounced } from "../useDebounced";
+import { useAppliedSearch } from "../useAppliedSearch";
 import { useLoad } from "../useLoad";
 
 const PER_PAGE = 24;
@@ -124,13 +124,9 @@ export default function RecipesPage() {
   const [sort, setSort] = useState(() => sortFromParams(searchParams));
   // What is typed and not yet a token. The grid follows it once it settles.
   const [draft, setDraft] = useState("");
-  const settled = useDebounced(draft.trim());
   // The search the page asks for: the tokens, with the typing standing in as
   // the text until there is a text token.
-  const applied = useMemo(
-    () => (search.text || !settled ? search : { ...search, text: settled }),
-    [search, settled],
-  );
+  const applied = useAppliedSearch(search, draft);
 
   // Asked with the list's own search, so each count is what picking that
   // tag would leave.

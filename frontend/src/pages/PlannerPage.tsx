@@ -278,8 +278,10 @@ export default function PlannerPage() {
 
   const week = toISODate(weekStart);
 
+  // The wrapper is what widens the page for the Picks panel (see
+  // .planner-page in styles.css), whatever the page shows.
   return (
-    <>
+    <div className="planner-page">
       <PageHead title="Planner" sub={formatRange(weekStart, weekEnd)}>
         <div className="planner-controls">
           {/* The three that move the same thing, grouped so they stay on one
@@ -442,6 +444,6 @@ export default function PlannerPage() {
           onClose={() => setPicker(null)}
         />
       )}
-    </>
+    </div>
   );
 }

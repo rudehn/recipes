@@ -354,6 +354,16 @@ describe("PlannerPage", () => {
     expect(document.querySelectorAll(".plan-cell")).toHaveLength(0);
   });
 
+  it("keeps the planner's wider page when its first load fails", async () => {
+    // The width hangs on .planner-page; were it on the grid, a failed load
+    // would drop the page back to the others' width.
+    mockBackend({ "GET /api/meal-plan": new HttpError(500, "Database is down") });
+    renderApp("/planner");
+    await screen.findByText(/Couldn't load your meal plan/);
+
+    expect(document.querySelector("main.page > .planner-page")).not.toBeNull();
+  });
+
   it("retries a failed load", async () => {
     let attempt = 0;
     const backend = mockBackend({

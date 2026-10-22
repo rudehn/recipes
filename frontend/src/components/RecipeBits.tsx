@@ -1,10 +1,10 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 
 import { api, imageUrl, type RecipeSummary } from "../api";
 import { chipsThatFit } from "../chipFit";
 import { descriptionParagraphs } from "../description";
 import { EMPTY_SEARCH, toFilters, type Search } from "../recipeSearch";
-import { useDebounced } from "../useDebounced";
+import { useAppliedSearch } from "../useAppliedSearch";
 import { errorMessage, useLoad } from "../useLoad";
 import { RecipeSearchBox } from "./RecipeSearchBox";
 import { Chip, Chips, Modal } from "./ui";
@@ -135,11 +135,7 @@ export function RecipePickerModal({
 }) {
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
   const [draft, setDraft] = useState("");
-  const settled = useDebounced(draft.trim());
-  const applied = useMemo(
-    () => (search.text || !settled ? search : { ...search, text: settled }),
-    [search, settled],
-  );
+  const applied = useAppliedSearch(search, draft);
   // A modal paging through recipes would be a worse way to find one than
   // typing, so it shows the first screenful of matches and asks for more
   // letters instead of a page number.

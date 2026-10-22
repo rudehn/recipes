@@ -3,7 +3,7 @@ import { useCallback, useId, useMemo, useState } from "react";
 import { api, imageUrl, type PlanPick, type PlannedMeal, type RecipeSummary } from "../../api";
 import { EMPTY_SEARCH, isEmpty, toFilters, type Search } from "../../recipeSearch";
 import { useAction } from "../../useAction";
-import { useDebounced } from "../../useDebounced";
+import { useAppliedSearch } from "../../useAppliedSearch";
 import { useLoad } from "../../useLoad";
 import { RecipeSearchBox } from "../RecipeSearchBox";
 import { placedDays, type Placing } from "./placing";
@@ -50,13 +50,8 @@ export function PicksPanel({
 }) {
   const [search, setSearch] = useState<Search>(EMPTY_SEARCH);
   const [draft, setDraft] = useState("");
-  const settled = useDebounced(draft.trim());
-  // As on the Recipes page, the typing searches before it is entered: it
-  // stands in as the text token until there is one.
-  const applied = useMemo(
-    () => (search.text || !settled ? search : { ...search, text: settled }),
-    [search, settled],
-  );
+  // As on the Recipes page, the typing searches before it is entered.
+  const applied = useAppliedSearch(search, draft);
 
   const { data: found, error: searchError } = useLoad(
     useCallback(

@@ -191,6 +191,11 @@
   /* The planner's page, wide enough for the Picks panel beside the week:
      WEEK_GRID + PICKS_PANEL in layout.ts, which layout.test.ts holds it to. */
   --width-planner: 1380px;
+  /* The Picks panel beside the week, and the strip it folds to where both do
+     not fit: PICKS_PANEL and PICKS_STRIP in layout.ts, held to them by
+     layout.test.ts. Every rule placing the panel reads these. */
+  --picks-panel: 240px;
+  --picks-strip: 40px;
   --width-prose: 760px;
   --width-compact: 560px;
 }
@@ -2722,29 +2727,29 @@ body.has-install-hint .page {
 
 /* ------------------------------------------------- picks and placing --- */
 
-/* The planner is the one page wider than the rest, by the Picks panel. The
-   topbar widens with it, so its brand and its sections keep to the page's
-   edges as they do everywhere else. */
-.page:has(.planner-body),
-.shell:has(.planner-body) .topbar-inner { max-width: var(--width-planner); }
+/* The planner is the one page wider than the rest, by the Picks panel, and
+   is whatever it shows - a failed first load too - so the width does not
+   jump. The topbar widens with it, so its brand and its sections keep to
+   the page's edges as they do everywhere else. */
+.page:has(> .planner-page),
+.shell:has(.planner-page) .topbar-inner { max-width: var(--width-planner); }
 
 /*
  * The Picks panel and the week, side by side. The second column may shrink
  * below the grid's own least width, so a grid that ever did not fit would
- * scroll inside itself rather than push the page sideways. The widths are
- * PICKS_PANEL and PICKS_STRIP in layout.ts, held to them by layout.test.ts.
+ * scroll inside itself rather than push the page sideways.
  */
 .planner-body {
   position: relative;
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: var(--picks-panel) minmax(0, 1fr);
   gap: var(--space-16);
   align-items: start;
 }
 
 /* Where both do not fit, the panel is a strip with its toggle. */
 .planner-body.picks-collapsed {
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: var(--picks-strip) minmax(0, 1fr);
 }
 
 /* The toggle reads up the strip, like a book's spine. */
@@ -2785,9 +2790,9 @@ body.has-install-hint .page {
 .picks-collapsed .picks-sheet {
   position: absolute;
   top: 0;
-  left: calc(40px + var(--space-16));
-  width: 240px;
-  max-width: calc(100vw - 40px - 3 * var(--space-16));
+  left: calc(var(--picks-strip) + var(--space-16));
+  width: var(--picks-panel);
+  max-width: calc(100vw - var(--picks-strip) - 3 * var(--space-16));
   max-height: calc(100vh - 88px - var(--space-16));
   overflow-y: auto;
   box-shadow: var(--shadow-lift);

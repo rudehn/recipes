@@ -51,16 +51,42 @@ describe("layout", () => {
     return labels + 7 * day + 7 * space(6);
   }
 
-  /** The planner's column for its Picks, as `selector` sets it, and the gap after it. */
-  function picksColumn(selector: string): { width: number; gap: number } {
-    const rule = new RegExp(
-      `${selector.replaceAll(".", "\\.")}\\s*\\{[^}]*grid-template-columns:\\s*(\\d+)px minmax\\(0, 1fr\\)`,
-    ).exec(css);
-    expect(rule).not.toBeNull();
-    const gap = /\.planner-body\s*\{[^}]*\bgap:\s*var\(--space-(\d+)\)/.exec(css);
-    expect(gap).not.toBeNull();
-    return { width: Number(rule![1]), gap: space(Number(gap![1])) };
+  /** A custom property's value in px, from the :root that declares it. */
+  function token(name: string): number {
+    const match = new RegExp(`--${name}:\\s*(\\d+)px`).exec(css);
+    if (!match) throw new Error(`styles.css declares no --${name}`);
+    return Number(match[1]);
   }
+
+  /** The body of the rule `selector` names exactly. */
+  function rule(selector: string): string {
+    const match = new RegExp(`(?:^|\\n)${selector.replaceAll(".", "\\.")}\\s*\\{([^}]*)\\}`).exec(css);
+    if (!match) throw new Error(`styles.css has no rule for ${selector}`);
+    return match[1];
+  }
+
+  /** The gap between the planner's Picks column and its week. */
+  function picksGap(): number {
+    const gap = /\bgap:\s*var\(--space-(\d+)\)/.exec(rule(".planner-body"));
+    expect(gap).not.toBeNull();
+    return space(Number(gap![1]));
+  }
+
+  it("states the Picks widths once, as the tokens every rule placing the panel reads", () => {
+    expect(token("picks-panel")).toBe(PICKS_PANEL);
+    expect(token("picks-strip")).toBe(PICKS_STRIP);
+
+    expect(rule(".planner-body")).toMatch(/grid-template-columns:\s*var\(--picks-panel\) minmax\(0, 1fr\)/);
+    expect(rule(".planner-body.picks-collapsed")).toMatch(
+      /grid-template-columns:\s*var\(--picks-strip\) minmax\(0, 1fr\)/,
+    );
+    const sheet = rule(".picks-collapsed .picks-sheet");
+    expect(sheet).toMatch(/left:\s*calc\(var\(--picks-strip\) \+ var\(--space-16\)\)/);
+    expect(sheet).toMatch(/width:\s*var\(--picks-panel\)/);
+    expect(sheet).toMatch(/max-width:\s*calc\(100vw - var\(--picks-strip\)/);
+    // The sheet sits one gap past the strip, the gap the grid itself leaves.
+    expect(picksGap()).toBe(space(16));
+  });
 
   /**
    * WEEK_GRID has no media query of its own - PlannerPage swaps the markup
@@ -70,24 +96,18 @@ describe("layout", () => {
    * track does.
    */
   it("leaves the week grid before it stops fitting", () => {
-    const strip = picksColumn(".planner-body.picks-collapsed");
-    expect(strip.width).toBe(PICKS_STRIP);
     // Inside a page that pays --space-24 either side of itself at this width.
-    expect(weekGrid() + strip.width + strip.gap + 2 * space(24)).toBeLessThanOrEqual(WEEK_GRID);
+    expect(weekGrid() + PICKS_STRIP + picksGap() + 2 * space(24)).toBeLessThanOrEqual(WEEK_GRID);
   });
 
   it("opens the Picks panel beside the grid only where both fit", () => {
-    const panel = picksColumn(".planner-body");
-    expect(panel.width).toBe(PICKS_PANEL);
-    expect(weekGrid() + panel.width + panel.gap + 2 * space(24)).toBeLessThanOrEqual(
+    expect(weekGrid() + PICKS_PANEL + picksGap() + 2 * space(24)).toBeLessThanOrEqual(
       WEEK_GRID + PICKS_PANEL,
     );
   });
 
   it("widens the planner's page to the width its panel and grid open at", () => {
-    const width = /--width-planner:\s*(\d+)px/.exec(css);
-    expect(width).not.toBeNull();
-    expect(Number(width![1])).toBe(WEEK_GRID + PICKS_PANEL);
+    expect(token("width-planner")).toBe(WEEK_GRID + PICKS_PANEL);
   });
 
   it("puts the phone below the width the week grid needs", () => {
