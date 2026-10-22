@@ -6,6 +6,7 @@ import { LabelPills } from "./LabelPills";
 import { MealMenu } from "./MealMenu";
 import { PlanFigure } from "./PlanFigure";
 import { ScopePrompt } from "./ScopePrompt";
+import { ServingsStepper } from "./ServingsStepper";
 import { priced, type EntryActions } from "./plan";
 import {
   isPlacingDrag,
@@ -217,26 +218,11 @@ export function PlanCell({
             {(servings != null || priced(cost)) && (
               <div className="plan-entry-meta">
                 {servings != null && (
-                  <div className="serv">
-                    <button
-                      aria-label="Fewer servings"
-                      onClick={() => onChangeServings(e, -1)}
-                    >
-                      −
-                    </button>
-                    <span
-                      className={e.servings != null ? "overridden" : ""}
-                      title={`${servings} serving${servings === 1 ? "" : "s"}`}
-                    >
-                      ×{servings}
-                    </span>
-                    <button
-                      aria-label="More servings"
-                      onClick={() => onChangeServings(e, 1)}
-                    >
-                      +
-                    </button>
-                  </div>
+                  <ServingsStepper
+                    count={servings}
+                    overridden={e.servings != null}
+                    onStep={(delta) => onChangeServings(e, delta)}
+                  />
                 )}
                 {priced(cost) && <PlanFigure cost={cost} />}
                 {menuOnMeta && menu}

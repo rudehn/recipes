@@ -17,6 +17,7 @@ import {
 import type { CellRef } from "./placing";
 import { RepeatMenu } from "./RepeatMenu";
 import { ScopePrompt } from "./ScopePrompt";
+import { ServingsStepper } from "./ServingsStepper";
 import { useLabelChoice, type LabelChoice } from "./useLabelChoice";
 import { asStored } from "./usePlannedServings";
 
@@ -178,20 +179,7 @@ export function MealSheet({
               <div className="meal-sheet-row">
                 <span className="meal-sheet-key">Servings</span>
                 {servings != null && (
-                  <div className="serv">
-                    <button type="button" aria-label="Fewer servings" onClick={() => step(-1)}>
-                      −
-                    </button>
-                    <span
-                      className={stored != null ? "overridden" : ""}
-                      title={`${servings} serving${servings === 1 ? "" : "s"}`}
-                    >
-                      ×{servings}
-                    </span>
-                    <button type="button" aria-label="More servings" onClick={() => step(1)}>
-                      +
-                    </button>
-                  </div>
+                  <ServingsStepper count={servings} overridden={stored != null} onStep={step} />
                 )}
                 {priced(cost) && <PlanFigure cost={cost} />}
               </div>
