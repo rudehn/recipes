@@ -100,6 +100,39 @@ async def test_search_matches_title_description_tag_and_ingredient(client):
     assert await titles(client, q="arborio") == ["Risotto"]
 
 
+async def test_search_puts_names_before_tags_before_ingredients(client):
+    """A search is for a dish far more often than for what goes in one, so
+    "chili" finds the chili first, then what is tagged chili, and only then
+    the recipes that use chili powder - however the titles sort."""
+    await make_recipe(client, "Apple Crumble", ingredients=[{"name": "chili flakes"}])
+    await make_recipe(client, "Beef Stew", description="Thick as a chili")
+    await make_recipe(client, "Cornbread", tags=["chili night"])
+    await make_recipe(client, "White Chicken Chili")
+    await make_recipe(client, "Black Bean Chili", ingredients=[{"name": "chili powder"}])
+
+    assert await titles(client, q="chili") == [
+        "Black Bean Chili",
+        "White Chicken Chili",
+        "Cornbread",
+        "Apple Crumble",
+        "Beef Stew",
+    ]
+
+
+async def test_search_ranks_first_and_sorts_within_each_rank(client):
+    await make_recipe(client, "Soup", ingredients=[{"name": "chili"}])
+    await make_recipe(client, "Old Chili")
+    await make_recipe(client, "Stew", ingredients=[{"name": "chili"}])
+    await make_recipe(client, "New Chili")
+
+    assert await titles(client, q="chili", sort="newest") == [
+        "New Chili",
+        "Old Chili",
+        "Stew",
+        "Soup",
+    ]
+
+
 async def test_search_is_case_insensitive(client):
     await make_recipe(client, "Chicken Curry")
     assert await titles(client, q="CHICKEN") == ["Chicken Curry"]

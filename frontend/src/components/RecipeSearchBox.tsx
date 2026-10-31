@@ -77,7 +77,7 @@ export function RecipeSearchBox({
   onDraft,
   onChooseRecipe,
   autoFocus,
-  placeholder = "Search recipes, ingredients or tags…",
+  placeholder = "Search recipes, tags or ingredients…",
 }: {
   search: Search;
   onChange: (search: Search) => void;
@@ -155,20 +155,22 @@ export function RecipeSearchBox({
       }
     }
   } else {
+    // Recipes first, then tags, then ingredients: a search is for a dish more
+    // often than for what goes in one. The results list ranks the same way.
     const found = suggested?.found;
-    if (found && found.ingredients.length > 0) {
-      rows.push({ heading: "Ingredient" });
-      for (const i of found.ingredients) rows.push({ option: { kind: "ingredient", ...i } });
-    }
-    if (found && found.tags.length > 0) {
-      rows.push({ heading: "Tag" });
-      for (const t of found.tags) rows.push({ option: { kind: "tag", ...t } });
-    }
     if (found && found.recipes.length > 0) {
       rows.push({ heading: "Recipe" });
       for (const r of found.recipes) {
         rows.push({ option: { kind: "recipe", id: r.id, title: r.title } });
       }
+    }
+    if (found && found.tags.length > 0) {
+      rows.push({ heading: "Tag" });
+      for (const t of found.tags) rows.push({ option: { kind: "tag", ...t } });
+    }
+    if (found && found.ingredients.length > 0) {
+      rows.push({ heading: "Ingredient" });
+      for (const i of found.ingredients) rows.push({ option: { kind: "ingredient", ...i } });
     }
     rows.push({ option: { kind: "text" } });
   }
@@ -500,7 +502,7 @@ export function RecipeSearchBox({
             </p>
           )}
           {typed === "" && (
-            <p className="search-drop-hint">Start typing for ingredients, tags and recipes</p>
+            <p className="search-drop-hint">Start typing for recipes, tags and ingredients</p>
           )}
         </div>
       )}

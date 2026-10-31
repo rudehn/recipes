@@ -144,6 +144,23 @@ def _filtered_recipes(q: str, tags: list[str], only: set[int] | None = None) -> 
     return stmt
 
 
+def _search_rank(q: str):
+    """How well a recipe answers the search, as a number to sort on: lower is better.
+
+    A search is for a dish far more often than for what goes in one, so a
+    match in the title outranks one in a tag, which outranks one in an
+    ingredient. The description comes last: it mentions things in passing
+    ("serve with rice") more than it names what the recipe is.
+    """
+    pattern = _contains(q)
+    return case(
+        (Recipe.title.ilike(pattern, escape="\\"), 0),
+        (Recipe.tag_rows.any(RecipeTag.name.ilike(pattern, escape="\\")), 1),
+        (Recipe.ingredients.any(Ingredient.name.ilike(pattern, escape="\\")), 2),
+        else_=3,
+    )
+
+
 async def _restricted(
     session: AsyncSession,
     q: str,
@@ -205,6 +222,11 @@ async def list_recipes(
                 case(last, value=Recipe.id, else_=None).desc().nulls_last(),
                 *_SORTS["cooked"],
             )
+
+    # While searching, how well a recipe matches comes first and the chosen
+    # sort orders the recipes within each rank.
+    if q.strip():
+        order = (_search_rank(q.strip()), *order)
 
     # A page past the end is an empty page, not an error: the collection can
     # shrink under a client that is holding a page number.

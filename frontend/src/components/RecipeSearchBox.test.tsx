@@ -80,7 +80,7 @@ describe("RecipeSearchBox", () => {
 
     expect(await screen.findByText("Recent searches")).toBeInTheDocument();
     expect(options()).toEqual(["↺dinner · on sale✕", "↺blackstone · 🥕 ground beef✕"]);
-    expect(screen.getByText("Start typing for ingredients, tags and recipes")).toBeInTheDocument();
+    expect(screen.getByText("Start typing for recipes, tags and ingredients")).toBeInTheDocument();
     expect(backend.requestsTo("GET /api/recipes/searches")[0].searchParams.get("limit")).toBe("5");
   });
 
@@ -149,17 +149,18 @@ describe("RecipeSearchBox", () => {
     await user.type(box, "chi");
 
     await screen.findByText("Ingredient");
+    // A search is for a dish more often than for what goes in one.
     const headings = screen.getAllByRole("presentation").map((h) => h.textContent);
-    expect(headings).toEqual(["Ingredient", "Tag", "Recipe"]);
+    expect(headings).toEqual(["Recipe", "Tag", "Ingredient"]);
     expect(options()).toEqual([
+      "Chicken Fried Rice",
+      "#chinese2 recipes",
       "🥕chicken thighs5 recipes",
       "🥕chives1 recipe",
-      "#chinese2 recipes",
-      "Chicken Fried Rice",
       "Search for “chi”",
     ]);
     const marks = Array.from(document.querySelectorAll("mark")).map((m) => m.textContent);
-    expect(marks).toEqual(["chi", "chi", "chi", "Chi"]);
+    expect(marks).toEqual(["Chi", "chi", "chi", "chi"]);
     // Keystrokes may straddle a debounce window; the last ask is the settled one.
     expect(backend.requestsTo("GET /api/recipes/suggest").at(-1)?.searchParams.get("text")).toBe(
       "chi",
@@ -229,7 +230,7 @@ describe("RecipeSearchBox", () => {
     await screen.findByText("Ingredient");
 
     await user.keyboard("{ArrowDown}{ArrowDown}");
-    const second = screen.getByRole("option", { name: /chives/ });
+    const second = screen.getByRole("option", { name: /chinese/ });
     expect(second).toHaveAttribute("aria-selected", "true");
     expect(box).toHaveAttribute("aria-activedescendant", second.id);
 
@@ -241,7 +242,7 @@ describe("RecipeSearchBox", () => {
     );
 
     await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-    expect(search().ingredients).toEqual([{ key: "chives", name: "chives" }]);
+    expect(search().tags).toEqual(["chinese"]);
   });
 
   it("removes the last token with Backspace on an empty box", async () => {
