@@ -16,8 +16,10 @@ A self-hosted recipe manager that keeps the whole food loop in one place: save r
   The title, ingredients, steps, times, servings and tags are read from how the recipe is written - Markdown headings, "Ingredients:" labels, bullets, "Serves 4" - with no AI model and nothing sent anywhere, and fill in the form for you to review.
   Notes and tips are kept at the end of the description, the chat's small talk is left out, and the form says what it could not find, such as an ingredients list.
   A "Source:" link in the text becomes the recipe's link, and is checked against your box like an imported one.
-* One search box finds a recipe by ingredient, tag or title, and combines them: "🥕 chicken thighs · dinner" leaves the dinners that use chicken thighs, an ingredient matched by what it is rather than how it is spelled.
-  Typing suggests ingredients, tags and recipes, each counting how many recipes it would leave, and clicking into the empty box offers your recent searches, the same on every device.
+* While editing a recipe, an ingredient line moves up or down by dragging its ⠿ handle, with a mouse or a finger, or by the arrow keys on the handle.
+* One search box finds a recipe by title, tag or ingredient, and combines them: "🥕 chicken thighs · dinner" leaves the dinners that use chicken thighs, an ingredient matched by what it is rather than how it is spelled.
+  Typed words find recipes named for them first, then recipes tagged with them, then recipes that only use them, each group in the chosen sort.
+  Typing suggests recipes, tags and ingredients, in that order, each counting how many recipes it would leave, and clicking into the empty box offers your recent searches, the same on every device.
   Under the box, one row holds the tags you search for most, On sale and All tags; four sorts put the box A-Z, newest first, most recently cooked or biggest sale first.
   An imported or found recipe arrives with its site's category and cuisine as suggested tags, spelled the way your box already spells them, for you to keep or drop before saving.
 * Weekly meal planner: breakfast, lunch, dinner and snack for each day of the week.
