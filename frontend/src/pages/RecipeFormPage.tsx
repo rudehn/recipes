@@ -22,10 +22,14 @@ import {
   type SegmentedOption,
 } from "../components/ui";
 import { formatAmount, parseQuantity } from "../quantity";
+import { moveItem } from "../reorder";
 import { useAutoGrow } from "../useAutoGrow";
+import { useDragReorder } from "../useDragReorder";
 import { errorMessage, useLoad } from "../useLoad";
 
 interface IngredientDraft {
+  /** The row's own, for as long as the form is open: rows move, so their place is not one. */
+  id: number;
   quantity: string;
   unit: string;
   name: string;
@@ -33,18 +37,35 @@ interface IngredientDraft {
   source_line: string | null;
 }
 
-const EMPTY_ROW: IngredientDraft = { quantity: "", unit: "", name: "", source_line: null };
+let lastRowId = 0;
+
+function emptyRow(): IngredientDraft {
+  return { id: ++lastRowId, quantity: "", unit: "", name: "", source_line: null };
+}
 
 /** Ingredients as editable text, quantities shown as the fractions the rest of
  *  the app displays so editing a recipe doesn't turn "¾" into "0.75". */
 function toRows(ingredients: Omit<Ingredient, "id">[]): IngredientDraft[] {
-  if (ingredients.length === 0) return [{ ...EMPTY_ROW }];
+  if (ingredients.length === 0) return [emptyRow()];
   return ingredients.map((i) => ({
+    id: ++lastRowId,
     quantity: i.quantity != null ? formatAmount(i.quantity) : "",
     unit: i.unit ?? "",
     name: i.name,
     source_line: i.source_line ?? null,
   }));
+}
+
+/** The six dots a row is dragged by. Drawn rather than typed: "⠿" is a braille
+ *  character, and how big and how dark it comes out is up to each platform's font. */
+function GripGlyph() {
+  return (
+    <svg className="drag-handle-glyph" viewBox="0 0 10 16" aria-hidden="true">
+      {[3, 8, 13].map((y) =>
+        [2.5, 7.5].map((x) => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.5" />),
+      )}
+    </svg>
+  );
 }
 
 /**
@@ -116,7 +137,15 @@ export default function RecipeFormPage() {
   const [prep, setPrep] = useState("");
   const [cook, setCook] = useState("");
   const [servings, setServings] = useState("");
-  const [rows, setRows] = useState<IngredientDraft[]>([{ ...EMPTY_ROW }]);
+  const [rows, setRows] = useState<IngredientDraft[]>(() => [emptyRow()]);
+  const rowList = useRef<HTMLDivElement>(null);
+  // Said aloud after a row is moved, since a screen reader would not see it go.
+  const [rowMoved, setRowMoved] = useState("");
+  const reorder = useDragReorder(rowList, rows.length, (from, to) => {
+    setRows((rows) => moveItem(rows, from, to));
+    const name = rows[from].name.trim() || "Ingredient";
+    setRowMoved(`${name} moved to ${to + 1} of ${rows.length}`);
+  });
   const [tags, setTags] = useState<string[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [existingImage, setExistingImage] = useState<string | null>(null);
@@ -548,34 +577,52 @@ export default function RecipeFormPage() {
             </>
           }
         >
-          {rows.map((row, i) => (
-            <div className="ingredient-row" key={i}>
-              <input
-                aria-label="Quantity"
-                placeholder="Qty"
-                value={row.quantity}
-                onChange={(e) => updateRow(i, { quantity: e.target.value })}
-              />
-              <input
-                aria-label="Unit"
-                placeholder="Unit"
-                value={row.unit}
-                onChange={(e) => updateRow(i, { unit: e.target.value })}
-              />
-              <input
-                aria-label="Ingredient name"
-                placeholder="Ingredient"
-                value={row.name}
-                onChange={(e) => updateRow(i, { name: e.target.value })}
-              />
-              <IconButton label="Remove ingredient" onClick={() => removeRow(i)}>
-                ✕
-              </IconButton>
-            </div>
-          ))}
+          <div className="ingredient-rows" ref={rowList}>
+            {rows.map((row, i) => (
+              <div
+                className={reorder.dragging === i ? "ingredient-row dragged" : "ingredient-row"}
+                key={row.id}
+                style={reorder.rowStyle(i)}
+              >
+                <button
+                  type="button"
+                  className="icon-btn drag-handle"
+                  aria-label={`Move ${row.name.trim() || "ingredient"}`}
+                  title="Drag to reorder, or use the arrow keys"
+                  {...reorder.handleProps(i)}
+                >
+                  <GripGlyph />
+                </button>
+                <input
+                  aria-label="Quantity"
+                  placeholder="Qty"
+                  value={row.quantity}
+                  onChange={(e) => updateRow(i, { quantity: e.target.value })}
+                />
+                <input
+                  aria-label="Unit"
+                  placeholder="Unit"
+                  value={row.unit}
+                  onChange={(e) => updateRow(i, { unit: e.target.value })}
+                />
+                <input
+                  aria-label="Ingredient name"
+                  placeholder="Ingredient"
+                  value={row.name}
+                  onChange={(e) => updateRow(i, { name: e.target.value })}
+                />
+                <IconButton label="Remove ingredient" onClick={() => removeRow(i)}>
+                  ✕
+                </IconButton>
+              </div>
+            ))}
+          </div>
+          <p className="visually-hidden" role="status">
+            {rowMoved}
+          </p>
           <Button
             size="small"
-            onClick={() => setRows((rows) => [...rows, { ...EMPTY_ROW }])}
+            onClick={() => setRows((rows) => [...rows, emptyRow()])}
           >
             + Add ingredient
           </Button>

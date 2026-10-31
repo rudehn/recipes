@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { RecipeInput, RecipePart } from "../api";
@@ -337,6 +337,98 @@ describe("RecipeFormPage: editing a recipe", () => {
     await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(savedPayload(backend, "PUT /api/recipes/:id").tags).toEqual(["dinner", "curry"]);
+  });
+
+  function names(): string[] {
+    return ingredientRows().map((row) => (row as HTMLInputElement).value);
+  }
+
+  /**
+   * Lays the rows out as a browser would, which jsdom does not: each 40px
+   * tall with 6px between, the first at the top of the window.
+   */
+  function layOutRows() {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const index = Array.from(this.parentElement?.children ?? []).indexOf(this);
+      const top = index * 46;
+      return { top, bottom: top + 40, left: 0, right: 0, width: 0, height: 40 } as DOMRect;
+    });
+  }
+
+  it("moves an ingredient by dragging its handle, and saves the new order", async () => {
+    const backend = formBackend({
+      "GET /api/recipes/:id": stored,
+      "PUT /api/recipes/:id": stored,
+    });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(names()).toEqual(["coconut milk", "curry powder", "salt"]));
+    layOutRows();
+
+    // Grabbed in its middle and pulled down past the middles of both rows below.
+    const handle = screen.getByRole("button", { name: "Move coconut milk" });
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientY: 20 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 70 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 115 });
+    // Nothing moves until it is let go.
+    expect(names()).toEqual(["coconut milk", "curry powder", "salt"]);
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 115 });
+
+    expect(names()).toEqual(["curry powder", "salt", "coconut milk"]);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(savedPayload(backend, "PUT /api/recipes/:id").ingredients.map((i) => i.name)).toEqual([
+      "curry powder",
+      "salt",
+      "coconut milk",
+    ]);
+  });
+
+  it("puts a dragged ingredient back where it was on Escape", async () => {
+    formBackend({ "GET /api/recipes/:id": stored });
+    renderApp("/recipes/7/edit");
+    await waitFor(() => expect(names()).toEqual(["coconut milk", "curry powder", "salt"]));
+    layOutRows();
+
+    const handle = screen.getByRole("button", { name: "Move salt" });
+    fireEvent.pointerDown(handle, { pointerId: 1, button: 0, clientY: 112 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 10 });
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 10 });
+
+    expect(names()).toEqual(["coconut milk", "curry powder", "salt"]);
+  });
+
+  it("moves an ingredient with the arrow keys on its handle", async () => {
+    formBackend({ "GET /api/recipes/:id": stored });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(names()).toEqual(["coconut milk", "curry powder", "salt"]));
+
+    const handle = screen.getByRole("button", { name: "Move salt" });
+    handle.focus();
+    await user.keyboard("{ArrowUp}{ArrowUp}{ArrowUp}");
+
+    expect(names()).toEqual(["salt", "coconut milk", "curry powder"]);
+    // The handle goes with its row, so the keys can keep moving it.
+    expect(handle).toHaveFocus();
+    expect(screen.getByText("salt moved to 1 of 3")).toHaveAttribute("role", "status");
+  });
+
+  it("keeps what was typed in a row with the row when it moves", async () => {
+    formBackend({ "GET /api/recipes/:id": stored });
+    const { user } = renderApp("/recipes/7/edit");
+    await waitFor(() => expect(names()).toEqual(["coconut milk", "curry powder", "salt"]));
+
+    await user.type(screen.getAllByLabelText("Unit")[2], "pinch");
+    screen.getByRole("button", { name: "Move salt" }).focus();
+    await user.keyboard("{ArrowUp}");
+
+    expect(names()).toEqual(["coconut milk", "salt", "curry powder"]);
+    expect(screen.getAllByLabelText("Unit").map((u) => (u as HTMLInputElement).value)).toEqual([
+      "cup",
+      "pinch",
+      "tbsp",
+    ]);
   });
 
   it("shows stored amounts as the fractions the rest of the app shows", async () => {

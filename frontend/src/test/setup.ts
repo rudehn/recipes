@@ -33,6 +33,14 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// Nor pointer capture, which a row dragged by its handle takes so the drag
+// follows the pointer off the handle. Tests send every pointer event to the
+// handle themselves, which is all capture would have done.
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+
 // jsdom has no DragEvent, so Testing Library builds a drag event as a plain
 // Event and drops the modifier keys from its init: a drop with Alt held would
 // arrive without it. A drag event is a mouse event with a DataTransfer, and
