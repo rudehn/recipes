@@ -124,6 +124,12 @@ def test_an_amount_that_cannot_be_weighed_is_not_guessed(name, quantity, unit):
         ("ground chorizo", 173859),
         ("avocado oil", 173573),
         ("ground flaxseed", 169414),
+        # "X powder" is how many recipes write ground X.
+        ("cumin powder", 170923),
+        ("turmeric powder", 172231),
+        ("ginger powder", 170926),
+        ("coriander powder", 170922),
+        ("cinnamon powder", 171320),
         ("horseradish", 173472),
         ("reduced fat shredded Mexican cheese", 172216),
         # Cooked rice is cooked white rice, never raw: the state word stays in
@@ -187,6 +193,14 @@ def test_pricing_borrows_usda_weights_for_what_its_table_does_not_list():
     assert grams_per_cup("paprika") == pytest.approx(108.8, abs=0.1)
     share = share_of_package(2.49, parse_size("2.4 oz"), "UNIT", measure(1, "tbsp"), "paprika")
     assert share == pytest.approx(0.25, abs=0.005)
+
+
+def test_a_spice_called_a_powder_is_priced_as_its_share_of_the_jar():
+    """"2 tsp cumin powder" against a 1.5 oz jar of ground cumin. Only
+    "ground cumin" had a default, so the powder had no weight and was costed
+    the whole jar."""
+    share = share_of_package(2.99, parse_size("1.5 oz"), "UNIT", measure(2, "tsp"), "cumin-powder")
+    assert share == pytest.approx(0.28, abs=0.005)
 
 
 def test_the_density_table_still_comes_first():
