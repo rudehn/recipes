@@ -202,3 +202,29 @@ jobs:
             | jq -e '[.manifests[].platform.architecture] | (index("amd64") != null) and (index("arm64") != null)' > /dev/null \
             || { echo "::error::$ref is missing amd64 or arm64"; exit 1; }
           docker buildx imagetools inspect "$ref"
+
+  # Open a deploy PR in home-server for this commit's new images.
+  # Runs only on the default branch, after the last manifest is published.
+  trigger-deploy:
+    needs: merge
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Create deploy trigger token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.DEPLOY_TRIGGER_APP_ID }}
+          private-key: ${{ secrets.DEPLOY_TRIGGER_PRIVATE_KEY }}
+          owner: rudehn
+          repositories: home-server
+
+      - name: Trigger the home-server deploy PR workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh workflow run deploy-pr.yml -R rudehn/home-server \
+            -f stack=recipes \
+            -f run_url="$RUN_URL"
