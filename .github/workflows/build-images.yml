@@ -2,11 +2,15 @@ name: Build & push images
 
 # Tests gate the build; images are pushed to GHCR and pulled by the
 # home-server repo (stacks/recipes/compose.yaml). The server never builds.
+#
+# Two images x two architectures, each built on a native runner (no QEMU).
+# The `merge` job stitches the per-arch digests into one multi-arch manifest
+# and applies the tags once both architectures exist, so `latest` can never
+# point at a single-arch image. Tags are `latest` (main) and `sha-<7>`.
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -59,25 +63,40 @@ jobs:
         run: npm run build
 
   build:
-    # Push images only from main / version tags, never from PRs.
+    # Push images only from main, never from PRs.
     if: github.event_name != 'pull_request'
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - image: recipes-backend
+        image:
+          - name: recipes-backend
             context: backend
-          - image: recipes-frontend
+          - name: recipes-frontend
             context: frontend
+        platform: [linux/amd64, linux/arm64]
+        # `include` only augments the image x platform combos with a runner.
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
 
     steps:
+      - name: Derive a filename-safe platform tag
+        run: echo "PLATFORM_PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -86,33 +105,126 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Derive tags & labels
+      # Labels (including org.opencontainers.image.revision) go on every image.
+      - name: Image metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
-            type=semver,pattern={{version}}
-            type=ref,event=branch
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }}
 
-      # Enables building arm64 (Apple Silicon home server) on amd64 runners.
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      # Pushed by digest only - no tag. Tags are applied once, by `merge`.
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.image.context }}
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          # Provenance/SBOM attestations would nest extra manifests under each
+          # per-arch digest; keep the merged manifest list flat.
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform }}
+
+      - name: Export digest
+        run: |
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digests-${{ matrix.image.name }}-${{ env.PLATFORM_PAIR }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # One merge per image: collect that image's per-arch digests into a single
+  # multi-arch manifest list and apply the real tags to it.
+  merge:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [recipes-backend, recipes-frontend]
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.name }}-*
+          merge-multiple: true
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Build & push
-        uses: docker/build-push-action@v7
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
         with:
-          context: ${{ matrix.context }}
-          push: true
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
+        run: |
+          tag_args=()
+          while read -r tag; do
+            tag_args+=(-t "$tag")
+          done < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          sources=()
+          for digest in *; do
+            sources+=("$IMAGE@sha256:$digest")
+          done
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+
+      - name: Verify both architectures are present
+        run: |
+          ref="${{ env.IMAGE }}:${{ steps.meta.outputs.version }}"
+          docker buildx imagetools inspect "$ref" --raw \
+            | jq -e '[.manifests[].platform.architecture] | (index("amd64") != null) and (index("arm64") != null)' > /dev/null \
+            || { echo "::error::$ref is missing amd64 or arm64"; exit 1; }
+          docker buildx imagetools inspect "$ref"
+
+  # Open a deploy PR in home-server for this commit's new images.
+  # Runs only on the default branch, after the last manifest is published.
+  trigger-deploy:
+    needs: merge
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Create deploy trigger token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.DEPLOY_TRIGGER_CLIENT_ID }}
+          private-key: ${{ secrets.DEPLOY_TRIGGER_PRIVATE_KEY }}
+          owner: rudehn
+          repositories: home-server
+
+      - name: Trigger the home-server deploy PR workflow
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh workflow run deploy-pr.yml -R rudehn/home-server \
+            -f stack=recipes \
+            -f run_url="$RUN_URL"
