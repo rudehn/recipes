@@ -225,6 +225,6 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          gh workflow run deploy-pr.yml -R rudehn/home-server \
+          gh workflow run deploy-pr.yml -R rudehn/home-server --ref main \
             -f stack=recipes \
             -f run_url="$RUN_URL"
