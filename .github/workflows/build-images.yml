@@ -213,9 +213,9 @@ jobs:
     steps:
       - name: Create deploy trigger token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          app-id: ${{ vars.DEPLOY_TRIGGER_APP_ID }}
+          client-id: ${{ vars.DEPLOY_TRIGGER_CLIENT_ID }}
           private-key: ${{ secrets.DEPLOY_TRIGGER_PRIVATE_KEY }}
           owner: rudehn
           repositories: home-server
